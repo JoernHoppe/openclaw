@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { DOMParser } from "linkedom";
 import { hasErrnoCode } from "../infra/errno.js";
 import {
@@ -7,6 +8,7 @@ import {
   getWindowsSystem32ExePath,
 } from "../infra/windows-install-roots.js";
 import { decodeWindowsLauncherScript } from "../infra/windows-launcher-encoding.js";
+import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import { execFileUtf8 } from "./exec-file.js";
 import { execSchtasks } from "./schtasks-exec.js";
 import {
@@ -17,6 +19,7 @@ import {
   resolveTaskScriptPath,
   resolveTaskLauncherScriptPath,
 } from "./schtasks-layout.js";
+import { probeScheduledTaskState } from "./schtasks-state-probe.js";
 import { buildScheduledTaskXml } from "./schtasks-xml.js";
 import {
   isInstallerServiceDescription,
@@ -27,7 +30,12 @@ import type {
   ServiceDefinitionDrift,
 } from "./service-audit-types.js";
 import { resolveTaskUser } from "./service-process-env.js";
-import type { GatewayServiceEnv } from "./service-types.js";
+import { readServiceFileState } from "./service-stage.js";
+import type {
+  GatewayServiceEnv,
+  GatewayServiceReadOptions,
+  ServiceDefinitionMutationCapability,
+} from "./service-types.js";
 
 const WINDOWS_SID_RE = /^S-1-[\d-]+$/u;
 
@@ -198,7 +206,7 @@ export async function auditScheduledTaskDefinition(
         : key.endsWith("Date")
           ? /^\d{4}-\d\d-\d\dT[\d:.+-]+Z?$/u.test(current)
           : key.endsWith("Author")
-            ? current.toLowerCase() === taskUser?.toLowerCase() || current === userSid
+            ? sameUser(current)
             : current === `\\${resolveTaskName(env)}`;
       nativeRegistration = key !== "RegistrationInfo.Description" && recognized;
       if (!expectedXml && !recognized) {
@@ -372,4 +380,113 @@ export async function auditScheduledTaskDefinition(
     }
   }
   return xml;
+}
+
+/** Read-only admission; native publication still owns permissions, locking and CAS. */
+export async function readScheduledTaskDefinitionMutationCapability(
+  env: GatewayServiceEnv,
+  options: Pick<GatewayServiceReadOptions, "timeoutMs"> & { environment?: GatewayServiceEnv } = {},
+): Promise<ServiceDefinitionMutationCapability> {
+  const unknown = { kind: "unknown", reason: "inspection-failed" } as const;
+  const deadline =
+    options.timeoutMs === undefined ? undefined : performance.now() + options.timeoutMs;
+  const remaining = () => {
+    const timeoutMs = deadline === undefined ? undefined : deadline - performance.now();
+    if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      throw new Error("Scheduled Task definition inspection deadline expired.");
+    }
+    return timeoutMs;
+  };
+  try {
+    if (!resolveTaskUser(env)) {
+      return unknown;
+    }
+    const taskName = resolveTaskName(env);
+    const observed = probeScheduledTaskState(taskName, remaining());
+    if (observed.status === "unknown") {
+      return unknown;
+    }
+    const readCommand = () =>
+      readScheduledTaskCommand(env, {
+        requireEffective: true,
+        requireLoaded: true,
+        timeoutMs: remaining(),
+      });
+    const command = await readCommand();
+    if ((command === null) !== (observed.status === "missing")) {
+      return unknown;
+    }
+    const scriptPath = resolveTaskScriptPath(env);
+    if (
+      command?.sourcePath &&
+      path.win32.normalize(command.sourcePath).toLowerCase() !==
+        path.win32.normalize(scriptPath).toLowerCase()
+    ) {
+      return unknown;
+    }
+    const paths = [
+      ...new Set(
+        [env, { ...env, ...options.environment }].flatMap((target) => {
+          const script = resolveTaskScriptPath(target);
+          return [
+            script,
+            resolveTaskLauncherScriptPath({ OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER: "1" }, script),
+          ];
+        }),
+      ),
+    ];
+    for (const file of paths) {
+      for (let parent = path.dirname(file); ; parent = path.dirname(parent)) {
+        remaining();
+        const entry = await fs.lstat(parent).catch((error: unknown) => {
+          if (hasErrnoCode(error, "ENOENT")) {
+            return null;
+          }
+          throw error;
+        });
+        if (entry && (!entry.isDirectory() || entry.isSymbolicLink())) {
+          return unknown;
+        }
+        if (parent === path.dirname(parent)) {
+          break;
+        }
+      }
+    }
+    const files = await Promise.all(paths.map(readServiceFileState));
+    if (!command && files.some(Boolean)) {
+      return unknown;
+    }
+    let xml: string | undefined;
+    if (command) {
+      const findings: ServiceDefinitionDrift[] = [];
+      xml = await auditScheduledTaskDefinition(env, findings, remaining(), command);
+      if (findings.some((finding) => finding.kind === "unknown-edit")) {
+        return unknown;
+      }
+    }
+    if (
+      !isDeepStrictEqual(files, await Promise.all(paths.map(readServiceFileState))) ||
+      !isDeepStrictEqual(command, await readCommand())
+    ) {
+      return unknown;
+    }
+    if (xml !== undefined) {
+      const current = await execSchtasks(["/Query", "/TN", taskName, "/XML"]);
+      if (
+        current.code !== 0 ||
+        current.stdout.replace(/^\uFEFF/u, "").replaceAll(String.fromCharCode(0), "") !== xml
+      ) {
+        return unknown;
+      }
+    } else if (probeScheduledTaskState(taskName, remaining()).status !== "missing") {
+      return unknown;
+    }
+    remaining();
+    return { kind: "writable" };
+  } catch (error) {
+    if (hasCommandProcessCleanupError(error)) {
+      throw error;
+    }
+    return unknown;
+  }
 }
