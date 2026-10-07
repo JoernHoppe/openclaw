@@ -97,7 +97,34 @@ describe("addGatewayServiceCommands", () => {
     vi.restoreAllMocks();
   });
 
-  it.each([{ parent: "daemon", option: "--restore-service-cli" }])(
+  it("forwards the private desktop receipt and excludes the update executor", async () => {
+    const program = new Command();
+    createGatewayParentLikeCommand(program);
+    const receipt = JSON.stringify({ path: "C:\\profile\\result.json", nonce: "fixture" });
+    await program.parseAsync(["gateway", "install", "--desktop-runtime-receipt", receipt], {
+      from: "user",
+    });
+    expect(expectSingleDaemonCall(runDaemonInstall)).toMatchObject({
+      desktopRuntimeReceipt: receipt,
+    });
+    const install = program.commands[0]?.commands.find((command) => command.name() === "install");
+    expect(install?.helpInformation()).not.toContain("--desktop-runtime-receipt");
+    runDaemonInstall.mockClear();
+    await expect(
+      program.parseAsync(
+        ["gateway", "install", "--desktop-runtime-receipt", receipt, "--update-executor", "run"],
+        { from: "user" },
+      ),
+    ).rejects.toThrow("cannot be used with the update executor");
+    expect(runDaemonInstall).not.toHaveBeenCalled();
+  });
+
+
+  it.each([
+    { parent: "daemon", option: "--restore-service-cli" },
+    { parent: "gateway", option: "--desktop-runtime-receipt" },
+    { parent: "daemon", option: "--desktop-runtime-receipt" },
+  ])(
     "defers $parent install startup until $option is checked",
     async ({ parent, option }) => {
       const program = new Command().name("openclaw");
