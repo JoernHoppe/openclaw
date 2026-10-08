@@ -51,6 +51,7 @@ import {
   createServiceRuntimeInspectionFailure,
   type GatewayServiceRuntime,
 } from "./service-runtime.js";
+import type { GatewayServiceDefinitionTransactionHooks } from "./service-stage.js";
 import type {
   GatewayServiceCommandConfig,
   GatewayServiceEnv,
@@ -193,8 +194,12 @@ export async function launchFallbackTaskScript(
   env: GatewayServiceEnv,
   installedCommand?: GatewayServiceCommandConfig | null,
   assertCurrent?: () => void,
+  definitionTransaction?: GatewayServiceDefinitionTransactionHooks,
 ): Promise<void> {
-  if (isUpdateOwnedGatewayServiceCommand()) {
+  if (
+    isUpdateOwnedGatewayServiceCommand() &&
+    definitionTransaction?.windowsRegistration !== "startup"
+  ) {
     throw new Error(
       "UPDATE_NATIVE_AUTHORITY: update-owned native commands require Task Scheduler; standalone startup fallback is unsupported.",
     );
@@ -204,6 +209,20 @@ export async function launchFallbackTaskScript(
     installedCommand === undefined ? await readScheduledTaskCommand(env) : installedCommand;
   let argv: string[];
   let options: SpawnOptions;
+  const assertSpawnCurrent = () => {
+    assertGatewayServiceUpdateCurrent();
+    definitionTransaction?.assertCurrent();
+    assertCurrent?.();
+  };
+  const beforeSpawn = async () => {
+    if (definitionTransaction) {
+      if (definitionTransaction.windowsRegistration !== "startup") {
+        throw new Error("Startup activation requires a captured Startup registration.");
+      }
+      await definitionTransaction.beforeWrite();
+    }
+    assertSpawnCurrent();
+  };
   if (command?.programArguments.length) {
     // Task inspection hides the wrapper flag; direct launches still need its process-tree owner.
     argv =
@@ -250,8 +269,9 @@ export async function launchFallbackTaskScript(
       windowsVerbatimArguments: true,
     };
   }
+  await beforeSpawn();
   const { child } = await spawnWithFallback({
-    assertCurrent,
+    assertCurrent: assertSpawnCurrent,
     argv,
     options: { detached: true, stdio: "ignore", windowsHide: true, ...options },
   });
