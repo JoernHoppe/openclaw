@@ -116,6 +116,7 @@ describe.skipIf(!connection)("PostgreSQL transaction lock ordering", () => {
     schemas.push(schema);
     const databasePath = path.join(tempDirs.make("postgres-locks-"), "anchor.sqlite");
     const anchor = openNodeSqliteDatabase(databasePath);
+    // Final close revokes the shared admission; retain its owner until the workers exit.
     anchors.push(anchor);
     anchor.exec("CREATE TABLE anchor (id TEXT)");
     await admin.query(`CREATE SCHEMA "${schema}"; CREATE TABLE "${schema}".events (id TEXT)`);
@@ -179,11 +180,19 @@ describe.skipIf(!connection)("PostgreSQL transaction lock ordering", () => {
     }
     second.release(0);
     const secondCommit = await second.events.done.promise;
+    const afterSecondCommit = readSqliteDatabaseWriteTokenForPath(identity.path);
     first.release(1);
     const firstCommit = await first.events.done.promise;
     expect(freeDuringAdmission).toBe(true);
+    expect(secondCommit.before).toBeDefined();
+    expect(secondCommit.after).toBeDefined();
     expect(secondCommit.after).not.toBe(secondCommit.before);
+    expect(afterSecondCommit).toBe(secondCommit.after);
+    expect(firstCommit.before).toBeDefined();
+    expect(firstCommit.after).toBeDefined();
     expect(firstCommit.after).not.toBe(firstCommit.before);
+    expect(firstCommit.after).not.toBe(secondCommit.after);
+    expect(readSqliteDatabaseWriteTokenForPath(identity.path)).toBe(firstCommit.after);
     expect(
       (await admin.query(`SELECT count(*)::int AS count FROM "${identity.schema}".events`)).rows,
     ).toEqual([{ count: 2 }]);
