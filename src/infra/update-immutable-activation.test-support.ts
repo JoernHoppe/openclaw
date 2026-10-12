@@ -155,6 +155,7 @@ export function createImmutableActivationLayout(parent: string) {
   const protectedFile = { dev: "1", ino: "2", mode: 0o600, nlink: 1 as const, uid: 0, gid: 0 };
   const statePath = path.join(descriptor.service.stateDir, "openclaw.db");
   const protection: ImmutableProtectionSnapshot = {
+    identityEncoding: "exact",
     capturedAtMs: 1,
     auditBoundary: null,
     state: {
