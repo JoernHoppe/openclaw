@@ -318,7 +318,7 @@ function warnLegacyApprovalRouting(name: string): void {
   });
 }
 
-/** @deprecated Use resolveApprovalRequestAccountIdAsync; removed in the next Plugin SDK major. */
+/** @deprecated Use resolveApprovalRequestAccountIdAsync; removed in a later release after stable deprecation. */
 export function resolveApprovalRequestAccountId(
   params: Parameters<typeof resolveApprovalRequestAccountIdFromDelivery>[0],
 ): ReturnType<typeof resolveApprovalRequestAccountIdFromDelivery> {
@@ -341,7 +341,7 @@ export async function resolveApprovalRequestAccountIdAsync(
   );
 }
 
-/** @deprecated Use resolveApprovalRequestChannelAccountIdAsync; removed in the next Plugin SDK major. */
+/** @deprecated Use resolveApprovalRequestChannelAccountIdAsync; removed in a later release after stable deprecation. */
 export function resolveApprovalRequestChannelAccountId(
   params: Parameters<typeof resolveApprovalRequestChannelAccountIdFromDelivery>[0],
 ): ReturnType<typeof resolveApprovalRequestChannelAccountIdFromDelivery> {
@@ -366,7 +366,7 @@ export async function resolveApprovalRequestChannelAccountIdAsync(
   );
 }
 
-/** @deprecated Use doesApprovalRequestMatchChannelAccountAsync; removed in the next Plugin SDK major. */
+/** @deprecated Use doesApprovalRequestMatchChannelAccountAsync; removed in a later release after stable deprecation. */
 export function doesApprovalRequestMatchChannelAccount(
   params: Parameters<typeof doesApprovalRequestMatchChannelAccountFromDelivery>[0],
 ): ReturnType<typeof doesApprovalRequestMatchChannelAccountFromDelivery> {
@@ -389,7 +389,7 @@ export async function doesApprovalRequestMatchChannelAccountAsync(
   );
 }
 
-/** @deprecated Use doesApprovalRequestSelectChannelAccountAsync; removed in the next Plugin SDK major. */
+/** @deprecated Use doesApprovalRequestSelectChannelAccountAsync; removed in a later release after stable deprecation. */
 export function doesApprovalRequestSelectChannelAccount(
   params: Parameters<typeof doesApprovalRequestSelectChannelAccountFromDelivery>[0],
 ): ReturnType<typeof doesApprovalRequestSelectChannelAccountFromDelivery> {

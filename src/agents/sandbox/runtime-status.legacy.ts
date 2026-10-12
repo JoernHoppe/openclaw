@@ -6,7 +6,7 @@ import {
   type SandboxRuntimeStatusParams,
 } from "./runtime-status.js";
 
-/** @deprecated Await resolveSandboxRuntimeStatusAsync. Removed in the next Plugin SDK major. */
+/** @deprecated Await resolveSandboxRuntimeStatusAsync. Removed in a later release after stable deprecation. */
 export function resolveSandboxRuntimeStatusLegacy(params: SandboxRuntimeStatusParams) {
   warnPluginSdkDeprecation({
     family: "sandbox-runtime-status",
