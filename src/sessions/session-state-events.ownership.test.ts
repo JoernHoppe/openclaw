@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { peekSystemEventEntries, resetSystemEventsForTest } from "../infra/system-events.js";
 import {
@@ -25,6 +26,10 @@ import {
   watcher,
 } from "./session-state-events.test-support.js";
 import { enqueueSessionStateNotice } from "./session-state-notices.js";
+
+beforeEach(() => {
+  setRuntimeConfigSnapshot({});
+});
 
 afterEach(cleanupSessionStateTestState);
 

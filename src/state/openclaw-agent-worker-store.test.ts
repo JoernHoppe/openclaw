@@ -875,11 +875,7 @@ describe("pooled agent publication owner (captured source)", () => {
       const closing = await Promise.allSettled(revokeAgentDatabaseResources(selection));
       expect(closing).toContainEqual({
         status: "rejected",
-        reason: expect.objectContaining({
-          errors: expect.arrayContaining([
-            expect.objectContaining({ message: "controlled worker lease cleanup failure" }),
-          ]),
-        }),
+        reason: new Error("controlled worker lease cleanup failure"),
       });
       expect(readLeases()).toEqual(retainedLeases);
       await expect(
