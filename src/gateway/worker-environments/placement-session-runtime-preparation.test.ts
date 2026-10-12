@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   patchSessionEntryCore,
   upsertSessionEntryCore,
@@ -13,6 +14,7 @@ it("retains parent model authority without host SQL and recomputes current confi
     const parent = { agentId: "main", sessionKey: "agent:main:placement-runtime-parent" };
     const child = { agentId: "main", sessionKey: "agent:main:placement-runtime-child" };
     const cfg = { agents: { defaults: { model: { primary: "anthropic/claude-test" } } } };
+    setRuntimeConfigSnapshot(cfg);
     const entry = {
       sessionId: "placement-runtime-child",
       updatedAt: 1,

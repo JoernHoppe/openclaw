@@ -2,6 +2,7 @@ import path from "node:path";
 import { StatementSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { resolveStateDir } from "../config/state-dir.js";
@@ -221,6 +222,7 @@ it("refreshes 50 connected mention views after session and viewer changes", asyn
 
       // Keyless invalidation also covers in-place runtime configuration updates.
       cfg.session = { store: alternateStorePath };
+      setRuntimeConfigSnapshot(cfg);
       exactRowReads = 0;
       f.broadcast.mockClear();
       await f.inbox.invalidateAsync();
