@@ -3,8 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
-import { resolveUsageCostTranscriptFile } from "./session-cost-usage-collection.js";
-import { createNativeStorageUsageAccess } from "./session-cost-usage-collection.test-support.js";
+import { resolveUsageCostTranscriptFile } from "./session-cost-usage-collection.test-support.js";
 import {
   decodeUsageCostRollup,
   encodeUsageCostRollup,
@@ -30,7 +29,12 @@ const initial: Row[] = [
   { seq: 1, event: message("root", null, 1) },
   { seq: 4, event: message("a", "root", 2) },
 ];
-async function scan(rows: Row[], previous?: UsageCostRollupEntry) {
+async function scan(
+  rows: Row[],
+  previous?: UsageCostRollupEntry,
+  generation = "initial",
+  readSequences?: number[],
+) {
   const storePath = path.resolve("synthetic-usage-paging.sqlite");
   const filePath = formatSqliteSessionFileMarker({
     agentId: "main",
@@ -56,14 +60,12 @@ async function scan(rows: Row[], previous?: UsageCostRollupEntry) {
     previous,
     pricingFingerprint: "synthetic-pricing",
     resolveCosts: async (pairs) => pairs.map(() => undefined),
+    readGeneration: async () => generation,
     // A short page does not mean end-of-range; decoded byte limits can cut any page.
-    readRows: async (_marker, afterSeq, throughSeq) =>
-      rows.filter((row) => row.seq > afterSeq && row.seq <= throughSeq).slice(0, 2),
-    access: {
-      ...createNativeStorageUsageAccess(),
-      readSqliteStats: async () => [
-        { maxSeq, eventCount: rows.length, sizeBytes, lastMutationAtMs: timestamp },
-      ],
+    readRows: async (_marker, afterSeq, throughSeq) => {
+      const page = rows.filter((row) => row.seq > afterSeq && row.seq <= throughSeq).slice(0, 2);
+      readSequences?.push(...page.map((row) => row.seq));
+      return page;
     },
   });
 }
@@ -135,6 +137,61 @@ describe("paged SQLite usage rollups", () => {
     },
   );
 
+  it("reads only appended rows once while retaining the full-scan totals", async () => {
+    const previous = await scan(initial);
+    const rows = [...initial, { seq: 9, event: message("b", "a", 4) }];
+    const readSequences: number[] = [];
+    const incremental = await scan(rows, previous, "initial", readSequences);
+    expectUsage(incremental, 7, 3, "b");
+    expect(readSequences).toEqual([9]);
+    expect(incremental.rollup).toEqual((await scan(rows)).rollup);
+  });
+
+  it.each([
+    {
+      change: "rewrite an earlier row then append",
+      generation: "rewritten",
+      rows: [
+        { seq: 1, event: message("root", null, 8) },
+        initial[1]!,
+        { seq: 9, event: message("b", "a", 4) },
+      ],
+      tokens: 14,
+      records: 3,
+      leaf: "b",
+    },
+    {
+      change: "rewind",
+      generation: "rewound",
+      rows: [initial[0]!],
+      tokens: 1,
+      records: 1,
+      leaf: "root",
+    },
+    {
+      change: "compact",
+      generation: "compacted",
+      rows: [
+        { seq: 1, event: { type: "compaction", id: "compact", parentId: null } },
+        { seq: 4, event: message("a", "compact", 2) },
+        { seq: 9, event: message("b", "a", 4) },
+      ],
+      tokens: 6,
+      records: 2,
+      leaf: "b",
+    },
+  ])(
+    "rebuilds after $change without counting retired usage",
+    async ({ generation, rows, tokens, records, leaf }) => {
+      const previous = await scan(initial);
+      const readSequences: number[] = [];
+      const rebuilt = await scan(rows, previous, generation, readSequences);
+      expectUsage(rebuilt, tokens, records, leaf);
+      expect(rebuilt.rollup).toEqual((await scan(rows, undefined, generation)).rollup);
+      expect(readSequences).toEqual(rows.map((row) => row.seq));
+    },
+  );
+
   it("aggregates duplicate-ID paths in selected ancestry order when sequence numbers go backward", async () => {
     const user = (at: number) => ({
       type: "message",
@@ -189,10 +246,9 @@ it("resumes unsigned legacy JSONL checkpoints, writes signed exact IDs, and reje
     return result;
   });
   try {
-    const access = createNativeStorageUsageAccess();
     const pricedModels: Array<string | undefined> = [];
     const scanFile = async (previous?: UsageCostRollupEntry) => {
-      const file = await resolveUsageCostTranscriptFile(filePath, access);
+      const file = await resolveUsageCostTranscriptFile(filePath);
       expect(file).toBeDefined();
       return scanUsageCostRollupInWorker({
         file: file!,
@@ -203,7 +259,7 @@ it("resumes unsigned legacy JSONL checkpoints, writes signed exact IDs, and reje
           return pairs.map(() => ({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }));
         },
         readRows: async () => [],
-        access,
+        readGeneration: async () => undefined,
       });
     };
     const previous = await scanFile();
@@ -241,7 +297,7 @@ it("resumes unsigned legacy JSONL checkpoints, writes signed exact IDs, and reje
     expect(upgraded.countedRecords).toBe(2);
     expect(Object.values(upgraded.rollup.buckets)[0]?.totals.totalTokens).toBe(10);
 
-    const oldFile = await resolveUsageCostTranscriptFile(filePath, access);
+    const oldFile = await resolveUsageCostTranscriptFile(filePath);
     inode -= 1n;
     expect(Number(BigInt.asUintN(64, inode))).toBe(9_223_372_036_854_776_000);
     await expect(
@@ -250,7 +306,7 @@ it("resumes unsigned legacy JSONL checkpoints, writes signed exact IDs, and reje
         pricingFingerprint: "synthetic-pricing",
         resolveCosts: async (pairs) => pairs.map(() => undefined),
         readRows: async () => [],
-        access,
+        readGeneration: async () => undefined,
       }),
     ).rejects.toThrow("transcript changed identity while scanning");
 
