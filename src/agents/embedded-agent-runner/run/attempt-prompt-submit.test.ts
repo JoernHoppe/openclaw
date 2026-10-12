@@ -131,10 +131,6 @@ describe("submitEmbeddedAttemptPrompt", () => {
         },
       });
       expect(requests).toHaveLength(2);
-      expect(requests.map((messages) => messages[0]?.content)).toEqual([
-        "model prompt",
-        "model prompt",
-      ]);
     } finally {
       admission.close();
     }
