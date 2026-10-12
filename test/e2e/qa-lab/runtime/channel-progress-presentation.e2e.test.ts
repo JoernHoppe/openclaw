@@ -22,12 +22,6 @@ import {
   normalizeResponsesInput,
   resolveMockSubagentTurn,
 } from "../../../../extensions/qa-lab/test-api.js";
-import { resolveSessionStorePathCore } from "../../../../src/config/sessions/paths.js";
-import {
-  listSessionEntriesReadOnly,
-  loadSessionEntryReadOnly,
-  updateSessionEntry,
-} from "../../../../src/config/sessions/session-accessor.js";
 import {
   connectGatewayClient,
   disconnectGatewayClient,
@@ -518,6 +512,47 @@ async function startTablePresentationFixture(
     path.join(await fs.realpath(os.tmpdir()), "channel-progress-"),
   );
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
+  const mutationPluginId = "qa-progress-mutation";
+  const mutationPluginDir = path.join(directory, mutationPluginId);
+  if (rejectStop) {
+    await fs.mkdir(mutationPluginDir);
+    await fs.writeFile(
+      path.join(mutationPluginDir, "openclaw.plugin.json"),
+      JSON.stringify({
+        id: mutationPluginId,
+        activation: { onStartup: true },
+        configSchema: { type: "object", additionalProperties: false, properties: {} },
+      }),
+    );
+    // Mutate through the running Gateway so its session owner publishes the route loss.
+    await fs.writeFile(
+      path.join(mutationPluginDir, "index.mjs"),
+      `import { applySessionEntryPatch, getSessionEntryAsync, listSessionEntriesAsync, resolveStorePath } from "openclaw/plugin-sdk/session-store-runtime";
+export default {
+  id: "${mutationPluginId}",
+  register(api) {
+    api.registerGatewayMethod("${mutationPluginId}.clearOrigin", async ({ params, respond }) => {
+      const scope = { agentId: "qa", storePath: resolveStorePath(api.config.session?.store, { agentId: "qa" }) };
+      const sessions = (await listSessionEntriesAsync(scope)).filter(({ entry }) =>
+        entry.delivery?.kind === "external" && entry.delivery.context.channel === "slack" &&
+        entry.delivery.context.to?.includes(params.conversationId));
+      if (sessions.length !== 1) {
+        respond(true, { count: sessions.length });
+        return;
+      }
+      const { sessionKey, entry } = sessions[0];
+      const target = { ...scope, sessionKey };
+      await applySessionEntryPatch({ ...target, expected: { sessionId: entry.sessionId },
+        patch: { delivery: { kind: "none" }, updatedAt: Date.now() },
+        skipMaintenance: true, requireWriteSuccess: true });
+      const after = await getSessionEntryAsync({ ...target, readConsistency: "latest" });
+      respond(true, { count: sessions.length, beforeSessionId: entry.sessionId,
+        afterSessionId: after?.sessionId, delivery: after?.delivery });
+    }, { scope: "operator.admin" });
+  },
+};`,
+    );
+  }
   const writes: WireWrite[] = [];
   const adapter = await startOpenClawCrablineAdapter({
     channel,
@@ -563,6 +598,17 @@ async function startTablePresentationFixture(
     runtimeEnvPatch: environment,
     mutateConfig: (config) => {
       const configured = progressConfig(config, channel, native, tools, compact);
+      if (rejectStop) {
+        configured.plugins = {
+          ...configured.plugins,
+          allow: [...(configured.plugins?.allow ?? []), mutationPluginId],
+          load: {
+            ...configured.plugins?.load,
+            paths: [...(configured.plugins?.load?.paths ?? []), mutationPluginDir],
+          },
+          entries: { ...configured.plugins?.entries, [mutationPluginId]: { enabled: true } },
+        };
+      }
       if (channel === "discord") {
         configured.channels!.discord!.proxy = api.proxyUrl;
         const qa = configured.agents!.entries!.qa!;
@@ -1670,33 +1716,12 @@ describe("channel progress presentation through an isolated Gateway", () => {
           (message) => !sharedSlack || message.channel === conversationId,
         );
       const clearOrigin = async () => {
-        const scope = {
-          agentId: "qa",
-          env: gateway.runtimeEnv,
-          storePath: resolveSessionStorePathCore(gateway.cfg.session?.store, {
-            agentId: "qa",
-            env: gateway.runtimeEnv,
-          }),
-          readConsistency: "latest" as const,
-        };
-        const sessions = listSessionEntriesReadOnly(scope).filter(
-          ({ entry }) =>
-            entry.delivery?.kind === "external" &&
-            entry.delivery.context.channel === "slack" &&
-            entry.delivery.context.to?.includes(conversationId),
+        const result = asRecord(
+          await gateway.call("qa-progress-mutation.clearOrigin", { conversationId }),
         );
-        expect(sessions).toHaveLength(1);
-        const { sessionKey, entry } = sessions[0]!;
-        const target = { ...scope, sessionKey };
-        await updateSessionEntry(
-          target,
-          (current) => {
-            expect(current.sessionId).toBe(entry.sessionId);
-            return { delivery: { kind: "none" }, updatedAt: Date.now() };
-          },
-          { skipMaintenance: true, requireWriteSuccess: true },
-        );
-        expect(loadSessionEntryReadOnly(target)?.delivery).toEqual({ kind: "none" });
+        expect(result.count).toBe(1);
+        expect(result.afterSessionId).toBe(result.beforeSessionId);
+        expect(result.delivery).toEqual({ kind: "none" });
       };
       let expectedThreadTs: unknown;
       const injectProviderMessage = async (text: string, threadId?: string) => {
