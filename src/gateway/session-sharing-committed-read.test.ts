@@ -19,6 +19,7 @@ import {
   runOpenClawAgentWriteTransaction,
 } from "../state/openclaw-agent-db.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
+import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "./server-chat.agent-events.test-helpers.js";
 import { withSessionMutationCommitGuard } from "./server-methods/session-mutation-guards.js";
@@ -53,6 +54,7 @@ describe("committed session mutation authorization", () => {
           cfg.session = { store: state.statePath("legacy", "sessions.json") };
         }
         const client = roleClient("view", `worker-grant-${mode}`);
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const sessionKey = "agent:main:worker-grant";
         const sessionId = "worker-grant-session";
         const scope = { agentId: "main", sessionKey, storePath: cfg.session?.store };
@@ -149,6 +151,7 @@ describe("committed session mutation authorization", () => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const cfg = rolePolicyConfig();
         const client = roleClient("view", "committed-reader");
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const sessionKey = "agent:main:committed-authorization";
         const scope = { agentId: "main", sessionKey };
         const shared = { sessionId: "original", updatedAt: 1, visibility: "shared" as const };
@@ -332,6 +335,7 @@ describe("committed session mutation authorization", () => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const cfg = rolePolicyConfig();
         const client = roleClient("write", "committed-main-key");
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const sessionKey = "agent:main:committed-authorization";
         replaceSessionEntrySync(
           { agentId: "main", sessionKey },
