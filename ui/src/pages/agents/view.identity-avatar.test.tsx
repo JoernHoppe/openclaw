@@ -163,7 +163,12 @@ it("keeps a missing settings avatar on its fallback and recovers on a new revisi
   });
 
   changeAvatarRevision(view, 2);
-  await waitForFast(() => expect(fetchAvatar).toHaveBeenCalledTimes(2));
+  await waitForFast(() =>
+    expect(
+      fetchAvatar,
+      `After avatar revision 2: ${fetchAvatar.mock.calls.map(([input]) => (input instanceof Request ? input.url : String(input))).join(", ")}`,
+    ).toHaveBeenCalledTimes(2),
+  );
   await waitForFast(() => expect(avatarImage(view)).toBeNull());
   updateView(view, {
     overview: {
@@ -173,13 +178,19 @@ it("keeps a missing settings avatar on its fallback and recovers on a new revisi
   });
   expect(avatarImage(view)).toBeNull();
   await expectAvatarFallback(view);
-  expect(fetchAvatar).toHaveBeenCalledTimes(2);
+  expect(
+    fetchAvatar,
+    `After rename at avatar revision 2: ${fetchAvatar.mock.calls.map(([input]) => (input instanceof Request ? input.url : String(input))).join(", ")}`,
+  ).toHaveBeenCalledTimes(2);
 
   changeAvatarRevision(view, 3);
   await waitForFast(() => {
     expect(avatarImage(view)?.getAttribute("src")).toBe("blob:settings-avatar-2");
   });
-  expect(fetchAvatar).toHaveBeenCalledTimes(3);
+  expect(
+    fetchAvatar,
+    `After avatar revision 3: ${fetchAvatar.mock.calls.map(([input]) => (input instanceof Request ? input.url : String(input))).join(", ")}`,
+  ).toHaveBeenCalledTimes(3);
 });
 
 it("keeps a decode failure on its fallback across rerenders until the revision changes", async () => {

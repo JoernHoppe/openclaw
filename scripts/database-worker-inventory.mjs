@@ -22,6 +22,22 @@ const excluded =
   /(?:^|\/)(?:__tests__|__fixtures__|test|tests|test-utils|test-helpers|test-support|test-fixtures|test-harness|fixtures|e2e)(?:\/|$)|(?:^|[/.-])(?:test|spec|e2e|test-support|test-helpers|test-fixtures|test-harness|test-runtime)(?:[.-])/;
 const reviewed = new Map([
   [
+    "src/agents/github-oauth-records.native.ts",
+    {
+      priority: 99,
+      evidence:
+        "Deprecated Gateway SDK cancelAuthorization/retireProfile methods only; bundled callers await the Async replacements. Native completion is preserved until the next Plugin SDK major.",
+    },
+  ],
+  [
+    "src/secrets/store/secret-store-hidden-github.kernel.ts",
+    {
+      priority: 99,
+      evidence:
+        "Shared SQL kernel for worker-owned GitHub records and deprecated synchronous managed/personal Gateway SDK methods. Native compatibility calls remain explicit T1 debt.",
+    },
+  ],
+  [
     "src/gateway/mention-inbox-store.ts",
     {
       priority: 3,
@@ -188,7 +204,40 @@ const reviewed = new Map([
     "src/config/sessions/conversation-registry.ts",
     {
       priority: 99,
-      evidence: "Reaction bindings use worker; other synchronous registry callers remain",
+      evidence:
+        "Async registry reads use the session actor or session-transcript.worker.ts. selectConversationRows remains native for incognito, deprecated SDK getConversationSession, and session-entry-current-check.ts's retained synchronous source assertion; do not classify the shared read as worker-only.",
+    },
+  ],
+  [
+    "src/config/sessions/session-accessor.sqlite-conversation-read.ts",
+    {
+      priority: 99,
+      evidence:
+        "session-transcript.worker.ts and session-source-predicate.worker.ts read conversation rows in workers; conversation-registry.ts and entry-mutation.ts retain native incognito, deprecated SDK, and borrowed transaction callers. The shared query remains mixed.",
+    },
+  ],
+  [
+    "src/config/sessions/session-accessor.sqlite-conversation.ts",
+    {
+      priority: 99,
+      evidence:
+        "All mutations flow through writeSessionEntry in entry-store.ts, or conversation.register in openclaw-agent-execution-operations.ts. The latter is worker-only; writeSessionEntry also serves native incognito, opaque SDK transactions, and CLI import. Preserve the mixed classification of the shared identity and association kernels.",
+    },
+  ],
+  [
+    "src/config/sessions/session-accessor.sqlite-delete-snapshot.ts",
+    {
+      priority: 99,
+      evidence:
+        "Archive, cold-storage, cleanup and lifecycle workers use this deletion snapshot; offline full-store reset, deprecated SessionManager reload, and native lifecycle/opaque SDK transactions also reach it. These checks prevent deleting changed user data; the shared snapshot is not worker-only.",
+    },
+  ],
+  [
+    "src/config/sessions/session-accessor.sqlite-archive-transaction.ts",
+    {
+      priority: 99,
+      evidence:
+        "reclaimSqliteSessionInTransaction dispatches archive metadata writes in mutation workers; archive-store.ts also calls it only in its !supportsOpenClawAgentDatabaseExecution native branch. Durable publication uses publishSessionStateArchivesInWorker; native incognito/compatibility publication remains.",
     },
   ],
   [
@@ -230,6 +279,17 @@ const reviewed = new Map([
 
 // Match lexical operation paths, not moving line numbers or whole mixed modules.
 const reviewedOperations = new Map([
+  [
+    "src/secrets/store/secret-store-hidden-github.kernel.ts",
+    [
+      {
+        tier: "W",
+        operations: ["listHiddenGitHubSecretsInDatabase"],
+        evidence:
+          "Only githubSecrets.list in secret-store-github-handoff.worker.ts selects hidden record listings; native SDK compatibility uses exact read/delete operations only.",
+      },
+    ],
+  ],
   [
     "src/config/io.health-state.kernel.ts",
     [
@@ -384,6 +444,27 @@ const reviewedOperations = new Map([
         ],
         evidence:
           "Only offline full-store reset calls these at session-accessor.sqlite-reset.ts:65,239 via commands/cleanup-utils.ts; other archive operations retain native lifecycle callers",
+      },
+      {
+        tier: "T1",
+        operations: ["hasPendingSessionTranscriptArchives"],
+        evidence:
+          "Entry/lifecycle reader workers and replacement-state.ts query pending publication. Replacement-state also serves native incognito and opaque SDK replacement transactions; keep this shared read mixed.",
+      },
+      {
+        tier: "T1",
+        operations: [
+          "prepareSessionTranscriptArchivePublishPlans",
+          "recordSessionTranscriptArchivePublishResults",
+        ],
+        evidence:
+          "Durable archive publication uses openclaw-agent-execution-operations.ts workers. archive-transaction.ts retains the !supportsOpenClawAgentDatabaseExecution native publication path from archive-store.ts; no worker-only classification while that compatibility/incognito owner remains.",
+      },
+      {
+        tier: "T1",
+        operations: ["persistSessionTranscriptArchive"],
+        evidence:
+          "Only lifecycle-state.ts deleteMaterializedSessionStatePlans inserts the canonical recovery copy. That lifecycle kernel serves mutation workers plus native incognito and opaque SDK deletion transactions; retain the shared user-data integrity check and mixed tier.",
       },
     ],
   ],
@@ -981,6 +1062,12 @@ const reviewedOperations = new Map([
         ],
         evidence:
           "Only session-transcript.worker.ts:230 (presence) and session-accessor.sqlite-archive.worker.ts:483,491 (page/final) call these readers; shared archive listing remains T1.",
+      },
+      {
+        tier: "T1",
+        operations: ["listTranscriptArchivesFromDatabase"],
+        evidence:
+          "Durable archive enumeration reaches this query through transcript, Memory corpus, and usage-cost workers. session-transcript-inventory-runtime.ts retains its native incognito branch; deprecated loadArchivedSessions rejects unbound durable sync access. The shared list kernel remains mixed.",
       },
     ],
   ],
