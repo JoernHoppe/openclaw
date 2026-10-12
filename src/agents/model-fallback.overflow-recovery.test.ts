@@ -112,12 +112,15 @@ describe("embedded overflow recovery before model fallback", () => {
         provider: "openai",
         model: "mock-1",
         agentDir,
+        manifestPlugins: [],
+        skipAuthProfileRuntime: true,
         classifyResult: classifyEmbeddedAgentRunResultForModelFallback,
         run: (provider, model) =>
           runEmbeddedAgent({
             sessionId: "overflow-recovery",
             sessionKey: "agent:test:overflow-recovery",
             sessionManager,
+            sessionPersistence: "detached",
             workspaceDir,
             agentDir,
             config: cfg,
@@ -134,6 +137,11 @@ describe("embedded overflow recovery before model fallback", () => {
         expect(events).toEqual(["mock-1", "compact", "mock-1"]);
         expect(result.model).toBe("mock-1");
         expect(result.attempts).toEqual([]);
+      } else if (sideEffects) {
+        expect(events).toEqual(["mock-1"]);
+        expect(result.model).toBe("mock-1");
+        expect(result.result.meta.replayInvalid).toBe(true);
+        expect(result.attempts).toEqual([]);
       } else {
         expect(events).toEqual([
           "mock-1",
@@ -143,17 +151,10 @@ describe("embedded overflow recovery before model fallback", () => {
           "mock-1",
           "compact",
           "mock-1",
-          ...(sideEffects ? [] : ["mock-2"]),
+          "mock-2",
         ]);
-        expect(result.model).toBe(sideEffects ? "mock-1" : "mock-2");
-        if (sideEffects) {
-          expect(result.result.meta).toMatchObject({
-            replayInvalid: true,
-            error: { kind: "context_overflow" },
-          });
-        } else {
-          expect(result.attempts).toMatchObject([{ reason: "context_overflow" }]);
-        }
+        expect(result.model).toBe("mock-2");
+        expect(result.attempts).toMatchObject([{ reason: "context_overflow" }]);
       }
       if (!sideEffects) {
         expect(result.result.payloads?.[0]?.text).toBe("Answer after recovery");
