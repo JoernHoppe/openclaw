@@ -20,7 +20,7 @@ import "./app-sidebar.ts";
 const requestNativeFrame = window.requestAnimationFrame.bind(window);
 const cancelNativeFrame = window.cancelAnimationFrame.bind(window);
 const catalogClock: Parameters<typeof vi.useFakeTimers>[0] = {
-  toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+  toFake: ["setTimeout", "clearTimeout", "Date"],
 };
 
 async function mountTab(
