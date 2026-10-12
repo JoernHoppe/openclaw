@@ -47,7 +47,7 @@ it("loads on reveal, keeps cold content hidden, and never replays canceled or su
   expect(tooltipSurface(escaped.tooltip)?.querySelector(".tooltip-content")).toBeNull();
   const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
   escaped.trigger.dispatchEvent(escape);
-  expect(escape.defaultPrevented).toBe(true);
+  expect(escape.defaultPrevented).toBe(false);
 
   hoverTrigger(left.trigger);
   vi.advanceTimersByTime(150);

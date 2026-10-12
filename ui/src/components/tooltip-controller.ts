@@ -63,9 +63,12 @@ export class TooltipController {
     ) {
       return false;
     }
-    const active =
-      TooltipController.#pendingByDocument.get(ownerDocument) ??
-      TooltipController.#activeByDocument.get(ownerDocument);
+    // Cancel loading intent without giving an invisible tooltip keyboard authority.
+    const pending = TooltipController.#pendingByDocument.get(ownerDocument);
+    if (pending) {
+      pending.#close();
+    }
+    const active = TooltipController.#activeByDocument.get(ownerDocument);
     if (!active) {
       return false;
     }
