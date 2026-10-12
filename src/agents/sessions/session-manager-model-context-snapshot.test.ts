@@ -548,6 +548,8 @@ it.each([
   "worker-reset",
   "worker-compaction",
   "local-reset",
+  "local-branch",
+  "fork",
   "retarget",
   "truncated",
 ] as const)(
@@ -565,7 +567,7 @@ it.each([
       };
       await upsertSessionEntryCore(target, { sessionId: target.sessionId, updatedAt: 1 });
       const source = await SessionManager.openAsync(target);
-      await source.appendMessageAsync(makeUserMessage("question", 1));
+      const questionId = await source.appendMessageAsync(makeUserMessage("question", 1));
       const replyId = await source.appendMessageAsync(
         Object.assign(makeAgentAssistantMessage({ content: [{ type: "text", text: "answer" }] }), {
           __openclaw: { upstreamUserText: "private-durable-context" },
@@ -607,6 +609,17 @@ it.each([
         } else if (change === "local-reset") {
           manager.resetLeaf();
           expectedMessages = [];
+        } else if (change === "local-branch") {
+          manager.branch(questionId!);
+          expectedMessages = [{ role: "user", content: "question" }];
+        } else if (change === "fork") {
+          const forkId = await runWithoutOwnedSessionTranscriptWrites(() =>
+            manager.createBranchedSession(questionId!),
+          );
+          expect(forkId).toBe(manager.getSessionId());
+          expect(forkId).not.toBe(target.sessionId);
+          readTarget = { ...target, sessionId: forkId! };
+          expectedMessages = [{ role: "user", content: "question" }];
         } else if (change === "retarget") {
           readTarget = {
             ...target,
@@ -631,7 +644,7 @@ it.each([
         try {
           const consume = () => manager[sessionManagerReadInitialContext]();
           const context =
-            change === "retarget"
+            change === "retarget" || change === "fork"
               ? await withSelectedTranscriptReader(readTarget, consume)
               : await consume();
           expect(JSON.stringify(context)).not.toMatch(/private-durable-context|unpersisted/);
@@ -640,7 +653,8 @@ it.each([
             change === "unchanged" ||
             change === "default-selector" ||
             change === "mutable-message" ||
-            change === "local-reset"
+            change === "local-reset" ||
+            change === "local-branch"
               ? 0
               : 1;
           expect(readContext).toHaveBeenCalledTimes(expectedReads);
@@ -649,7 +663,7 @@ it.each([
           readContext.mockRestore();
           readModel.mockRestore();
         }
-        if (change === "local-reset") {
+        if (change === "local-reset" || change === "local-branch") {
           const durable = await SessionManager.openModelContextAsync(target);
           expect(durable.buildSessionContext().messages).toMatchObject([
             { role: "user", content: "question" },
