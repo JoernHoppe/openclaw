@@ -145,6 +145,7 @@ export function retainSessionEntryWorkerPublication(params: {
       sharingUnchangedKeys: readonly string[] = [],
       generationUnchangedKeys: readonly string[] = [],
       transcriptPublication?: readonly SessionTranscriptAuthorityReceipt[],
+      entryPostimages?: ReadonlyMap<string, SessionEntry>,
     ) {
       if (pending) {
         return;
@@ -154,6 +155,7 @@ export function retainSessionEntryWorkerPublication(params: {
       owner.membershipInvalidated = new Set(membershipInvalidatedKeys);
       owner.sharingUnchanged = new Set(sharingUnchangedKeys);
       owner.generationUnchanged = new Set(generationUnchangedKeys);
+      owner.entryPostimages = entryPostimages;
       pending = true;
       for (const sessionKey of keys) {
         const key = `${identityKey}\0${sessionKey}`;

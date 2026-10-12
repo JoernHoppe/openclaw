@@ -287,6 +287,15 @@ export function retainPreparedSessionSharingFacts(params: SessionSharingRetentio
       if (publication.settled || publication.superseded.has(params.sessionKey)) {
         return false;
       }
+      const entryPostimage = publication.entryPostimages?.get(params.sessionKey);
+      if (read.predicate && entryPostimage) {
+        // These fields are unchanged whether the pending transaction commits or rolls back.
+        try {
+          return !read.predicate.matches(entryPostimage);
+        } catch {
+          return true;
+        }
+      }
       if (!read.predicate || !publication.participantProjections?.has(params.sessionKey)) {
         return true;
       }

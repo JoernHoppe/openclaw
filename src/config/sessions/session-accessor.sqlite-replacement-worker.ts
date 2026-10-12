@@ -563,6 +563,11 @@ export async function runSessionEntryWorkerMutation<T>(
         committed.sharingUnchangedKeys,
         committed.generationUnchangedKeys,
         committed.transcriptPublication,
+        new Map(
+          [...committed.current].filter(
+            ([key]) => !committed.unavailableParticipantKeys?.includes(key),
+          ),
+        ),
       );
     },
     executionOptions.retainedExecution,

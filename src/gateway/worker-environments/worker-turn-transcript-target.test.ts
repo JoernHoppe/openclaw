@@ -197,11 +197,59 @@ it("retains a logical-store worker transcript and refuses writer changes without
     });
     const observer = observeHostDataSql();
     const incomingRpc = new AsyncResource("worker-transcript-rpc");
+    const withPendingReplacement = async (
+      assertPending: () => void,
+      write: () => Promise<void>,
+    ) => {
+      let checked = false;
+      const admission = probe.admission(workerAdmission, (request, grant, admit) => {
+        if (
+          request.stage !== "commit" ||
+          !isRecord(request.facts) ||
+          !isRecord(request.facts.publication) ||
+          request.facts.publication.kind !== "session-entry-replacements"
+        ) {
+          admit(request, grant);
+          return;
+        }
+        admit(request, (beforeRelease) =>
+          grant(() => {
+            beforeRelease?.();
+            checked = true;
+            assertPending();
+          }),
+        );
+      });
+      try {
+        await write();
+      } finally {
+        admission.mockRestore();
+      }
+      expect(checked).toBe(true);
+    };
     try {
+      {
+        await using rollbackSource = await prepareWorkerTurnTranscriptSource(target);
+        const rollback = new Error("Roll back worker replacement");
+        await withPendingReplacement(
+          () => {
+            expect(rollbackSource).toThrow("transcript identity is no longer current");
+            throw rollback;
+          },
+          async () => {
+            await expect(
+              patchSessionEntryCore(target, () => ({ activeWriterRunId: "rolled-back-writer" })),
+            ).rejects.toMatchObject({ code: "outcome-unknown" });
+          },
+        );
+        expect(rollbackSource).toThrow("transcript identity is no longer current");
+      }
       await using source = await prepareWorkerTurnTranscriptSource(target);
       source();
-      await patchSessionEntryCore(target, () => ({ label: "same writer" }), {
-        workerGuard: { source },
+      await withPendingReplacement(source, async () => {
+        await patchSessionEntryCore(target, () => ({ label: "same writer" }), {
+          workerGuard: { source },
+        });
       });
       source();
       let checkedPendingParticipant = false;
@@ -261,7 +309,15 @@ it("retains a logical-store worker transcript and refuses writer changes without
             resolveWorkerTurnTranscriptTarget({ ...pinned, sessionTarget: pinned });
           });
           effect();
-          await patchSessionEntryCore(target, () => ({ activeWriterRunId: "next-writer" }));
+          await withPendingReplacement(
+            () => {
+              expect(source).toThrow("transcript identity is no longer current");
+              expect(effect).toThrow("transcript identity is no longer current");
+            },
+            async () => {
+              await patchSessionEntryCore(target, () => ({ activeWriterRunId: "next-writer" }));
+            },
+          );
           expect(effect).toThrow("transcript identity is no longer current");
           expect(source).toThrow("transcript identity is no longer current");
           expect(() => incomingRpc.runInAsyncScope(assertReceipt)).toThrow(

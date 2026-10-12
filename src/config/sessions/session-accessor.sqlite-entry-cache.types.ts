@@ -224,6 +224,8 @@ export type PendingSessionEntryPublication = {
   superseded: Set<string>;
   membershipInvalidated: Set<string>;
   sharingUnchanged: Set<string>;
+  /** Planned metadata under the writer lock; matching fields survive COMMIT or rollback. */
+  entryPostimages?: ReadonlyMap<string, SessionEntry>;
   /** An undefined value records a participant command with no projection change. */
   participantProjections?: ReadonlyMap<
     string,
