@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isInternalSessionEffectsKey } from "../../../config/sessions/internal-session-key.js";
 import { retainPreparedSessionEntryPredicate } from "../../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import { readCommittedIncognitoSessionSharing } from "../../../config/sessions/session-accessor.sqlite-incognito-sharing.js";
 import { projectSessionEntryCapabilityFacts } from "../../../config/sessions/session-entry-capability-facts.js";
 import {
   captureIncognitoSessionSource,
@@ -16,6 +17,8 @@ import {
 } from "../../../routing/session-key.js";
 import { onSessionIdentityMutation } from "../../../sessions/session-lifecycle-events.js";
 import { sessionChanges } from "../../../sessions/session-row-changes.js";
+import { getOpenIncognitoAgentDatabase } from "../../../state/openclaw-agent-db-lifecycle.js";
+import { resolveIncognitoOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
 
 type PersistedSessionCapabilityEntry = Pick<
   SessionEntry,
@@ -284,6 +287,15 @@ export function createSubagentSessionStore(
   }
   let preparedEntries = preparedReads.getStore();
   const readDurable = (query: SessionCapabilityRead) => {
+    if (query.sessionKey !== undefined && isIncognitoSessionKey(query.sessionKey)) {
+      const pathname = resolveIncognitoOpenClawAgentSqlitePath({ agentId: query.agentId });
+      const database = getOpenIncognitoAgentDatabase(query.agentId, pathname);
+      const facts = database && readCommittedIncognitoSessionSharing(database.db, query.sessionKey);
+      if (facts?.entry && !facts.capability) {
+        throw new Error("Session capability metadata is unavailable");
+      }
+      return facts?.capability;
+    }
     const owner = getInProcessGatewayRequestContext()?.sessionRowProjectionOwner;
     const current =
       owner instanceof SessionRowProjectionBinding

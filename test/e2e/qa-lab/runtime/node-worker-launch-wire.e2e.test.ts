@@ -25,6 +25,7 @@ import {
   WORKER_PERMISSION_PROMPT,
   WORKER_PERMISSION_REPLY,
   startMidturnProvider,
+  waitFor,
 } from "./cloud-worker-midturn-loss-fixture.js";
 import {
   closeWireServer,
@@ -274,9 +275,18 @@ describe("node worker launch wire", () => {
               wireMessageText(message).includes(BASELINE_REPLY),
           ),
         ).toHaveLength(1);
-        const described = (await gateway.call("sessions.describe", { key: SESSION_KEY })) as {
-          session?: { execCwd?: string; spawnedCwd?: string; placement?: Record<string, unknown> };
-        };
+        const described = await waitFor("reconciled worker workspace", async () => {
+          const current = (await gateway.call("sessions.describe", { key: SESSION_KEY })) as {
+            session?: {
+              execCwd?: string;
+              spawnedCwd?: string;
+              placement?: Record<string, unknown>;
+            };
+          };
+          return current.session?.placement?.workspaceBaseManifestRef !== baseManifestRef
+            ? current
+            : undefined;
+        });
         expect(described.session?.placement).toMatchObject({
           state: "active",
           remoteWorkspaceDir,

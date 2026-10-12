@@ -51,7 +51,7 @@ import {
   type PreparedSessionSourceFacts,
   type SessionFactsRead,
 } from "./session-sharing-preparation.js";
-import { createSessionListEntryFilter, resolveSessionSharingTarget } from "./session-sharing.js";
+import { prepareProjectedSessionSharing, resolveSessionSharingTarget } from "./session-sharing.js";
 import { resolveSessionStoreIdentity, resolveSessionStoreKey } from "./session-store-key.js";
 import {
   resolveTranscriptPathForComparison,
@@ -140,6 +140,8 @@ function resolveSessionHistoryHttpClient(
       scopes,
     },
     authenticatedUserProfile: requestAuth.authenticatedUserProfile,
+    preparedSessionProfile: requestAuth.preparedSessionProfile,
+    internal: { operatorRoleActor: requestAuth.operatorRoleActor },
   };
 }
 
@@ -305,8 +307,11 @@ async function serveAuthorizedSessionHistory(
   const historyClient = resolveSessionHistoryHttpClient(requestAuth, operatorScopes);
   if (
     !entry?.sessionId ||
-    createSessionListEntryFilter({ cfg, client: historyClient })?.(target.canonicalKey, entry) ===
-      false
+    prepareProjectedSessionSharing({
+      cfg,
+      client: historyClient,
+      isMember: () => false,
+    }).entryFilter?.(target.canonicalKey, entry) === false
   ) {
     sendSessionNotFound();
     return true;
@@ -389,10 +394,11 @@ async function serveAuthorizedSessionHistory(
       currentTarget.entry.lifecycleRevision !== entry.lifecycleRevision ||
       (entry.sessionStartedAt !== undefined &&
         currentTarget.entry.sessionStartedAt !== entry.sessionStartedAt) ||
-      createSessionListEntryFilter({ cfg: currentConfig, client: currentClient })?.(
-        currentTarget.canonicalKey,
-        currentTarget.entry,
-      ) === false
+      prepareProjectedSessionSharing({
+        cfg: currentConfig,
+        client: currentClient,
+        isMember: () => false,
+      }).entryFilter?.(currentTarget.canonicalKey, currentTarget.entry) === false
     ) {
       return false;
     }

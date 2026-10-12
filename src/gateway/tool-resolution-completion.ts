@@ -311,10 +311,15 @@ export function createCompletionGrantLineageAdmission(params: CompletionGrantLin
   };
   return {
     admission,
-    isCurrent: () =>
-      evaluateGatewayToolCallerReceiptAdmission(admission, () =>
-        isCompletionGrantLineageCurrent(params),
-      ),
+    isCurrent: () => {
+      try {
+        return evaluateGatewayToolCallerReceiptAdmission(admission, () =>
+          isCompletionGrantLineageCurrent(params),
+        );
+      } catch {
+        return false;
+      }
+    },
   };
 }
 

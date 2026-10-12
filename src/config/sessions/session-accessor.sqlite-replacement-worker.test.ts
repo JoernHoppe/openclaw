@@ -707,15 +707,13 @@ it.each([
       expect(followup).not.toHaveBeenCalled();
       expect(committedLifecycle).toHaveBeenCalledTimes(missingReceipt ? 0 : 1);
       expect(observed).toEqual([
-        missingReceipt || nativeUnknown
-          ? undefined
-          : { visibility: "read-only", membership: ["member"] },
+        missingReceipt ? undefined : { visibility: "read-only", membership: ["member"] },
       ]);
       expect(sharing.readCurrent()?.entry?.visibility).toBe(
-        missingReceipt || nativeUnknown ? undefined : "read-only",
+        missingReceipt ? undefined : "read-only",
       );
       expect(preparedPublications).toHaveLength(1);
-      if (missingReceipt || nativeUnknown) {
+      if (missingReceipt) {
         expect(preparedPublications[0]).toBeUndefined();
       } else {
         expect(preparedPublications[0]?.entry).toMatchObject({

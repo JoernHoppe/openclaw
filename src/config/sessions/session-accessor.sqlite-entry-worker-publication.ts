@@ -298,6 +298,9 @@ export function retainSessionEntryWorkerPublication(params: {
       ) {
         replacement = undefined;
         unknown = true;
+      } else if (replacement) {
+        // Lost completion delivery does not erase this owner's acknowledged COMMIT facts.
+        unknown = false;
       }
       const committedTranscriptChanges = [
         ...transcriptChanges,

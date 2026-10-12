@@ -23,6 +23,7 @@ import type { SqliteWorkerAdmissionRequest } from "../../../infra/sqlite-worker-
 import { closeOpenClawAgentDatabasesAsync } from "../../../state/openclaw-agent-db-lifecycle.js";
 import { openOpenClawAgentDatabase } from "../../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
+import { prepareUserProfileCatalog } from "../../../state/user-profile-list.js";
 import { setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../../state/user-profiles.js";
 import * as voiceWriters from "../../../talk/client-voice-session-write.js";
@@ -58,6 +59,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-owner@example.test");
       setUserProfileRole(profile.id, "write");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       Object.assign(fixture.client, sharingPolicyClient({ user: profile.id }));
       const cfg = { ...rolePolicyConfig(), ...fixture.context.getRuntimeConfig() };
       fixture.context.getRuntimeConfig = () => cfg;
@@ -93,7 +95,9 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
           Promise.race([
             prepared.promise,
             pending.then(() => {
-              throw new Error("Creation finished before its authority wait");
+              throw new Error(
+                `Creation finished before its authority wait: ${respond.mock.lastCall?.[2]?.message ?? "no error response"}`,
+              );
             }),
           ]),
           signal,
@@ -129,6 +133,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-profile@example.test");
       setUserProfileRole(profile.id, "write");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       Object.assign(fixture.client, sharingPolicyClient({ user: profile.id }));
       const policy = rolePolicyConfig();
       policy.gateway!.roles!.definitions.view!.agents = [];
@@ -169,7 +174,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
           context: fixture.context,
           client: fixture.client,
         } as never);
-        expect(changed).toBe(true);
+        expect(changed, respond.mock.lastCall?.[2]?.message).toBe(true);
         const entry = loadSessionEntry({ agentId: "main", sessionKey: key });
         if (phase === "preparation") {
           expect(entry).toBeUndefined();

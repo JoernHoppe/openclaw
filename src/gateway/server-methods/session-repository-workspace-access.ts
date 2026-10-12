@@ -15,6 +15,7 @@ import {
 } from "../../worker/workspace-inspection-protocol.js";
 import { captureSessionMutationRouting } from "../session-sharing-preparation.js";
 import { loadGatewaySessionEntryReadOnly } from "../session-utils.js";
+import type { WorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
 import { readSessionWorkerPlacementAsync } from "../worker-environments/session-placement-lifecycle.js";
 import type { GatewayRequestContext } from "./types.js";
 
@@ -38,11 +39,15 @@ export async function resolveRepositoryWorkspaceAccess(
   };
   const metadata = captureSessionEntryMetadataRead(scope);
   let facts: ReturnType<typeof retainPreparedSessionSharingFacts> | undefined;
+  let placementRead:
+    | Awaited<ReturnType<WorkerSessionPlacementStore["prepareSessionPlacement"]>>
+    | undefined;
   let active = true;
   let unregister = () => {};
   const release = () => {
     active = false;
     facts?.release();
+    placementRead?.release();
     unregister();
   };
   let readCurrent: () => SessionEntryCurrentFacts | undefined = () =>
@@ -123,7 +128,10 @@ export async function resolveRepositoryWorkspaceAccess(
     };
     const placements = context?.workerSessionPlacementService;
     const environments = context?.workerEnvironmentService;
-    const placement = await readSessionWorkerPlacementAsync({ context: context ?? {}, sessionId });
+    placementRead = await placements?.prepareSessionPlacement?.(sessionId);
+    const placement = placementRead
+      ? placementRead.current()
+      : await readSessionWorkerPlacementAsync({ context: context ?? {}, sessionId });
     assertSession(repository.revision);
     if (placement?.state !== "active" || !environments) {
       return {
@@ -136,7 +144,9 @@ export async function resolveRepositoryWorkspaceAccess(
     }
     const assertCurrent = (expectedRevision?: number) => {
       assertSession(expectedRevision);
-      const current = placements?.getMany([sessionId]).get(sessionId);
+      const current = placementRead
+        ? placementRead.current()
+        : placements?.getMany([sessionId]).get(sessionId);
       const environment = environments.get(placement.environmentId);
       if (
         current?.state !== "active" ||

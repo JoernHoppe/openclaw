@@ -519,6 +519,11 @@ describe("accepted continuation status delivery", () => {
   });
 
   it("releases an accepted continuation when session-writer delivery is revoked", async () => {
+    const currentEntry = {
+      sessionId: "session-1",
+      lifecycleRevision: "revision-after-replacement",
+      activeWriterRunId: "run-after-replacement",
+    };
     let continuationOpen = true;
     const adopt = vi.fn(() => continuationOpen);
     const statusPayload = setReplyPayloadMetadata(
@@ -532,7 +537,7 @@ describe("accepted continuation status delivery", () => {
           },
         },
         sessionWriterDeliveryAuthority: {
-          readCurrentSession: () => sessionStoreMocks.currentEntry,
+          readCurrentSession: () => currentEntry,
           agentId: "main",
           expectedLifecycleRevision: "revision-before-replacement",
           expectedSessionId: "session-1",
@@ -542,11 +547,7 @@ describe("accepted continuation status delivery", () => {
         },
       },
     );
-    sessionStoreMocks.currentEntry = {
-      sessionId: "session-1",
-      lifecycleRevision: "revision-after-replacement",
-      activeWriterRunId: "run-after-replacement",
-    };
+    sessionStoreMocks.currentEntry = currentEntry;
     const settle = vi.fn(async () => {});
     const dispatcher = createReplyDispatcher({
       deliver: async (payload) =>
