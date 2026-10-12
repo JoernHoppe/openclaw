@@ -1913,7 +1913,6 @@
 ["src/agents/agent-command.live-model-switch.test.ts","./command/cli-compaction.js","4d618497ddea6835662af290a536e75871ce8738de1d19bed0e838fd240dd0b8",1]
 ["src/agents/agent-command.live-model-switch.test.ts","./command/delivery.runtime.js","01f73924a18348c58bfa1129dd24bd3662c7c9e3f85a7a93943cb138b9b73c04",1]
 ["src/agents/agent-command.live-model-switch.test.ts","./command/run-context.js","916d482bb06f8298f7b1e2098529edcdea291a3220ba6217a6aa5ab4b57749ac",1]
-["src/agents/agent-command.live-model-switch.test.ts","./command/session-store.runtime.js","ae887aea410747fe74504a8432136b96a5cd218d778b01b87c1ef99907358f43",1]
 ["src/agents/agent-command.live-model-switch.test.ts","./command/session.js","ce07dfeae9b25cd95a3a6398efb4cbc29f44df016b205ba07a7aaf52a0cdfbb9",1]
 ["src/agents/agent-command.live-model-switch.test.ts","./command/types.js","6682eba795ef444a67f787788100d1cbc4d56e41bf3e0cc9dbf300d5d575a1b1",1]
 ["src/agents/agent-command.live-model-switch.test.ts","./defaults.js","0f3713ea8b1187d0c7ba28252d8fe3e15f94b6e47081b63922627542f23a567d",1]

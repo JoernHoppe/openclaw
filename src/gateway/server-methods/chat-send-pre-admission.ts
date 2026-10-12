@@ -32,7 +32,10 @@ import {
   withAbortedPartialPersistenceWarning,
 } from "./chat-aborted-partial.js";
 import { resolveDurableChatClaim } from "./chat-restart-recovery.js";
-import { ACTIVE_LEAF_CHANGED_ERROR_REASON } from "./chat-send-active-leaf.js";
+import {
+  ACTIVE_LEAF_CHANGED_ERROR_REASON,
+  assertExpectedLeafActiveAsync,
+} from "./chat-send-active-leaf.js";
 import { prepareGoalChatSendRetry } from "./chat-send-goal-retry.js";
 import type { ChatSendPreAdmissionParams } from "./chat-send-pre-admission.types.js";
 import type { NormalizedChatSendRequest } from "./chat-send-request.js";
@@ -481,6 +484,26 @@ export async function runChatSendPreAdmission(
         throw error;
       }
     };
+    const beforeAbort = async () => {
+      try {
+        if (request.p.queueMode !== "steer" && session.expectedLeafEntryId !== undefined) {
+          await assertExpectedLeafActiveAsync(
+            {
+              canonicalKey: sessionKey,
+              storePath: stopStorePath,
+              entry,
+            },
+            session.agentId,
+            session.expectedLeafEntryId,
+            session.requestedSessionId,
+          );
+        }
+        assertCurrent();
+      } catch (error) {
+        guard.failure = { error };
+        throw error;
+      }
+    };
     let res: Awaited<ReturnType<typeof abortChatRunsForSessionKeyWithPartials>>;
     try {
       assertCurrent();
@@ -506,6 +529,7 @@ export async function runChatSendPreAdmission(
         stopReason: "stop",
         requester: resolveChatAbortRequester(client),
         assertCurrent,
+        beforeAbort,
         cascadeDescendants: true,
       });
       // Descendant cancellation aggregates errors; preserve the admission reason.

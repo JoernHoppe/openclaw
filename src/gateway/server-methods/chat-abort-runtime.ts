@@ -209,7 +209,9 @@ export function abortQueuedCollectorSession(
             }));
           },
           preparePublication: publication,
-          beforeSessionKill: () => {
+          beforeSessionKill: async () => {
+            await params.beforeAbort?.();
+            assertCurrent();
             // Resolve Gateway owners under the kill runtime's session fence.
             // Signal them only after this collector's FIFO reservation is held.
             const plan = prepareChatSessionAbort(
@@ -313,7 +315,8 @@ export async function abortChatRunsForSessionKeyWithPartials(
         sessionOrigin: plan.sessionOrigin,
         prepareSelection: prepare ? { acceptsRequest: plan.acceptsRequest, prepare } : undefined,
         assertCurrent: params.assertCurrent,
-        beforeKill: () => {
+        beforeKill: async () => {
+          await params.beforeAbort?.();
           plan.abort();
           return plan.canCascade;
         },
@@ -322,6 +325,7 @@ export async function abortChatRunsForSessionKeyWithPartials(
       if (prepare) {
         await prepare();
       }
+      await params.beforeAbort?.();
       plan.abort();
     }
     if (!result.unauthorized && !result.error) {
@@ -337,9 +341,7 @@ export async function abortChatRunsForSessionKeyWithPartials(
     ...result,
     aborted:
       result.aborted ||
-      Boolean(descendants?.killed) ||
-      Boolean(descendants?.continuationRetired) ||
-      Boolean(descendants?.execAborted),
+      Boolean(descendants?.killed || descendants?.continuationRetired || descendants?.execAborted),
     descendants,
     ...(warning ? { warning } : {}),
   };

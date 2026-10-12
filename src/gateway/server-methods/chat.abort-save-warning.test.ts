@@ -132,7 +132,7 @@ it.each([false, true])(
       .spyOn(subagentKill, "killSubagentRunAdmin")
       .mockImplementationOnce(async (params, control) => {
         await control?.prepareRead?.();
-        control?.beforeSessionKill?.();
+        await control?.beforeSessionKill?.();
         if (killFails) {
           throw killFailure;
         }
