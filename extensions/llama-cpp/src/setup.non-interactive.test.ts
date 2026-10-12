@@ -74,7 +74,7 @@ describe("managed llama.cpp non-interactive onboarding", () => {
       baseUrl: "http://localhost:8080/v1",
       models: [],
     });
-    expect(JSON.parse(JSON.stringify(result?.auth))).toEqual({
+    expect(result?.auth).toEqual({
       profiles: { "other:default": { provider: "other", mode: "api_key" } },
       order: { other: ["other:default"] },
     });
