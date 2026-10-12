@@ -12,6 +12,7 @@ import { startOpenClawCrablineAdapter } from "@openclaw/crabline";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
   createQaGatewayChild,
@@ -274,7 +275,12 @@ async function startPresentationApi(
       }
       response.writeHead(upstream.status, { "content-type": "application/json" });
       response.end(responseText);
-    })().catch(() => {
+    })().catch((error: unknown) => {
+      process.stderr.write(
+        `presentation fixture request failed: ${redactSensitiveText(
+          error instanceof Error ? (error.stack ?? error.message) : String(error),
+        )}\n`,
+      );
       if (!response.headersSent) {
         response.writeHead(500);
       }
@@ -1761,19 +1767,39 @@ describe("channel progress presentation through an isolated Gateway", () => {
       if (!rejectStop) {
         await waitForFact(() => finalMessages().length > 0, "accepted final answer");
       }
-      await waitForFact(
-        () =>
-          channel === "discord"
-            ? caseWrites().some(
-                (write) => write.method === "DELETE" && !write.route.includes("/reactions/"),
-              )
-            : native
-              ? caseWrites().some((write) => write.route.endsWith("chat.stopStream"))
-              : caseWrites().some((write) =>
-                  write.route.endsWith(compact ? "chat.delete" : "chat.update"),
-                ),
-        "progress finalization",
-      );
+      try {
+        await waitForFact(
+          () =>
+            channel === "discord"
+              ? caseWrites().some(
+                  (write) => write.method === "DELETE" && !write.route.includes("/reactions/"),
+                )
+              : native
+                ? caseWrites().some((write) => write.route.endsWith("chat.stopStream"))
+                : caseWrites().some((write) =>
+                    write.route.endsWith(compact ? "chat.delete" : "chat.update"),
+                  ),
+          "progress finalization",
+        );
+      } catch (error) {
+        process.stderr.write(
+          `${redactSensitiveText(
+            JSON.stringify({
+              originCleared,
+              writes: caseWrites()
+                .slice(-80)
+                .map(({ at, method, route, accepted, rejected }) => ({
+                  at,
+                  method,
+                  route: route.slice(0, 250),
+                  accepted: accepted && { id: accepted.id, action: accepted.action },
+                  rejected,
+                })),
+            }),
+          )}\n`,
+        );
+        throw error;
+      }
 
       const progressWrites = caseWrites().filter(
         (write) =>
