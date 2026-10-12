@@ -22,6 +22,12 @@ import {
   createTestGatewayScheduler,
 } from "../test-utils/gateway-scheduler-clock.js";
 import { getGatewayProcessInstanceId } from "./process-instance.js";
+import {
+  CRON_WAIT_TIMEOUT_MS,
+  expectEnqueuedRunPayload,
+  runCronJobAndWaitForFinished,
+  waitForCronEvent,
+} from "./server-cron.events.test-support.js";
 import type { GatewayCronState } from "./server-cron.js";
 import type { GatewayClient } from "./server-methods/types.js";
 import {
@@ -29,7 +35,6 @@ import {
   connectOk,
   cronIsolatedRun,
   installGatewayTestHooks,
-  onceMessage,
   prepareGatewayReplyRuntimeForTest,
   rpcReq,
   startServerWithClient,
@@ -65,7 +70,6 @@ vi.mock("../cron/delivery.js", async () => {
 });
 
 installGatewayTestHooks({ scope: "suite" });
-const CRON_WAIT_TIMEOUT_MS = 10_000;
 let cronSuiteTempRootPromise: Promise<string> | null = null;
 let cronSuiteCaseId = 0;
 
@@ -91,22 +95,6 @@ async function rmTempDir(dir: string) {
     }
   }
   await fs.rm(dir, { recursive: true, force: true });
-}
-
-async function waitForCronEvent(
-  ws: WebSocket,
-  check: (payload: Record<string, unknown> | null) => boolean,
-  timeoutMs = CRON_WAIT_TIMEOUT_MS,
-) {
-  const message = await onceMessage(
-    ws,
-    (obj) => {
-      const payload = obj.payload ?? null;
-      return obj.type === "event" && obj.event === "cron" && check(payload);
-    },
-    timeoutMs,
-  );
-  return message.payload ?? null;
 }
 
 async function cleanupCronTestRun(params: {
@@ -323,25 +311,6 @@ async function writeCronConfig(config: unknown) {
   await fs.mkdir(path.dirname(configPath as string), { recursive: true });
   await fs.writeFile(configPath as string, JSON.stringify(config, null, 2), "utf-8");
   resetConfigRuntimeState();
-}
-
-function expectEnqueuedRunPayload(payload: unknown): string {
-  const record = payload as { ok?: unknown; enqueued?: unknown; runId?: unknown } | null;
-  expect(record?.ok).toBe(true);
-  expect(record?.enqueued).toBe(true);
-  expect(typeof record?.runId).toBe("string");
-  return record?.runId as string;
-}
-
-async function runCronJobAndWaitForFinished(ws: WebSocket, jobId: string) {
-  const finished = waitForCronEvent(
-    ws,
-    (payload) => payload?.jobId === jobId && payload?.action === "finished",
-  );
-  const response = await rpcReq(ws, "cron.run", { id: jobId, mode: "force" }, 20_000);
-  expect(response.ok).toBe(true);
-  expectEnqueuedRunPayload(response.payload);
-  return await finished;
 }
 
 function getWebhookCall(index: number) {
@@ -1130,7 +1099,7 @@ describe("gateway server cron", () => {
     ]);
   });
 
-  test("repairs an owned job with an ordinary owner-topic turn whatever the heartbeat config", async ({
+  test("keeps owner-topic repair pending through retries until the agent turn settles", async ({
     signal,
   }) => {
     const { dir } = await setupCronTestRun({ cronEnabled: true });
@@ -1139,6 +1108,7 @@ describe("gateway server cron", () => {
     const hour = new Date().getUTCHours();
     // Our production heartbeat shape: none of it may apply to the repair turn.
     testState.agentConfig = {
+      timeoutSeconds: 91,
       heartbeat: {
         every: "1h",
         target: "none",
@@ -1169,8 +1139,10 @@ describe("gateway server cron", () => {
     const ws = await startCronClient();
     await prepareGatewayReplyRuntimeForTest({ force: true });
     const repairTurnStarted = createDeferred();
+    const finishRepairTurn = createDeferred();
     agentCommandMock.mockImplementationOnce(async () => {
       repairTurnStarted.resolve();
+      await finishRepairTurn.promise;
     });
     cronIsolatedRun.mockResolvedValue({ status: "error", error: "scripts/sync.md is missing" });
     const added = await rpcReq(ws, "cron.add", {
@@ -1191,23 +1163,38 @@ describe("gateway server cron", () => {
         : "";
     expect(jobId).not.toBe("");
 
-    await runCronJobAndWaitForFinished(ws, jobId);
-    await runCronJobAndWaitForFinished(ws, jobId);
+    try {
+      await runCronJobAndWaitForFinished(ws, jobId);
+      await runCronJobAndWaitForFinished(ws, jobId);
 
-    await withinTest(repairTurnStarted.promise, signal);
-    expect(agentCommandMock).toHaveBeenCalledOnce();
-    // The owner topic's own session and route: no `:heartbeat` side session, no dropped reply,
-    // and only the turn's authored reply is delivered (no runtime timeout warning).
-    expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({
-      sessionKey: ownerSessionKey,
-      deliver: true,
-      channel: "telegram",
-      to: group,
-      threadId: 42,
-      message: expect.stringContaining("Automation repair request from the scheduler"),
-      internalDeliverySuppressErrors: true,
-    });
-    expect(cronIsolatedRun).toHaveBeenCalledTimes(2);
+      await withinTest(repairTurnStarted.promise, signal);
+      expect(agentCommandMock).toHaveBeenCalledOnce();
+      // The owner topic's own session and route: no heartbeat side session or runtime warnings.
+      expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({
+        sessionKey: ownerSessionKey,
+        deliver: true,
+        channel: "telegram",
+        to: group,
+        threadId: 42,
+        message: expect.stringContaining("Automation repair request from the scheduler"),
+        internalDeliverySuppressErrors: true,
+      });
+
+      // Dispatch acceptance is not repair completion: a retry while the turn is held
+      // cannot verify its changes or consume the incident's one escalation.
+      await runCronJobAndWaitForFinished(ws, jobId);
+      const pending = await rpcReq(ws, "cron.get", { id: jobId });
+      expect(pending.ok).toBe(true);
+      expect(pending.payload).toMatchObject({
+        state: { lastFailureNotificationDeliveryStatus: "not-requested" },
+      });
+      expect(sendCronAnnouncePayloadStrictMock).not.toHaveBeenCalled();
+      expect(agentCommandMock).toHaveBeenCalledOnce();
+      expect(cronIsolatedRun).toHaveBeenCalledTimes(3);
+      expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({ timeout: "91" });
+    } finally {
+      finishRepairTurn.resolve();
+    }
   }, 45_000);
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
