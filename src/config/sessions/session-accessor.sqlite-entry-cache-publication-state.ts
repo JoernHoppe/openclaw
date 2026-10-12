@@ -316,6 +316,9 @@ export function retainPreparedSessionSharingFacts(params: SessionSharingRetentio
       read.facts = reconcileSessionSharingAcquisition(acquisition, snapshot);
       read.acquisition = undefined;
     },
+    adoptCreatedEntry: (entry: SessionSharingEntry) => {
+      read.facts = { entry, membership: new Set() };
+    },
     readGeneration: () => (active && !generationPending() ? read.generation?.current : undefined),
     readGenerationSettings: () => (active && !pending(true) ? read.generation?.current : undefined),
     readCurrent: () => (pending(true) ? undefined : read.facts),

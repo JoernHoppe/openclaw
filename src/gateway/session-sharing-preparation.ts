@@ -1,6 +1,7 @@
 import path from "node:path";
 import { ok } from "@openclaw/normalization-core/result";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import { readSessionEntryCreatedEntry } from "../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { readPreparedSessionSharingChange } from "../config/sessions/session-accessor.sqlite-entry-cache-publication.js";
 import {
   assertSessionEntryCreationPublication,
@@ -33,6 +34,7 @@ import {
   sessionChanges,
   type SessionRowChange,
 } from "../sessions/session-row-changes.js";
+import type { AgentDatabaseRegistryChange } from "../state/openclaw-agent-db-contract.js";
 import { readOpenClawAgentDatabaseIdentity } from "../state/openclaw-agent-db-identity.js";
 import { getOpenIncognitoAgentDatabase } from "../state/openclaw-agent-db-lifecycle.js";
 import { isOpenClawAgentDatabaseRegistryChange } from "../state/openclaw-agent-db-registry-listing.js";
@@ -79,6 +81,7 @@ type SessionFactsRequest = {
 export type SessionFactsRead<Facts extends PreparedSessionMutationFacts> = {
   readonly storageTarget: Pick<GatewaySessionStoreTarget, "agentId" | "canonicalKey" | "storePath">;
   bindCreation(this: void, operation: SessionEntryCreationOperation): void;
+  followRegistration?(this: void, change: AgentDatabaseRegistryChange): void;
   readCurrent(this: void, cfg: OpenClawConfig): Facts;
   release(this: void): void;
 };
@@ -119,8 +122,12 @@ export async function prepareSessionMutationFacts(
   let invalidated = false;
   let facts: PreparedSessionSourceFacts | undefined;
   let assertRegistryPublication: (() => void) | undefined;
+  let followRegistration: ((change: AgentDatabaseRegistryChange) => void) | undefined;
   let creation: SessionEntryCreationOperation | undefined;
   let expectedPlaceholder: SessionEntryPlaceholder | undefined;
+  let adoptCreatedEntry:
+    | ((entry: ReturnType<typeof projectSessionSharingEntry>) => void)
+    | undefined;
   let assertSource: () => void;
   const selectedPaths = new Set<string>();
   let selectedDatabaseIdentity: string | undefined;
@@ -271,6 +278,12 @@ export async function prepareSessionMutationFacts(
           invalidate();
           return;
         }
+      }
+      const created = readSessionEntryCreatedEntry(change, creation);
+      if (created && adoptCreatedEntry) {
+        adoptCreatedEntry(created);
+        creation = undefined;
+        return;
       }
     }
     // A retained acquisition receives this exact source's postimage before this notification.
@@ -436,6 +449,7 @@ export async function prepareSessionMutationFacts(
           registryDiscovery: inventory.registryDiscovery,
         }),
       );
+      followRegistration = inventoryRead.followRegistration;
       assertRegistryPublication = () => {
         inventoryRead.assertRegistryCurrent();
       };
@@ -606,8 +620,30 @@ export async function prepareSessionMutationFacts(
         const retained =
           sharing && retainedReads.get(`${sharing.databaseIdentity}\0${canonicalKey}`);
         expectedPlaceholder = retained?.readCurrent()?.placeholder;
+        adoptCreatedEntry = (entry) => {
+          retained?.adoptCreatedEntry(entry);
+          facts = {
+            ...facts!,
+            target: {
+              agentId: selected.agentId,
+              canonicalKey: selected.canonicalKey,
+              storePath: selected.storePath,
+              storeKeys: selected.storeKeys,
+              storeKey: canonicalKey,
+              readSource,
+              entry,
+            },
+          };
+        };
         readFacts = () => {
           const current = retained?.readCurrent();
+          if (facts!.target && current?.entry) {
+            return {
+              ...facts!,
+              target: { ...facts!.target, entry: current.entry },
+              membership: current.membership,
+            };
+          }
           if (
             (retained && !current) ||
             current?.entry ||
@@ -701,10 +737,13 @@ export async function prepareSessionMutationFacts(
         paths: selectedPaths,
         databaseIdentity: selectedDatabaseIdentity,
       });
-      creation = operation;
+      // Existing rows already follow write receipts; only absence needs a creation transition.
+      if (facts?.target === null) {
+        creation = operation;
+      }
       actorRead?.bindCreation(operation);
     };
-    return { storageTarget, bindCreation, readCurrent, release };
+    return { storageTarget, bindCreation, readCurrent, release, followRegistration };
   } catch (error) {
     release();
     throw waitingForStorage || error instanceof SessionMutationFactsUnavailableError

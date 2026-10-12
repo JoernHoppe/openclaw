@@ -100,6 +100,16 @@ it.each(["planning", "settlement"] as const)(
           { bindCreation: prepared.bindCreation, commitGuard: () => storage.assertCurrent() },
         );
         expect(created).toMatchObject({ ok: true });
+        expect(prepared.readCurrent(cfg).target?.entry.sessionId).toBe("unchanged-reload-session");
+        runOpenClawAgentWriteTransaction(
+          (current) =>
+            writeSessionEntry(current, sessionKey, {
+              ...readExactSessionEntryRow(current, sessionKey)!.entry,
+              updatedAt: 2,
+            }),
+          { agentId: "main", path: database.path },
+        );
+        expect(prepared.readCurrent(cfg).target?.entry.updatedAt).toBe(2);
         expect(readExactSessionEntryRow(database, sessionKey)?.entry.sessionId).toBe(
           "unchanged-reload-session",
         );
