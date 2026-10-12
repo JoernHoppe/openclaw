@@ -123,7 +123,7 @@ afterEach(async () => {
 });
 
 test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as const)(
-  "reclamation borrows native-only verification unless revoked (%s)",
+  "reclamation borrows refreshed native verification and rechecks later invalidation (%s)",
   async (proof) => {
     const { database, options, plans, scopes } = createFixture(["victim"]);
     closeOpenClawAgentDatabasesForTest(options.env.OPENCLAW_STATE_DIR);
@@ -134,14 +134,9 @@ test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as
     const execution = captureOpenClawAgentDatabaseExecution({ ...options, path: database.path });
     let peerLease: string | undefined;
     try {
-      const opening = execution.runExisting(source, async () => "opened");
-      if (proof === "revoked-during-open") {
-        await expect(opening).rejects.toThrow("Agent schema admission changed before publication");
-        await execution.release();
-        expect(loadSessionEntryReadOnly(scopes[0]!)).toMatchObject({ sessionId: "victim" });
-      } else {
-        await expect(opening).resolves.toBe("opened");
-      }
+      const operation = vi.fn(async () => "opened");
+      await expect(execution.runExisting(source, operation)).resolves.toBe("opened");
+      expect(operation).toHaveBeenCalledOnce();
       if (proof.startsWith("two-leases")) {
         const before = readOpenClawAgentIntegrityVerification(database.path, options.env);
         peerLease = claimOpenClawAgentDatabaseLease({ ...options, path: database.path });
@@ -152,7 +147,7 @@ test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as
       }
       expect(getOpenClawAgentDatabaseIfOpen(options)).toBeUndefined();
       const transferred = getOpenClawAgentDatabaseValidationForTransfer(database);
-      expect(Boolean(transferred)).toBe(proof !== "revoked-during-open");
+      expect(transferred).toBeDefined();
       if (proof === "revoked-after-open") {
         invalidateOpenClawAgentDatabaseValidation(database.path);
       }
@@ -160,7 +155,7 @@ test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as
         kind: "lifecycle-artifacts",
         value: { removedEntries: 1 },
       });
-      expect(fullChecks()).toBe(proof.startsWith("revoked") ? 1 : 0);
+      expect(fullChecks()).toBe(proof === "revoked-after-open" ? 1 : 0);
       expect(wasRevokedDuringOpen()).toBe(proof === "revoked-during-open");
       expect(loadSessionEntryReadOnly(scopes[0]!)).toBeUndefined();
     } finally {
