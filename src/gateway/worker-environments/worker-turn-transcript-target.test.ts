@@ -1,5 +1,6 @@
 import { AsyncResource } from "node:async_hooks";
 import path from "node:path";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   isSessionEntryDataSql,
@@ -10,7 +11,10 @@ import {
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
 import { withIncognitoSessionActor } from "../../config/sessions/session-incognito-binding.js";
+import { recordSessionParticipantInWorker } from "../../config/sessions/session-sharing-store.async.js";
 import { SQLITE_IDLE_HANDLE_TTL_MS } from "../../infra/sqlite-handle-lifecycle.js";
+import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
+import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
 import { closeCachedOpenClawAgentDatabase } from "../../state/openclaw-agent-db-lifecycle.js";
 import * as agentDatabase from "../../state/openclaw-agent-db.js";
 import { openIncognitoTestActor } from "../../state/openclaw-agent-execution-incognito.test-support.js";
@@ -198,6 +202,37 @@ it("retains a logical-store worker transcript and refuses writer changes without
       await patchSessionEntryCore(target, () => ({ label: "same writer" }), {
         workerGuard: { source },
       });
+      source();
+      let checkedPendingParticipant = false;
+      const admission = probe.admission(workerAdmission, (request, grant, admit) => {
+        if (
+          request.stage !== "commit" ||
+          !isRecord(request.facts) ||
+          !isRecord(request.facts.publication) ||
+          request.facts.publication.type !== "participant"
+        ) {
+          admit(request, grant);
+          return;
+        }
+        admit(request, (beforeRelease) =>
+          grant(() => {
+            beforeRelease?.();
+            source();
+            checkedPendingParticipant = true;
+          }),
+        );
+      });
+      try {
+        expect(
+          await recordSessionParticipantInWorker(target, {
+            identity: { type: "agent", id: "other" },
+            promptedAt: 1,
+          }),
+        ).toBe("inserted");
+      } finally {
+        admission.mockRestore();
+      }
+      expect(checkedPendingParticipant).toBe(true);
       source();
       await withWorkerTurnTranscriptDatabase(
         { ...target, sessionTarget: target },

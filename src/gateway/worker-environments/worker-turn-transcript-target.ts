@@ -3,7 +3,10 @@ import nodePath from "node:path";
 import type { BoundAgentRunSessionTarget } from "../../agents/run-session-target.types.js";
 import type { SessionPlacementTurnParams } from "../../agents/session-placement-admission.js";
 import { loadSessionEntryReadOnly } from "../../config/sessions/session-accessor.js";
-import { retainPreparedSessionSharingFacts } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import {
+  retainPreparedSessionEntryPredicate,
+  retainPreparedSessionSharingFacts,
+} from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { projectSessionSharingEntry } from "../../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { getSessionActorStorageBinding } from "../../config/sessions/session-actor-storage-binding.js";
 import { withSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
@@ -49,6 +52,7 @@ async function prepareWorkerTranscript(
   assertPreparing: () => void,
 ): Promise<PreparedWorkerTranscript> {
   let facts: ReturnType<typeof retainPreparedSessionSharingFacts> | undefined;
+  let predicate: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
   let source: PreparedWorkerTranscript["source"] | undefined;
   let prepared: PreparedWorkerTranscript | undefined;
   try {
@@ -62,11 +66,23 @@ async function prepareWorkerTranscript(
         if (!source || !facts || !owner.scope) {
           throw new Error("Cloud worker transcript has no durable source");
         }
-        facts.initialize({
+        const snapshot = facts.initialize({
           entry: read.value && projectSessionSharingEntry(read.value),
           membership: new Set(),
         });
-        const currentFacts = facts;
+        // Transfer the acquired identity before releasing its receipt subscription.
+        predicate = retainPreparedSessionEntryPredicate({
+          databaseIdentity: `file:${source.databaseIdentity}`,
+          sessionKey: target.sessionKey,
+          entry: snapshot.entry,
+          matches: (before, after) =>
+            before?.sessionId === after?.sessionId &&
+            before?.lifecycleRevision === after?.lifecycleRevision &&
+            before?.activeWriterRunId === after?.activeWriterRunId &&
+            before?.archivedAt === after?.archivedAt,
+        });
+        facts.release();
+        const currentFacts = predicate;
         const env = owner.scope.env ?? process.env;
         const retained = retainSessionHistoryWorkerDatabase({
           agentId: source.agentId,
@@ -115,6 +131,7 @@ async function prepareWorkerTranscript(
       await releaseSessionSourceAuthorities([prepared], [error]);
     } else {
       facts?.release();
+      predicate?.release();
     }
     throw error;
   }

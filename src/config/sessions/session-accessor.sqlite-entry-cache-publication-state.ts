@@ -323,6 +323,7 @@ export function retainPreparedSessionSharingFacts(params: SessionSharingRetentio
       }
       read.facts = reconcileSessionSharingAcquisition(acquisition, snapshot);
       read.acquisition = undefined;
+      return read.facts;
     },
     adoptCreatedEntry: (entry: SessionSharingEntry) => {
       read.facts = { entry, membership: new Set() };

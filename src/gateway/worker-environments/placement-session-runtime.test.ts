@@ -630,6 +630,10 @@ describe("worker placement runtime capability projection", () => {
     const context = {
       workerSessionPlacementService: {
         getMany: () => new Map([[sessionId, placement]]),
+        prepareSessionPlacement: async () => ({
+          current: () => placement,
+          release() {},
+        }),
       },
     };
     const error = await preparePatchError({
@@ -679,6 +683,10 @@ describe("worker placement runtime capability projection", () => {
     const context = {
       workerSessionPlacementService: {
         getMany: () => new Map([[sessionId, placement]]),
+        prepareSessionPlacement: async () => ({
+          current: () => placement,
+          release() {},
+        }),
       },
     };
     const error = await preparePatchError({

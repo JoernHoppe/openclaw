@@ -74,10 +74,8 @@ vi.mock("../../process/exec.js", async () => {
   };
 });
 
-vi.mock("../session-utils-store-worker.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-utils-store-worker.js")>(
-    "../session-utils-store-worker.js",
-  );
+vi.mock("../session-utils.js", async () => {
+  const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
   return {
     ...actual,
     resolveGatewaySessionStoreTargetInWorker: async (
