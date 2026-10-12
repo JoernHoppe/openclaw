@@ -311,6 +311,9 @@ export async function abortChatRunsForSessionKeyWithPartials(
         sessionKey: params.sessionKey,
         agentId: params.agentId,
         sessionId: params.sessionId,
+        lifecycleRevision: params.session?.ok
+          ? params.session.value.entry?.lifecycleRevision
+          : undefined,
         execCancellation: plan.commands,
         sessionOrigin: plan.sessionOrigin,
         prepareSelection: prepare ? { acceptsRequest: plan.acceptsRequest, prepare } : undefined,

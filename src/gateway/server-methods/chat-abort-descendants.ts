@@ -1,5 +1,7 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { captureExecRequestCancellation } from "../../agents/bash-process-control.js";
+import { withAgentHarnessDescendantCancellation } from "../../agents/harness/descendant-cancellation.js";
+import type { AgentHarnessDescendantCancellationResult } from "../../agents/harness/types.js";
 import {
   captureExecRequestSubagentSelection,
   resolveSubagentControllerIdentity,
@@ -12,6 +14,7 @@ import type { SubagentRequestSessionOrigin } from "../../agents/subagents/regist
 import { prepareSessionCapabilityRead } from "../../agents/subagents/spawn/subagent-session-store.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { captureExecRequestCustodySelection } from "../../infra/exec-request-context.js";
 
 export async function abortControlledSubagents(params: {
   cfg: OpenClawConfig;
@@ -19,6 +22,7 @@ export async function abortControlledSubagents(params: {
   agentId?: string;
   requesterTurnRunId?: string;
   sessionId?: string;
+  lifecycleRevision?: string;
   execCancellation?: ReturnType<typeof captureExecRequestCancellation>;
   sessionOrigin?: SubagentRequestSessionOrigin;
   assertCurrent?: () => void;
@@ -75,11 +79,13 @@ export async function abortControlledSubagents(params: {
         }
       : undefined,
   });
+  let sessionOrigin = params.sessionOrigin;
   const preparation = params.prepareSelection;
   const prepare = preparation
     ? async () => {
         const prepared = await preparation.prepare();
         commands = prepared.execCancellation;
+        sessionOrigin = prepared.sessionOrigin;
         selected = captureExecRequestSubagentSelection({
           ...params,
           controller,
@@ -101,25 +107,72 @@ export async function abortControlledSubagents(params: {
     prepare,
   };
   let execAborted = false;
+  let native: Promise<PromiseSettledResult<AgentHarnessDescendantCancellationResult>> | undefined;
   const commandErrors: unknown[] = [];
   const beforeKill = async (sealRootSelection = () => {}) => {
-    // Gateway callbacks signal their captured parent before awaiting its cleanup.
+    // Keep both cancellation owners inside the existing legacy dispatch reservation.
     sealRootSelection();
-    if ((await params.beforeKill?.(sealRootSelection)) === false) {
-      return false;
+    let entered = false;
+    let accepted = false;
+    const stop = async (cancelNative: () => Promise<AgentHarnessDescendantCancellationResult>) => {
+      entered = true;
+      if ((await params.beforeKill?.(sealRootSelection)) === false) {
+        return false;
+      }
+      try {
+        assertCurrent();
+      } catch (error) {
+        if (requestSelection.runs.length === 0) {
+          throw error;
+        }
+        commandErrors.push(error);
+        return false;
+      }
+      accepted = true;
+      native = Promise.allSettled([cancelNative()]).then(([result]) => result);
+      try {
+        execAborted = commands.cancel();
+      } finally {
+        // Native reservations live until this callback returns; join their cancellation here.
+        await native;
+      }
+      return true;
+    };
+    const sessionId = params.sessionId ?? sessionOrigin?.target.sessionId;
+    if (!sessionId) {
+      return stop(async () => ({ killed: 0, cancelledRequesters: [] }));
     }
     try {
-      assertCurrent();
+      return await withAgentHarnessDescendantCancellation(
+        {
+          agentId: controller.controllerAgentId,
+          sessionKey: controller.controllerSessionKey,
+          sessionId,
+          lifecycleRevision:
+            params.lifecycleRevision ?? sessionOrigin?.target.lifecycleRevision ?? undefined,
+          requesterTurnRunId: params.requesterTurnRunId,
+          acceptsRequest: captureExecRequestCustodySelection(
+            commands.owners,
+            params.requesterTurnRunId === undefined ? sessionOrigin : undefined,
+          ),
+          assertCurrent,
+        },
+        stop,
+      );
     } catch (error) {
-      // Without descendants, the caller owns the original authority exception.
-      if (requestSelection.runs.length === 0) {
-        throw error;
+      if (entered) {
+        if (!accepted) {
+          throw error;
+        }
+        commandErrors.push(error);
+        return true;
       }
-      commandErrors.push(error);
-      return false;
+      // A stale native reservation must not strand an independently captured parent.
+      assertCurrent();
+      return stop(async () => {
+        throw error;
+      });
     }
-    execAborted = commands.cancel();
-    return true;
   };
   let descendants: Awaited<ReturnType<typeof killAllControlledSubagentRuns>> | undefined;
   let failure: { error: unknown } | undefined;
@@ -146,14 +199,31 @@ export async function abortControlledSubagents(params: {
   } catch (error) {
     commandErrors.push(error);
   }
-  if (failure) {
+  const settledNative = await native;
+  if (settledNative?.status === "fulfilled") {
+    commandErrors.push(...(settledNative.value.errors ?? []));
+  }
+  if (settledNative?.status === "rejected") {
+    commandErrors.push(settledNative.reason);
+  }
+  const killed =
+    (descendants?.killed ?? 0) +
+    (settledNative?.status === "fulfilled" ? settledNative.value.killed : 0);
+  const cancelledRequesters =
+    settledNative?.status === "fulfilled" ? settledNative.value.cancelledRequesters : [];
+  if (failure && !settledNative && !descendants && !execAborted) {
     throw commandErrors.length > 0
       ? new AggregateError([failure.error, ...commandErrors], "Request cancellation was incomplete")
       : failure.error;
   }
+  if (failure) {
+    commandErrors.push(failure.error);
+  }
   if (commandErrors.length > 0) {
     return {
       ...(descendants ?? { killed: 0, labels: [] }),
+      killed,
+      cancelledRequesters,
       status: "error" as const,
       error: [
         ...(descendants && descendants.status !== "ok" ? [descendants.error] : []),
@@ -162,9 +232,11 @@ export async function abortControlledSubagents(params: {
       execAborted: execAborted || descendants?.execAborted === true,
     };
   }
-  return descendants || execAborted
+  return descendants || execAborted || killed
     ? {
         ...(descendants ?? { status: "ok" as const, killed: 0, labels: [] }),
+        killed,
+        cancelledRequesters,
         execAborted: execAborted || descendants?.execAborted === true,
       }
     : undefined;

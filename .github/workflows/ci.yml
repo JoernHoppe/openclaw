@@ -6580,6 +6580,7 @@ jobs:
       - check-test-types-hosted-core-shard
       - check-additional-shard
       - check-extension-package-boundary
+      - postgres-conformance
       - check-docs
       - skills-python
       - postgres-conformance

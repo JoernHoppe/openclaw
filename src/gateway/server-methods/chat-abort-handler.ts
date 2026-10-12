@@ -29,6 +29,7 @@ import {
   canRequesterAbortChatRun,
   canRequesterAbortPreRegisteredRun,
   captureAbortTargetIdentity,
+  captureSessionAbortRequestOrigin,
   readPreRegisteredAgentDedupePayloadForSession,
   resolveChatAbortRequester,
   writePreRegisteredAgentAbort,
@@ -37,7 +38,7 @@ import {
 } from "./chat-abort-authorization.js";
 import { abortControlledSubagents, descendantAbortError } from "./chat-abort-descendants.js";
 import { abortChatRunsForSessionKeyWithPartials } from "./chat-abort-runtime.js";
-import type { ChatSessionEmbeddedAbortOutcome } from "./chat-abort-runtime.types.js";
+import type { ChatAbortLifecycle } from "./chat-abort-runtime.types.js";
 import {
   abortedPartialPersistenceError,
   captureAbortedPartial,
@@ -50,13 +51,6 @@ import { emitSessionsChanged } from "./session-change-event.js";
 import { readGatewayRequestMutationAuthority } from "./session-mutation-guards.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 import { assertValidParams } from "./validation.js";
-
-type ChatAbortLifecycle = {
-  onAuthorizedBeforeEmbeddedAbort?: () => boolean;
-  onAuthorizedAfterQueuedAbort?: (embedded: ChatSessionEmbeddedAbortOutcome) => boolean;
-  onDescendantsCancelled?: () => void;
-  cascadeDescendants?: true;
-};
 
 export async function handleChatAbortRequestWithLifecycle(
   options: GatewayRequestHandlerOptions,
@@ -208,7 +202,7 @@ export async function handleChatAbortRequestWithLifecycle(
       return;
     }
     if (res.descendants?.killed || res.descendants?.continuationRetired) {
-      lifecycle.onDescendantsCancelled?.();
+      lifecycle.onDescendantsCancelled?.(res.descendants);
     }
     const error = res.error ?? descendantAbortError(res.descendants, "Session");
     if (error) {
@@ -450,6 +444,8 @@ export async function handleChatAbortRequestWithLifecycle(
         sessionKey: pendingAgentMatch.sessionKey ?? canonicalAbortSessionKey,
         agentId: abortAgentId,
         requesterTurnRunId: runId,
+        sessionId: abortSessionEntry?.sessionId,
+        lifecycleRevision: abortSessionEntry?.lifecycleRevision,
         assertCurrent,
         beforeKill: () => {
           assertCurrent();
@@ -546,6 +542,7 @@ export async function handleChatAbortRequestWithLifecycle(
         agentId: abortAgentId,
         sessionId: abortSessionEntry?.sessionId,
         requesterTurnRunId: runId,
+        lifecycleRevision: abortSessionEntry?.lifecycleRevision,
         execCancellation: commands,
         assertCurrent,
         beforeKill: () => {
@@ -620,6 +617,14 @@ export async function handleChatAbortRequestWithLifecycle(
           acceptsRequest: (identity) => identity.runId === runId,
           prepare: async () => {
             const preparedSession = await readAbortSession();
+            const targetSession =
+              sessionKey === rawSessionKey || sessionKey === canonicalAbortSessionKey
+                ? preparedSession
+                : await prepareChatAbortSessionSnapshot({
+                    cfg: abortCfg,
+                    key: sessionKey,
+                    agentId: agentId ?? abortAgentId,
+                  });
             if (controlUiVisible !== false && partialText?.trim()) {
               snapshot = captureAbortedPartial({
                 runId,
@@ -628,19 +633,23 @@ export async function handleChatAbortRequestWithLifecycle(
                 text: partialText,
                 abortOrigin: "rpc",
                 resolveTerminalProducer: active.resolveTerminalProducer,
-                session:
-                  sessionKey === rawSessionKey || sessionKey === canonicalAbortSessionKey
-                    ? preparedSession
-                    : await prepareChatAbortSessionSnapshot({
-                        cfg: abortCfg,
-                        key: sessionKey,
-                        agentId: agentId ?? abortAgentId,
-                      }),
+                session: targetSession,
               });
             }
-            return { execCancellation: commands };
+            return {
+              execCancellation: commands,
+              sessionOrigin: captureSessionAbortRequestOrigin(
+                { session: targetSession, requiredSessionId: sessionId },
+                (identity) => identity.runId === runId,
+              ),
+            };
           },
         },
+        sessionId,
+        lifecycleRevision:
+          abortSessionEntry?.sessionId === sessionId
+            ? abortSessionEntry.lifecycleRevision
+            : undefined,
         assertCurrent,
         beforeKill: () => {
           // The descendant owner can await a reservation even when no child survives.

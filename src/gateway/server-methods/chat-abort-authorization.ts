@@ -3,6 +3,7 @@ import {
   normalizeTrimmedStringList,
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
+import type { SubagentRequestSessionOrigin } from "../../agents/subagents/registry/subagent-exec-request-ownership.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import { buildAbortedAgentPayload } from "../agent-turn/agent-dedupe.js";
 import { setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
@@ -20,6 +21,7 @@ import {
   PENDING_CHAT_SEND_DEDUPE_PREFIX,
   type DedupeEntry,
 } from "../server-shared.js";
+import type { ChatAbortSessionSnapshot } from "./chat-aborted-partial.js";
 import type {
   GatewayRequestContext,
   GatewayRequestHandlerOptions,
@@ -53,6 +55,32 @@ export function captureAbortTargetIdentity<T extends ChatAbortTarget>(
     entry.sessionKey === sessionKey &&
     entry.sessionId === sessionId &&
     entry.agentId === agentId;
+}
+
+export function captureSessionAbortRequestOrigin(
+  params: {
+    session?: ChatAbortSessionSnapshot;
+    requiredSessionId?: string;
+    sessionId?: string;
+  },
+  acceptsRequest: SubagentRequestSessionOrigin["acceptsRequest"],
+): SubagentRequestSessionOrigin | undefined {
+  const session = params.session?.ok ? params.session.value : undefined;
+  return session?.entry &&
+    (params.requiredSessionId === undefined ||
+      session.entry.sessionId === params.requiredSessionId) &&
+    (params.sessionId === undefined || session.entry.sessionId === params.sessionId)
+    ? {
+        target: {
+          agentId: session.agentId,
+          storePath: session.storePath,
+          sessionKey: session.canonicalKey,
+          sessionId: session.entry.sessionId,
+          lifecycleRevision: session.entry.lifecycleRevision ?? null,
+        },
+        acceptsRequest,
+      }
+    : undefined;
 }
 
 type PreRegisteredAgentDedupePayload = {
