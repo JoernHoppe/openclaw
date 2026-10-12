@@ -39,6 +39,7 @@ vi.mock("../agents/subagents/registry/subagent-registry-state.js", () => ({
   prepareOptionalSubagentSessionListReadCache: () => prepareRegistryMock(),
   getSubagentSessionListReadSnapshotIdentity: () => registrySnapshotMock(),
 }));
+// mock-isolation: Audience tests compare fixture-owned persisted rows with the synthetic run registry.
 vi.mock("../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (scope: { sessionKey: string }) =>
     loadSessionEntryMock(scope),

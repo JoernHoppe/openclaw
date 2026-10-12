@@ -22,6 +22,7 @@ const hoisted = vi.hoisted(() => ({
   listAgentIdsMock: vi.fn<() => string[]>(),
 }));
 
+// mock-isolation: Cross-store resolution uses synthetic store paths and fixture-owned rows.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (scope: { storePath?: string; sessionKey: string }) =>
     hoisted.loadExactSessionEntryMock(scope)?.entry,

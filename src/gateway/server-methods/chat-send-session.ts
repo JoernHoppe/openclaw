@@ -566,6 +566,7 @@ export async function prepareChatSendNativeRuntimeRestriction(params: {
       sessionKey,
       entry: selectedEntry,
       persistedEntry,
+      preparedSessionCapabilityEntry: { sessionKey, entry: selectedEntry },
       harness,
       provider: model.provider,
       modelId: model.model,

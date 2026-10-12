@@ -21,6 +21,7 @@ vi.mock("../../config/sessions/main-session.js", async () => {
   };
 });
 
+// mock-isolation: Session-resolution fixtures own the synthetic store inventory and exact rows.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (scope: { storePath: string; sessionKey: string }) =>
     mocks.loadExactSessionEntryReadOnly(scope)?.entry,

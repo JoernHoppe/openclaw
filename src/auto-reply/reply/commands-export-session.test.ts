@@ -61,6 +61,7 @@ vi.mock("../../config/sessions/session-accessor.js", () => {
   };
 });
 
+// mock-isolation: Export orchestration reads fixture-owned session rows without opening a store.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (scope: { storePath?: string; sessionKey: string }) =>
     (hoisted.loadSessionStoreMock(scope.storePath) as Record<string, unknown>)[scope.sessionKey],

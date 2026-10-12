@@ -56,6 +56,7 @@ vi.mock(import("../../auto-reply/reply/reply-run-registry.js"), async (importOri
 vi.mock("../../auto-reply/reply/message-received-hooks.js", () => ({
   emitMessageReceivedHooks: vi.fn(),
 }));
+// mock-isolation: Message-injection orchestration suppresses session writes while asserting delivery behavior.
 vi.mock("../../config/sessions/session-accessor.js", () => ({
   updateSessionEntry: vi.fn(async () => undefined),
   recordSessionParticipant: vi.fn(async () => null),

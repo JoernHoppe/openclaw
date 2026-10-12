@@ -1651,7 +1651,7 @@ describe("runPreparedReply media-only handling", () => {
       (_ctx, _envelope, entry) =>
         entry?.goal?.status === "active" ? "Active goal: Finish the interrupted work" : "",
     );
-    loadSessionEntryMock.mockReturnValue(completeEntry);
+    const sessionStore = { "session-key": activeEntry };
     const activeRun = createReplyOperation({
       sessionId: "session-goal-interrupt",
       sessionKey: "session-key",
@@ -1669,7 +1669,7 @@ describe("runPreparedReply media-only handling", () => {
       isNewSession: false,
       sessionId: "session-goal-interrupt",
       sessionEntry: activeEntry,
-      sessionStore: { "session-key": activeEntry },
+      sessionStore,
       storePath: "/tmp/openclaw-session-store.json",
     });
     while (!activeRun.abortSignal.aborted) {
@@ -1677,14 +1677,10 @@ describe("runPreparedReply media-only handling", () => {
         setImmediate(resolve);
       });
     }
+    sessionStore["session-key"] = completeEntry;
     activeRun.complete();
 
     await expect(runPromise).resolves.toEqual({ text: "ok" });
-    expect(loadSessionEntryMock).toHaveBeenCalledWith({
-      storePath: "/tmp/openclaw-session-store.json",
-      sessionKey: "session-key",
-      readConsistency: "latest",
-    });
     const call = requireRunReplyAgentCall(-1);
     expect(call.followupRun.currentInboundContext?.text ?? "").not.toContain("Active goal:");
   });

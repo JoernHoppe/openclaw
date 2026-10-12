@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
   terminalTranscriptNewer: false,
 }));
 
+// mock-isolation: Provider-reset fixtures read cloned synthetic rows without opening a session store.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async ({ sessionKey }: { sessionKey: string }) => {
     const entry = hoisted.store[sessionKey];

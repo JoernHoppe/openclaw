@@ -43,6 +43,7 @@ vi.mock("./queue.js", () => ({
   resolveFollowupAbortSignal: (run: FollowupRun) => run.abortSignal ?? run.queueAbortSignal,
 }));
 
+// mock-isolation: Admission fixtures supply session changes directly without starting a database worker.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryInWorker: async (...args: unknown[]) => state.loadEntry(...args),
 }));

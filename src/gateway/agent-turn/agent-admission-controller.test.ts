@@ -7,6 +7,7 @@ import { createAgentDedupeLifecycle } from "./agent-dedupe-lifecycle.js";
 import { createAgentTurnIo } from "./io.js";
 
 const readEntry = vi.hoisted(() => vi.fn());
+// mock-isolation: Lease-admission fixtures control prepared and committed rows without opening storage.
 vi.mock("../session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: readEntry,
 }));

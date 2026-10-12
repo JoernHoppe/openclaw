@@ -36,6 +36,7 @@ vi.mock("../../infra/approval-turn-source.js", () => ({
   hasApprovalTurnSourceRoute: hasApprovalTurnSourceRouteMock,
 }));
 
+// mock-isolation: Approval fixtures control custody and config revocation without loading channel runtimes.
 vi.mock("../approval-channel-custody.js", () => ({
   prepareApprovalChannelCustody: (...args: unknown[]) => {
     const custody = prepareApprovalChannelCustodyMock(...args);

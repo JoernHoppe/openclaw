@@ -291,6 +291,7 @@ vi.mock("./command/run-context.js", () => ({
   }),
 }));
 
+// mock-isolation: Model-switch fixtures own session reads and run-end writes without opening storage.
 vi.mock("./command/session-store.runtime.js", () => ({
   readSessionEntryInWorker: async (...args: unknown[]) => state.loadSessionEntryMock(...args),
   updateSessionStoreAfterAgentRun: (...args: unknown[]) =>

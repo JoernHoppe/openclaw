@@ -175,6 +175,7 @@ describe("authenticated request completion", { concurrent: false }, () => {
             resolveSessionMutationAuthorization: () => ({ error: null }),
           };
         });
+        // mock-isolation: This admin auxiliary request has no session target or sharing storage.
         vi.doMock("../../session-sharing-authorization-async.js", () => ({
           resolveSessionMutationAuthorizationAsync: async () => ({ error: null }),
         }));

@@ -128,6 +128,7 @@ vi.mock("../../agents/exec-defaults.js", () => ({
   resolveNodeExecEligibilityAsync: resolveNodeExecEligibilityMock,
 }));
 
+// mock-isolation: Command discovery uses the eligibility fixture without reading host approval storage.
 vi.mock("../../agents/exec-defaults.legacy.js", () => ({
   resolveNodeExecEligibilityLegacy: resolveNodeExecEligibilityMock,
 }));

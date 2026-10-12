@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ambient: true,
   assertToolAllowed: vi.fn(),
 }));
+// mock-isolation: Execution fixtures control caller revocation without provisioning a session environment.
 vi.mock("./environments.session.js", () => ({
   resolveSessionEnvironmentCaller: () => ({
     identity: { sessionId: "conversation", sessionKey: mocks.sessionKey, agentId: "main" },
@@ -27,6 +28,7 @@ vi.mock("./environments.session.js", () => ({
     },
   }),
 }));
+// mock-isolation: The synthetic retained session isolates execution authorization from database admission.
 vi.mock("../../config/sessions/session-entry-current-check.js", () => ({
   captureSessionEntryCurrentCheckInternal: async () => ({
     entry: { sessionId: "conversation" },
@@ -59,6 +61,7 @@ vi.mock("../../state/openclaw-state-worker-context.js", () => ({
 vi.mock("./environments.session-exec-approval.js", () => ({
   approveSessionEnvironmentCommand: mocks.approve,
 }));
+// mock-isolation: Execution fixtures supply ambient caller and tool authority without an active agent run.
 vi.mock("../../agents/tools/gateway-caller-context.js", () => ({
   getGatewayToolCallerIdentity: () =>
     mocks.ambient

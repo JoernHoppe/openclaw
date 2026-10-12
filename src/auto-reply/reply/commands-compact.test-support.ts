@@ -9,6 +9,7 @@ import {
 } from "./commands-agent-scope.test-support.js";
 import type { HandleCommandsParams } from "./commands-types.js";
 
+// mock-isolation: Command fixtures control compaction settlement without running an agent or writing storage.
 vi.mock("./commands-compact.runtime.js", () => ({
   abortEmbeddedAgentRun: vi.fn(),
   compactEmbeddedAgentSession: vi.fn(),

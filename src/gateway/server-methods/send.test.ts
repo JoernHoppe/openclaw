@@ -190,6 +190,7 @@ vi.mock("../../config/sessions/restart-recovery-receipt.js", () => ({
   completeRestartRecoveryTerminalDelivery: mocks.completeRestartRecoveryTerminalDelivery,
 }));
 
+// mock-isolation: Send-method fixtures bind synthetic session rows without opening session storage.
 vi.mock("../session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: async (params: { key: string }) =>
     mocks.loadSessionEntry(params.key),

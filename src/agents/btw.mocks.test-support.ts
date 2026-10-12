@@ -343,6 +343,7 @@ vi.mock("../logging/diagnostic.js", () => ({
   },
 }));
 
+// mock-isolation: BTW fixtures supply transcript events without opening the transcript database.
 vi.mock("../config/sessions/session-accessor.js", () => ({
   findTranscriptEvent: vi.fn(async () => undefined),
   loadTranscriptEvents: (...args: unknown[]) => loadTranscriptEventsMock(...args),

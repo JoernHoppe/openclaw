@@ -112,6 +112,7 @@ vi.mock("../config/sessions/paths.js", () => ({
   resolveSessionStorePathCore: vi.fn(() => "/tmp/sessions.json"),
 }));
 
+// mock-isolation: Status aggregation consumes fixture summaries and counts without starting session storage.
 vi.mock("../config/sessions/session-entry-read-runtime.js", async () => {
   const { createSessionStoreSummaryReaderStub } =
     await import("../config/sessions/session-store-summary.test-support.js");

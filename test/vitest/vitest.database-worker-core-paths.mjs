@@ -21,6 +21,8 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/subagents/spawn/subagent-spawn.incognito.test.ts",
   "src/agents/tools/sessions-send-tool.incognito.test.ts",
   "src/agents/tools/message-tool.current-prompt-reaction.test.ts",
+  "src/agents/tools/message-tool.hosted-transport.test.ts",
+  "src/agents/tools/sessions-tool.self-archive.test.ts",
   "src/agents/tools/terminal-tool.incognito.test.ts",
   "src/agents/interrupted-input-context.integration.test.ts",
   // Physical admission and descriptor custody belong to the application host, not an unhosted test Worker.
@@ -46,6 +48,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/config/sessions/startup-migration.registry-recovery.test.ts",
   "src/gateway/mention-inbox.worker.test.ts",
   "src/gateway/mention-inbox.test.ts",
+  "src/gateway/local-request-context.session-archive.test.ts",
   "src/tts/tts-preferences.worker.test.ts",
   "src/agents/openclaw-tools.session-status.gateway-model.test.ts",
   "src/state/openclaw-state-db-cron-delivery-migration.test.ts",

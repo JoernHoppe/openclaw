@@ -50,12 +50,15 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
               return undefined;
             }
             const [sharing, entry] = await Promise.allSettled([
-              prepareSessionMutationFacts({ cfg, sessionKey: requested.key, agentId }).then(
-                (read) => {
-                  reads.push(read);
-                  return read;
-                },
-              ),
+              prepareSessionMutationFacts({
+                cfg,
+                sessionKey: requested.key,
+                agentId,
+                allowMissing: true,
+              }).then((read) => {
+                reads.push(read);
+                return read;
+              }),
               withGatewaySessionStoreTarget(
                 { cfg, key: requested.key, agentId, projection: "list" },
                 (target) =>

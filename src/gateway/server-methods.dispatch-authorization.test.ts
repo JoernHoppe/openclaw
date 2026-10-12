@@ -27,6 +27,7 @@ function requestDefaults(
     },
     isWebchatConnect: () => false,
     context: {
+      getRuntimeConfig: () => ({}),
       logGateway: { warn: vi.fn() },
     } as unknown as Parameters<typeof handleGatewayRequest>[0]["context"],
   };

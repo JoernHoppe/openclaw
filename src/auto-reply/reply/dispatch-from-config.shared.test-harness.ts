@@ -397,6 +397,32 @@ vi.mock("../../config/sessions/session-entry-read-runtime.js", async (importOrig
     return entry;
   },
 }));
+// mock-isolation: Live visibility consumes the same fixture-owned metadata as worker reads.
+vi.mock("../../config/sessions/session-entry-read-facts.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../config/sessions/session-entry-read-facts.js")>();
+  return {
+    ...actual,
+    readRetainedSessionEntryFacts: (
+      ...[database, request]: Parameters<typeof actual.readRetainedSessionEntryFacts>
+    ): ReturnType<typeof actual.readRetainedSessionEntryFacts> => ({
+      kind: "session-exact-entries",
+      entries: sessionStoreMocks.currentEntry
+        ? request.sessionKeys.map((sessionKey) => ({
+            sessionKey,
+            entry: { sessionId: "", updatedAt: 0, ...sessionStoreMocks.currentEntry },
+          }))
+        : [],
+      lifecycleTimestamps: {},
+      source: { ...database, databaseIdentity: "dispatch-fixture" },
+      databaseIdentity: {
+        identity: "dispatch-fixture",
+        incarnation: "dispatch-fixture",
+        filename: database.path,
+      },
+    }),
+  };
+});
 vi.mock("../../config/sessions/session-accessor.sqlite-entry.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../config/sessions/session-accessor.sqlite-entry.js")>();

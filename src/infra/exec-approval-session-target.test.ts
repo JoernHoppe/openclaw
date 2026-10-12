@@ -220,6 +220,7 @@ type SessionEntryFixture = Partial<SessionEntry> & {
 async function writeStoreFile(
   storePath: string,
   entries: Record<string, SessionEntryFixture>,
+  agentId?: string,
 ): Promise<OpenClawConfig> {
   fs.mkdirSync(path.dirname(storePath), { recursive: true });
   await Promise.all(
@@ -228,6 +229,7 @@ async function writeStoreFile(
         {
           storePath,
           sessionKey,
+          agentId,
         },
         normalizeLegacySessionEntryDelivery({
           sessionId: entry.sessionId ?? sessionKey,
@@ -411,6 +413,7 @@ describe("exec approval session target", () => {
       const cfg = await writeStoreFile(
         path.join(tmpDir, relativeStoreDir, "sessions.json"),
         entries,
+        relativeStoreDir,
       );
       cfg.session = { store: path.join(tmpDir, "{agentId}", "sessions.json") };
       expect(await expectResolvedSessionTarget(cfg, request)).toEqual(expected);

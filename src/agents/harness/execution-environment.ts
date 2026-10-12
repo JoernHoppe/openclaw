@@ -14,7 +14,10 @@ import {
   withSandboxRuntimeStatusInWorker,
 } from "../sandbox/runtime-status.js";
 import { resolveScheduledToolCallerContext } from "../scheduled-tool-policy.js";
-import { withPreparedSessionCapabilityRead } from "../subagents/spawn/subagent-session-store.js";
+import {
+  withPreparedSessionCapabilityRead,
+  type PreparedSessionCapabilityEntry,
+} from "../subagents/spawn/subagent-session-store.js";
 import { isKnownCoreToolId } from "../tool-catalog.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../tool-fs-policy.js";
 import { isToolAllowedByPolicies } from "../tool-policy-match.js";
@@ -112,6 +115,7 @@ export function resolveAgentHarnessSessionExecutionRestriction(params: {
     | "execHost"
     | "nativeRuntimeConsent"
   > & { sessionId?: string };
+  preparedSessionCapabilityEntry?: PreparedSessionCapabilityEntry;
   provider: string;
   modelId: string;
 }): ExecutionRestriction | undefined {
@@ -147,6 +151,7 @@ export function resolveAgentHarnessSessionExecutionRestriction(params: {
           sessionKey,
           sessionId: entry.sessionId,
           preparedSessionEntry: entry,
+          preparedSessionCapabilityEntry: params.preparedSessionCapabilityEntry,
           provider: params.provider,
           modelId: params.modelId,
         },
@@ -342,6 +347,7 @@ type PluginHarnessToolPolicyContext = Pick<
 > & {
   sessionId?: string;
   preparedSessionEntry?: Pick<SessionEntry, "sandbox" | "sandboxMode" | "createdActor"> | null;
+  preparedSessionCapabilityEntry?: PreparedSessionCapabilityEntry;
 };
 
 type PluginHarnessToolPolicy = { allow?: string[]; deny?: string[] };
@@ -465,6 +471,7 @@ export function resolvePluginHarnessToolPolicies(
   const sandboxPolicy = sandboxRuntime.sandboxed ? sandboxRuntime.toolPolicy : undefined;
   const capabilityProfile = resolveConversationCapabilityProfile({
     config: params.config,
+    preparedSessionEntry: params.preparedSessionCapabilityEntry,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     sandboxSessionKey,

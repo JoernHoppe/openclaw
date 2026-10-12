@@ -334,7 +334,7 @@ describe("slack native approval adapter", () => {
       }),
     ).toBe(true);
     expect(
-      slackApprovalCapability.delivery?.shouldSuppressForwardingFallbackAsync?.({
+      await slackApprovalCapability.delivery?.shouldSuppressForwardingFallbackAsync?.({
         cfg,
         approvalKind: "plugin",
         target: { channel: "slack", to: "user:U123OWNER", accountId: "default" },

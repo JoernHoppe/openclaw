@@ -8,11 +8,13 @@ const mocks = vi.hoisted(() => ({
   roleScopes: undefined as string[] | undefined,
 }));
 
+// mock-isolation: Throw on legacy synchronous reads so publication tests enforce the async storage boundary.
 vi.mock("../session-utils.js", () => ({
   loadGatewaySessionEntryReadOnly: () => {
     throw new Error("Synchronous publication read");
   },
 }));
+// mock-isolation: Publication fixtures supply selected rows and source identity without starting storage.
 vi.mock("../session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: async ({
     key,

@@ -35,6 +35,7 @@ const sessionReaderMocks = vi.hoisted(() => ({
 
 vi.mock("../../../config/sessions/session-entry-read-runtime.js", () => sessionReaderMocks);
 
+// mock-isolation: Normalization fixtures control transcript lookup and persistence without starting storage.
 vi.mock("../../../config/sessions/session-accessor.js", () => ({
   findTranscriptEvent: vi.fn(async () => undefined),
   ...sessionAccessorMocks,

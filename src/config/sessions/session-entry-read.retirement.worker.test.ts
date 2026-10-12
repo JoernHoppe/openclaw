@@ -58,7 +58,16 @@ it.each(["refusal", "eviction"] as const)(
       });
       const consume = vi.fn();
       const reading = withSessionEntriesFromStoresInWorker(
-        [{ agentId: "main", storePath: database.path, sessionKeys: [sessionKey], env }],
+        // List projection reaches the worker even when the seeded write retained complete facts.
+        [
+          {
+            agentId: "main",
+            storePath: database.path,
+            sessionKeys: [sessionKey],
+            projection: "list",
+            env,
+          },
+        ],
         ([read]) => {
           consume();
           return read!.result.entries[0]?.entry;

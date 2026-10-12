@@ -14,7 +14,9 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createSessionCompanion } from "./session-companion.js";
 
 const runEmbeddedAgent = vi.hoisted(() => vi.fn());
+// mock-isolation: Exercise real companion persistence without starting model execution.
 vi.mock("../agents/embedded-agent.js", () => ({ runEmbeddedAgent }));
+// mock-isolation: Persistence tests use a fixed synthetic model selection without provider discovery.
 vi.mock("../agents/simple-completion-runtime.js", () => ({
   resolveSimpleCompletionSelectionForAgent: () => ({ provider: "test", modelId: "model-a" }),
 }));

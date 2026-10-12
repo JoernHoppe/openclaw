@@ -880,7 +880,7 @@ describe("host-prepared embedded tool authority", () => {
       const operation = createReplyOperation({ sessionId, sessionKey, resetTriggered: false });
       const parent = createQueueTestRun({ prompt: "parent reply" });
       parent.run.traceAuthorized = true;
-      operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(parent));
+      await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(parent));
       try {
         await withPreparedEmbeddedRunToolAuthority(
           { admittedRunContext, replyOperation: operation },
@@ -917,7 +917,7 @@ describe("host-prepared embedded tool authority", () => {
         const operation = createReplyOperation({ sessionId, sessionKey, resetTriggered: false });
         const snapshot = prepareReplyToolAuthority(original);
         let failProjection = false;
-        operation.bindToolAuthoritySnapshot({
+        await operation.bindToolAuthoritySnapshotAsync({
           ...snapshot,
           project: (overlay, selectedRoute) => {
             if (failProjection) {

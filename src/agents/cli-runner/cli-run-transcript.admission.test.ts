@@ -34,10 +34,12 @@ vi.mock("../../config/sessions/paths.js", () => ({ resolveSessionStorePathCore: 
 vi.mock("../../config/sessions/cli-history-boundary.js", () => ({
   getCliHistoryWriter: () => ({ assertCurrent: mocks.writer }),
 }));
+// mock-isolation: Admission fixtures control transcript paths and patch settlement independently of storage.
 vi.mock("../../config/sessions/session-accessor.js", () => ({
   patchSessionEntryCore: mocks.patch,
   resolveSessionTranscriptDatabasePath: mocks.resolvePath,
 }));
+// mock-isolation: The retained entry fixture controls writer replacement during admission.
 vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   withSessionEntryReadOnlyInWorker: mocks.read,
 }));

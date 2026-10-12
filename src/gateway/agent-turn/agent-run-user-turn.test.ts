@@ -27,6 +27,7 @@ vi.mock("../../media/store.js", async () => {
   return { ...actual, deleteMediaBuffer: mocks.deleteMediaBuffer };
 });
 
+// mock-isolation: User-turn orchestration receives fixture session rows without starting a read worker.
 vi.mock("../session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: mocks.loadSessionEntry,
 }));

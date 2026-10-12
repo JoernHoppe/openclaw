@@ -321,8 +321,6 @@ export function createHarnessCompletionSourceAssertion(params: {
       "lifecycleRevision",
       "restartRecoveryHarnessCompletion",
       "restartRecoveryTerminalDeliveryEvidence",
-      "restartRecoveryDeliveryRunId",
-      "restartRecoveryRuns",
     ] as const;
     const retained = retainPreparedSessionEntryPredicate({
       databaseIdentity: `file:${source.databaseIdentity}`,

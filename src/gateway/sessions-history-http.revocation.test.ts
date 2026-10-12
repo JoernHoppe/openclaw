@@ -100,6 +100,7 @@ vi.mock("./http-utils.js", () => ({
   },
 }));
 
+// mock-isolation: HTTP history fixtures control visibility and target replacement during awaited reads.
 vi.mock("./session-sharing.js", () => ({
   createSessionListEntryFilter: ({ client }: { client: unknown }) =>
     client ? () => fixture.visible : undefined,
@@ -115,6 +116,7 @@ vi.mock("./session-sharing.js", () => ({
   }),
 }));
 
+// mock-isolation: Revocation tests retain synthetic mutation facts without admitting a physical store.
 vi.mock("./session-sharing-preparation.js", () => ({
   prepareSessionMutationFacts: async () => ({
     storageTarget: { agentId: "main", canonicalKey: "agent:main:main", storePath: "/tmp" },
@@ -137,6 +139,7 @@ vi.mock("./session-sharing-preparation.js", () => ({
   }),
 }));
 
+// mock-isolation: History fixtures resolve synthetic transcript paths and current entries without disk lookup.
 vi.mock("./session-utils.js", () => ({
   resolveCanonicalSessionEntryFromStoreKeys: () => ({
     sessionId: "session-1",

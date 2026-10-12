@@ -51,6 +51,7 @@ vi.mock("../session-transcript-title-reader.js", () => ({
 vi.mock("./session-change-event.js", () => ({
   emitSessionsChanged: mocks.emitSessionsChanged,
 }));
+// mock-isolation: Discussion fixtures own selected targets and rows without admitting physical stores.
 vi.mock("../session-utils-store-lookup.js", () => ({
   withGatewaySessionStoreTarget: async (
     _params: unknown,

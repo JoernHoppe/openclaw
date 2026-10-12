@@ -235,6 +235,9 @@ export function resolveSessionNativeRuntimeRestriction(params: {
   agentId: string;
   sessionKey: string;
   entry: Parameters<typeof resolveAgentHarnessSessionExecutionRestriction>[0]["entry"];
+  preparedSessionCapabilityEntry?: Parameters<
+    typeof resolveAgentHarnessSessionExecutionRestriction
+  >[0]["preparedSessionCapabilityEntry"];
   persistedEntry: SessionEntry | undefined;
   harness: AgentHarness;
   provider: string;

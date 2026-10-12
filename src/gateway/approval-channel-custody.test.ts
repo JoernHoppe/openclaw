@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   supportsScopedPluginReviewers: { value: false },
 }));
 
+// mock-isolation: Custody tests supply account and approver fixtures without loading channel plugins.
 vi.mock("../channels/plugins/index.js", () => ({
   getLoadedChannelPlugin: (() => {
     const plugin = {

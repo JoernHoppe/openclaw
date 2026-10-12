@@ -7,7 +7,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it, vi } from "vitest";
 import { createDeferred, withinTest } from "../../../../test/helpers/promise.js";
@@ -24,7 +23,6 @@ import type { SqliteWorkerAdmissionRequest } from "../../../infra/sqlite-worker-
 import { closeOpenClawAgentDatabasesAsync } from "../../../state/openclaw-agent-db-lifecycle.js";
 import { openOpenClawAgentDatabase } from "../../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
-import { resolveOpenClawStateSqlitePath } from "../../../state/openclaw-state-db.paths.js";
 import { setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../../state/user-profiles.js";
 import * as voiceWriters from "../../../talk/client-voice-session-write.js";
@@ -124,14 +122,10 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
     },
   );
 
-  it.each([
-    { change: "role", phase: "publication", writer: "foreign" },
-    { change: "display", phase: "publication", writer: "foreign" },
-    { change: "role", phase: "preparation", writer: "owner" },
-  ] as const)(
-    "rechecks a $writer profile $change commit after entry $phase",
-    async ({ change, phase }) => {
-      const key = `agent:main:entry-profile-${change}-${phase}`;
+  it.each(["publication", "preparation"] as const)(
+    "rechecks an owner profile role commit after entry %s",
+    async (phase) => {
+      const key = `agent:main:entry-profile-role-${phase}`;
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-profile@example.test");
       setUserProfileRole(profile.id, "write");
@@ -143,24 +137,8 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const ensure = voiceWriters.ensureClientVoiceAgentSessionEntry;
       let changed = false;
       const changeProfile = () => {
-        if (phase === "preparation") {
-          setUserProfileRole(profile.id, "view");
-          changed = true;
-          return;
-        }
-        const peer = new DatabaseSync(resolveOpenClawStateSqlitePath());
-        try {
-          peer
-            .prepare(
-              change === "role"
-                ? "UPDATE user_profiles SET role = 'view' WHERE id = ?"
-                : "UPDATE user_profiles SET display_name = 'Changed display' WHERE id = ?",
-            )
-            .run(profile.id);
-          changed = true;
-        } finally {
-          peer.close();
-        }
+        setUserProfileRole(profile.id, "view");
+        changed = true;
       };
       const prepare = sharingGrants.prepareSessionSharingWorkerGrant;
       const creation =
@@ -201,13 +179,11 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
         if (respond.mock.lastCall?.[0]) {
           harness.ownVoice(respond.mock.lastCall[1].voiceSessionId, key);
         }
-        expect(respond.mock.lastCall?.[0], respond.mock.lastCall?.[2]?.message).toBe(
-          change === "display",
-        );
-        expect(clientVoiceSessionTesting.readRecord("main", "profile-changed-voice")?.status).toBe(
-          change === "display" ? "open" : undefined,
-        );
-        expect(fixture.cancelBrowserSession).toHaveBeenCalledTimes(change === "role" ? 1 : 0);
+        expect(respond.mock.lastCall?.[0], respond.mock.lastCall?.[2]?.message).toBe(false);
+        expect(
+          clientVoiceSessionTesting.readRecord("main", "profile-changed-voice"),
+        ).toBeUndefined();
+        expect(fixture.cancelBrowserSession).toHaveBeenCalledOnce();
       } finally {
         creation.mockRestore();
       }

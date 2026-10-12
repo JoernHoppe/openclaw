@@ -31,6 +31,7 @@ vi.mock("../session-sharing.js", async (importOriginal) => {
     resolveSessionSharingTargetAsync: async (...args: unknown[]) => mocks.resolveTarget(...args),
   };
 });
+// mock-isolation: Provider-review tests control authorization changes while the review is awaited.
 vi.mock("../session-sharing-authorization-async.js", () => ({
   resolveSessionMutationAuthorizationAsync: (...args: unknown[]) =>
     mocks.resolveAuthorization(...args),

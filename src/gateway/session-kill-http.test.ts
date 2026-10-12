@@ -42,6 +42,7 @@ vi.mock("./auth.js", () => ({
   authorizeHttpGatewayConnect: authMock,
 }));
 
+// mock-isolation: HTTP kill tests supply target rows without opening a session database.
 vi.mock("./session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: loadSessionEntryMock,
 }));

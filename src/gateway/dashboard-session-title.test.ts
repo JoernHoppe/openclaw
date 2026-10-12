@@ -17,6 +17,7 @@ vi.mock("../config/sessions/session-accessor.js", () => ({
   patchSessionEntryCore: updateSessionEntry,
   loadSessionEntry,
 }));
+// mock-isolation: Title orchestration reads synthetic session entries without starting storage workers.
 vi.mock("../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (scope: unknown) => loadSessionEntry(scope),
 }));

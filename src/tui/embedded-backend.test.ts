@@ -327,6 +327,7 @@ vi.mock("../gateway/session-utils-store-worker.js", () => ({
   }),
 }));
 
+// mock-isolation: Embedded-backend tests supply defaults and model facts without loading Gateway storage.
 vi.mock("../gateway/session-utils.js", () => ({
   getSessionDefaults: () => getSessionDefaultsMock(),
   listAgentsForGateway: () => [],

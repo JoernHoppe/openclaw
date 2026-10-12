@@ -10,6 +10,7 @@ vi.mock("./agent-runner-execution.js", () => ({
   executeAgentTurn: (...args: unknown[]) => followupTurnTestState.execute(...args),
 }));
 
+// mock-isolation: Forward the real persistence owners without loading the unrelated accessor barrel graph.
 vi.mock("../../config/sessions/session-accessor.js", async () => {
   const { bindSessionPendingInputSources } =
     await import("../../config/sessions/session-accessor.pending-inputs.js");
