@@ -136,7 +136,16 @@ describe("managed llama.cpp non-interactive onboarding", () => {
             "llama-cpp": {
               baseUrl: "http://localhost:8080/v1",
               localService: { command: "/runtime/llama-server" },
-              models: [{ id: "chat", name: "Chat" }],
+              models: [
+                {
+                  id: "chat",
+                  name: "Chat",
+                  reasoning: false,
+                  input: ["text" as const],
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  maxTokens: 512,
+                },
+              ],
             },
           },
         },
