@@ -78,7 +78,8 @@ async function prepareWorkerTranscript(
           matches: (before, after) =>
             before?.sessionId === after?.sessionId &&
             before?.lifecycleRevision === after?.lifecycleRevision &&
-            before?.activeWriterRunId === after?.activeWriterRunId &&
+            (target.expectedWriterRunId === undefined ||
+              before?.activeWriterRunId === after?.activeWriterRunId) &&
             before?.archivedAt === after?.archivedAt,
         });
         facts.release();

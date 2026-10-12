@@ -223,7 +223,15 @@ export async function handleChatAbortRequestWithLifecycle(
     });
     return;
   }
-  const active = context.chatAbortControllers.get(runId);
+  const activeCandidate = context.chatAbortControllers.get(runId);
+  const queuedCandidate = context.chatQueuedTurns.get(runId);
+  // Deferred input keeps this controller after its temporary active registration retires.
+  const active =
+    activeCandidate?.kind === "chat-send" &&
+    queuedCandidate?.controller === activeCandidate.controller &&
+    !activeCandidate.resolveTerminalProducer?.()
+      ? undefined
+      : activeCandidate;
   let abortSessionRead: ReturnType<typeof prepareAbortSession> | undefined;
   const readAbortSession = () => (abortSessionRead ??= prepareAbortSession());
   const abortSession = !active || discardPendingInput ? await readAbortSession() : undefined;
@@ -265,7 +273,7 @@ export async function handleChatAbortRequestWithLifecycle(
     return error === undefined;
   };
 
-  const withdrawalQueue = discardPendingInput ? context.chatQueuedTurns.get(runId) : undefined;
+  const withdrawalQueue = discardPendingInput ? queuedCandidate : undefined;
   const withdrawalScope = withdrawalQueue && {
     sessionKey: withdrawalQueue.sessionKey,
     sessionId: withdrawalQueue.sessionId,
@@ -466,7 +474,7 @@ export async function handleChatAbortRequestWithLifecycle(
     // Queued followup/collect turns keep a cancel identity after chat.send
     // terminalizes; abort them here so Esc cannot report done while they run.
     const chatQueuedTurns = context.chatQueuedTurns;
-    const queued = chatQueuedTurns.get(runId);
+    const queued = queuedCandidate;
     if (queued) {
       if (!discardPendingInput && !authorizeRunTarget(queued)) {
         return;
