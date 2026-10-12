@@ -112,46 +112,9 @@ export async function waitForPatch(
   throw new Error(`No matching sessions.patch request found: ${JSON.stringify(requests)}`);
 }
 
-/** Wait for actionability, then dispatch once before the control can remove itself. */
+/** Playwright reacquires replaced controls before dispatching the single click. */
 export async function activateSelfRemovingControl(control: Locator): Promise<void> {
-  await control.click({ trial: true });
-  await control.evaluate((element) => {
-    const target = element as HTMLElement & { disabled?: boolean };
-    const style = getComputedStyle(target);
-    const bounds = target.getBoundingClientRect();
-    const root = target.getRootNode();
-    const hitTestRoot = root instanceof ShadowRoot ? root : document;
-    const hitTarget = hitTestRoot.elementFromPoint(
-      bounds.left + bounds.width / 2,
-      bounds.top + bounds.height / 2,
-    );
-    if (
-      !target.isConnected ||
-      style.display === "none" ||
-      style.visibility === "hidden" ||
-      bounds.width <= 0 ||
-      bounds.height <= 0 ||
-      target.disabled === true ||
-      target.getAttribute("aria-disabled") === "true" ||
-      !hitTarget ||
-      (hitTarget !== target && !target.contains(hitTarget))
-    ) {
-      throw new Error(
-        `Self-removing control must be visible and enabled before activation: ${JSON.stringify({
-          connected: target.isConnected,
-          disabled: target.disabled === true,
-          ariaDisabled: target.getAttribute("aria-disabled") === "true",
-          display: style.display,
-          visibility: style.visibility,
-          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
-          hitTag: hitTarget?.localName ?? null,
-          hitSelf: hitTarget === target,
-          hitChild: hitTarget !== null && target.contains(hitTarget),
-        })}`,
-      );
-    }
-    target.click();
-  });
+  await control.click();
 }
 
 export function trimmedTextContents(locator: Locator): Promise<string[]> {

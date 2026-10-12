@@ -6,6 +6,7 @@ import { beforeEach, expect, it } from "vitest";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import {
+  captureControlUiE2eFailureDiagnostics,
   installMockGateway,
   type MockGatewayControls,
   type MockGatewayRequest,
@@ -506,6 +507,12 @@ suite.define(() => {
       await learn.click({ force: true });
       expect(await gateway.getRequests("sessions.create")).toHaveLength(creates);
       await screenshot(page, "07-read-only-workshop.png", learn);
+    } catch (error) {
+      await captureControlUiE2eFailureDiagnostics(page, {
+        error: error instanceof Error ? error : new Error(String(error)),
+        label: "read-only-operator-administration",
+      });
+      throw error;
     } finally {
       await context.close();
     }
