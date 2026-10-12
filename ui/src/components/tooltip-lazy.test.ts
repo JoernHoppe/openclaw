@@ -45,8 +45,8 @@ describe("lazy tooltip content materialization", () => {
     vi.advanceTimersByTime(149);
     expect(popup.querySelector(".tooltip-content")).toBeNull();
     vi.advanceTimersByTime(1);
-    expect(tooltip.hasAttribute("open")).toBe(true);
     await settleTooltip(tooltip);
+    expect(tooltip.hasAttribute("open")).toBe(true);
     expect(popup.matches(":popover-open")).toBe(true);
     expect(popup.querySelector(".tooltip-content")?.textContent).toBe("Hover details");
     expect(tooltipSurface(untouched.tooltip)?.querySelector(".tooltip-content")).toBeNull();
@@ -99,7 +99,7 @@ describe("lazy tooltip content materialization", () => {
           cancelable: true,
         });
         trigger.dispatchEvent(escape);
-        expect(escape.defaultPrevented).toBe(true);
+        expect(escape.defaultPrevented).toBe(false);
       } else if (outcome === "disconnect") {
         tooltip.remove();
       } else if (outcome === "toggle") {

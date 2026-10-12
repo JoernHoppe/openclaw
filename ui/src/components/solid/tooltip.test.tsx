@@ -71,6 +71,7 @@ describe("Solid tooltip policy", () => {
     const host = view.container.querySelector("openclaw-tooltip")!;
     const oldTrigger = host.querySelector("button")!;
     oldTrigger.focus();
+    await host.updateComplete;
     flush();
     expect(host.hasAttribute("open")).toBe(true);
     setReplacement(true);
@@ -83,6 +84,7 @@ describe("Solid tooltip policy", () => {
     expect(host.hasAttribute("open")).toBe(false);
     pointer(newTrigger, "pointerenter");
     vi.advanceTimersByTime(150);
+    await host.updateComplete;
     flush();
     expect(host.hasAttribute("open")).toBe(true);
     pointer(newTrigger, "pointerdown");
@@ -190,6 +192,7 @@ describe("Solid tooltip policy", () => {
       controller.previewForAnchor(anchor, "Request details", "pointer");
       await controller.updateComplete;
       vi.advanceTimersByTime(150);
+      await controller.updateComplete;
       flush();
       const host = view.container.querySelector("openclaw-tooltip")!;
       expect(host.hasAttribute("open")).toBe(true);
@@ -254,15 +257,17 @@ describe("Solid tooltip policy", () => {
     expect(newTrigger.getAttribute("aria-describedby")).toBe("new-description");
   });
 
-  it("does not install dismissal ownership or displace the open tooltip after a veto", () => {
+  it("does not install dismissal ownership or displace the open tooltip after a veto", async () => {
     const first = fixture();
     first.trigger.focus();
+    await first.host.updateComplete;
     flush();
     expect(first.host.hasAttribute("open")).toBe(true);
     const second = fixture();
     second.host.addEventListener("wa-show", (event) => event.preventDefault());
     pointer(second.trigger, "pointerenter");
     vi.advanceTimersByTime(150);
+    await second.host.updateComplete;
     flush();
     expect(first.host.hasAttribute("open")).toBe(true);
     expect(second.host.hasAttribute("open")).toBe(false);
@@ -278,6 +283,7 @@ describe("Solid tooltip policy", () => {
     async (attribute) => {
       const { view, host, trigger, surface } = fixture();
       trigger.focus();
+      await host.updateComplete;
       flush();
       expect(host.hasAttribute("open")).toBe(true);
       view.container.setAttribute(attribute, attribute === "aria-hidden" ? "true" : "");
@@ -296,7 +302,7 @@ describe("Solid tooltip policy", () => {
 
   it.each(["open", "closed"] as const)(
     "keeps rich controls interactive inside a shadow root (mode=%s)",
-    (mode) => {
+    async (mode) => {
       const rootHost = document.createElement("section");
       const outside = document.createElement("button");
       const shadow = rootHost.attachShadow({ mode });
@@ -340,6 +346,7 @@ describe("Solid tooltip policy", () => {
         expect(trigger.parentElement).toBe(host);
         expect(action.closest('[slot="content"]')).not.toBeNull();
         trigger.focus();
+        await host.updateComplete;
         flush();
         expect(host.hasAttribute("open")).toBe(true);
         pointer(action, "pointerdown");
@@ -391,9 +398,10 @@ describe("Solid tooltip policy", () => {
     },
   );
 
-  it("preserves rich-content focus on rejected close and returns focus only after acceptance", () => {
+  it("preserves rich-content focus on rejected close and returns focus only after acceptance", async () => {
     const { host, trigger, surface } = fixture(true);
     trigger.focus();
+    await host.updateComplete;
     flush();
     const action = host.querySelector<HTMLButtonElement>('[slot="content"] button')!;
     action.focus();
