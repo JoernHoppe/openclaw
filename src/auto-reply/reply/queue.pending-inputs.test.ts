@@ -80,7 +80,7 @@ describe("followup queue durable input consumption", () => {
     }));
     const recorder = createUserTurnTranscriptRecorder({
       input: { text: `${runId} private source`, idempotencyKey: `${runId}:user` },
-      target: { ...scope(), sessionEntry: undefined },
+      target: { ...scope(), sessionEntry: undefined, config },
       beforeMessageWrite,
       updateMode: "none",
     });
@@ -169,7 +169,7 @@ describe("followup queue durable input consumption", () => {
       messageId: "unstaged",
       userTurnTranscriptRecorder: createUserTurnTranscriptRecorder({
         input: { text: "unstaged transcript body" },
-        target: { ...scope(), sessionEntry: undefined },
+        target: { ...scope(), sessionEntry: undefined, config: staged.run.run.config },
       }),
       turnAdoptionLifecycle: { admission: "cancel-only", onAdopted: async () => {} },
     };
