@@ -3,9 +3,11 @@ import {
   errorShape,
   validateEnvironmentsSessionExecParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { resolveExecDefaults } from "../../agents/exec-defaults.js";
+import { prepareExecDefaults } from "../../agents/exec-defaults.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
 import { captureSessionEntryCurrentCheckInternal } from "../../config/sessions/session-entry-current-check.js";
+import { prepareExecApprovalsCurrentRead } from "../../infra/exec-approvals-store.js";
+import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { approveSessionEnvironmentCommand } from "./environments.session-exec-approval.js";
 import { captureSessionEnvironmentToolPolicy } from "./environments.session-tool-policy.js";
 import { resolveSessionEnvironmentCaller } from "./environments.session.js";
@@ -55,11 +57,14 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
           caller,
           action === "run" || action === "start" ? "exec" : "process",
         );
+        const readApprovals = await prepareExecApprovalsCurrentRead(
+          captureOpenClawStateWorkerContext(),
+        );
         let approved = false;
         const resolvePolicy = () => {
           const cfg = context.getRuntimeConfig();
           policyRead!.assertCurrent();
-          return resolveExecDefaults(
+          const preparation = prepareExecDefaults(
             {
               cfg,
               ...caller.identity,
@@ -71,6 +76,9 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
               preparedSessionEntry: policyRead!.entry ?? null,
             }),
           );
+          return preparation.kind === "resolved"
+            ? preparation.defaults
+            : preparation.resolve(readApprovals());
         };
         const requiresApproval = (policy: ReturnType<typeof resolvePolicy>) =>
           policy.security !== "full" || policy.ask === "always" || toolPolicy.cronExecAskAlways;
@@ -91,9 +99,10 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
               throw new Error("The conversation's exec policy binds commands to a different host");
             }
           }
+          return defaults;
         };
-        assertCurrent();
-        if ((action === "run" || action === "start") && requiresApproval(resolvePolicy())) {
+        const initialPolicy = assertCurrent();
+        if ((action === "run" || action === "start") && requiresApproval(initialPolicy)) {
           await approveSessionEnvironmentCommand({
             options,
             binding,
@@ -106,9 +115,8 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
           approved = true;
         }
         const assertDispatch = () => {
-          assertCurrent();
+          const policy = assertCurrent();
           if (action === "run" || action === "start") {
-            const policy = resolvePolicy();
             if (!approved && requiresApproval(policy)) {
               throw new Error(
                 "Environment execution policy now requires approval; retry the command",

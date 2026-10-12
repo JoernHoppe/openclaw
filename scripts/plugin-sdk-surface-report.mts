@@ -209,6 +209,8 @@ const defaultPublicDeprecatedExportsByEntrypointBudget = Object.freeze({
   "command-auth-native": 3,
   "native-command-registry": 1,
   "skill-commands-runtime": 2,
+  // +1: createSessionHeaderLink from shipped 2026.10.1 until plugin-sdk-session-header-link expires.
+  "control-ui": 1,
 } satisfies Record<string, number>);
 
 export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env) {
@@ -248,7 +250,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: shared stale-read cache replaces board, preview, search, and credential cache policies.
       // +24: approved async approval-routing replacements and delivery facts across four public facades.
       // +2: async sandbox lookup and pure prepared-session classification.
-      3722,
+      // +1: deprecated createSessionHeaderLink retained from shipped 2026.10.1.
+      3723,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -275,7 +278,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: the same bounded stale-read cache factory on collection-runtime.
       // +22: the same async approval-routing functions; two delivery-fact exports are types.
       // +2: the same sandbox replacements.
-      2181,
+      // +1: the same deprecated createSessionHeaderLink.
+      2182,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
@@ -290,7 +294,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +7: retained synchronous session, command-menu, model-override, TTS-path, and list exports.
       // +17: eleven synchronous approval-routing APIs retained across four public facades.
       // +1: released synchronous sandbox lookup retained until the next Plugin SDK major.
-      201,
+      // +1: createSessionHeaderLink from shipped 2026.10.1 until plugin-sdk-session-header-link expires.
+      202,
       env,
     ),
     publicWildcardReexports: readPluginSdkSurfaceBudgetEnv(

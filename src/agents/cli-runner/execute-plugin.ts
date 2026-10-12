@@ -563,6 +563,12 @@ export async function executePluginOwnedProcess(params: {
       params.mcpCapture?.beginCapture(params.mcpCapture.captureKey, assertCaptureCurrent);
     }
     await params.context.cliHistoryWriter?.assertReadable();
+    const requestToolPermission = await createPluginToolPermissionHandler({
+      context: params.context,
+      abortSignal: signal,
+      onPendingApproval: updatePendingApproval,
+      env: params.env,
+    });
     assertCurrent();
     const execution = params.execute({
       command,
@@ -583,14 +589,7 @@ export async function executePluginOwnedProcess(params: {
       ...(run.cliToolAvailability ? { toolAvailability: run.cliToolAvailability } : {}),
       ...(liveSession ? { liveSession } : {}),
       // Warm transports retain their first turn's async context across plugin refreshes.
-      requestToolPermission: AsyncLocalStorage.bind(
-        await createPluginToolPermissionHandler({
-          context: params.context,
-          abortSignal: signal,
-          onPendingApproval: updatePendingApproval,
-          env: params.env,
-        }),
-      ),
+      requestToolPermission: AsyncLocalStorage.bind(requestToolPermission),
       requestUserInput: createPluginUserInputHandler({
         context: params.context,
         abortSignal: signal,

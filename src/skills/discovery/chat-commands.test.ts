@@ -123,6 +123,11 @@ vi.mock("../runtime/remote.js", () => ({
   getRemoteSkillEligibility: () => ({}),
 }));
 
+// mock-isolation: Command-discovery tests supply node eligibility without opening host approval storage.
+vi.mock("../../agents/exec-defaults.js", () => ({
+  resolveNodeExecEligibilityAsync: resolveNodeExecEligibilityMock,
+}));
+
 vi.mock("../../agents/exec-defaults.legacy.js", () => ({
   resolveNodeExecEligibilityLegacy: resolveNodeExecEligibilityMock,
 }));

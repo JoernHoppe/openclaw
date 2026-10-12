@@ -460,6 +460,7 @@ export function withCurrentChatSendSession<T>(params: {
   session: PreparedChatSendSession;
   getRuntimeConfig: () => OpenClawConfig;
   includeMembership: boolean;
+  includeLifecycle?: boolean;
   consume: Parameters<typeof withGatewaySessionEntry<T>>[2];
 }) {
   const { session } = params;
@@ -511,6 +512,7 @@ export function withCurrentChatSendSession<T>(params: {
     target: session.sessionTarget,
     logicalStorePath: session.storePath,
     includeMembership: params.includeMembership,
+    includeLifecycle: params.includeLifecycle,
     consume,
     assertConfigCurrent,
   });

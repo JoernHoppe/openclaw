@@ -47,7 +47,7 @@ type WorkspaceSkillCommandParams = {
 
 function resolveWorkspaceSkillCommandOptions(
   params: WorkspaceSkillCommandParams,
-  nodeSkills = resolveNodeExecEligibilityLegacy(params),
+  nodeSkills: ReturnType<typeof resolveNodeExecEligibilityLegacy>,
 ) {
   const eligibility = {
     nodeSkills,
@@ -87,7 +87,7 @@ export function listSkillCommandsForWorkspace(
     replacement: "prepareSkillCommandsForWorkspace",
   });
   return buildWorkspaceSkillCommandSpecs(params.workspaceDir, {
-    ...resolveWorkspaceSkillCommandOptions(params),
+    ...resolveWorkspaceSkillCommandOptions(params, resolveNodeExecEligibilityLegacy(params)),
     reservedNames: listReservedChatSlashCommandNames(),
     gatewayOnly: hasRemoteWorkspace(params.workspaceDir),
   });
@@ -100,10 +100,12 @@ export async function prepareSkillCommandsForWorkspace(
   assertCurrent?.();
   await prepareRemoteSkillConnections();
   assertCurrent?.();
+  const nodeSkills = await resolveNodeExecEligibilityAsync(params);
+  assertCurrent?.();
   const commands = await prepareWorkspaceSkillCommandSpecs(
     params.workspaceDir,
     {
-      ...resolveWorkspaceSkillCommandOptions(params, await resolveNodeExecEligibilityAsync(params)),
+      ...resolveWorkspaceSkillCommandOptions(params, nodeSkills),
       reservedNames: listReservedChatSlashCommandNames(),
     },
     assertCurrent,
@@ -117,8 +119,9 @@ export async function prepareBundledSkillCommandForWorkspace(
   params: WorkspaceSkillCommandParams & { skillName: string },
 ): Promise<SkillCommandSpec | undefined> {
   await prepareRemoteSkillConnections();
+  const nodeSkills = await resolveNodeExecEligibilityAsync(params);
   const commands = await prepareWorkspaceSkillCommandSpecs(params.workspaceDir, {
-    ...resolveWorkspaceSkillCommandOptions(params, await resolveNodeExecEligibilityAsync(params)),
+    ...resolveWorkspaceSkillCommandOptions(params, nodeSkills),
     reservedNames: listReservedChatSlashCommandNames(),
     bundledSkillName: params.skillName,
   });
@@ -191,7 +194,6 @@ function* resolveAgentSkillCommandWorkspaces(params: AgentSkillCommandParams, al
   for (const { agentId, workspaceDir, skillFilter, gatewayOnly } of workspaceAgents) {
     yield {
       workspaceDir,
-      gatewayOnly,
       params: {
         cfg: params.cfg,
         agentId,
@@ -205,6 +207,7 @@ function* resolveAgentSkillCommandWorkspaces(params: AgentSkillCommandParams, al
             }
           : {}),
       },
+      gatewayOnly,
     };
   }
 }
@@ -229,14 +232,19 @@ export function listSkillCommandsForAgents(params: AgentSkillCommandParams): Ski
   });
   const used = listReservedChatSlashCommandNames();
   const entries: SkillCommandSpec[] = [];
-  for (const { workspaceDir, gatewayOnly, params: workspace } of resolveAgentSkillCommandWorkspaces(
-    params,
-  )) {
+  for (const {
+    workspaceDir,
+    params: workspaceParams,
+    gatewayOnly,
+  } of resolveAgentSkillCommandWorkspaces(params)) {
     appendSkillCommands(
       entries,
       used,
       buildWorkspaceSkillCommandSpecs(workspaceDir, {
-        ...resolveWorkspaceSkillCommandOptions(workspace),
+        ...resolveWorkspaceSkillCommandOptions(
+          workspaceParams,
+          resolveNodeExecEligibilityLegacy(workspaceParams),
+        ),
         gatewayOnly,
         reservedNames: used,
       }),
@@ -253,17 +261,17 @@ export async function prepareSkillCommandsForAgents(
   params.signal?.throwIfAborted();
   const used = listReservedChatSlashCommandNames();
   const entries: SkillCommandSpec[] = [];
-  for (const { workspaceDir, params: workspace } of resolveAgentSkillCommandWorkspaces(
-    params,
-    true,
-  )) {
-    const options = resolveWorkspaceSkillCommandOptions(
-      workspace,
-      await resolveNodeExecEligibilityAsync(workspace),
-    );
+  for (const {
+    workspaceDir,
+    params: workspaceParams,
+    gatewayOnly,
+  } of resolveAgentSkillCommandWorkspaces(params, true)) {
+    const nodeSkills = await resolveNodeExecEligibilityAsync(workspaceParams);
+    params.signal?.throwIfAborted();
     const commands = await racePromiseWithAbortSignal(
       prepareWorkspaceSkillCommandSpecs(workspaceDir, {
-        ...options,
+        ...resolveWorkspaceSkillCommandOptions(workspaceParams, nodeSkills),
+        gatewayOnly,
         reservedNames: used,
       }),
       params.signal,
