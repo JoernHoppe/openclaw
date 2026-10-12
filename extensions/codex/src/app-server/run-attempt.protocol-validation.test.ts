@@ -5,6 +5,7 @@ import {
   createMockPluginRegistry,
   loadUserTurnTranscriptRecorderFactoryForTest,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { readVisibleSessionTranscriptMessageEntries } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { describe, expect, it, onTestFailed, vi } from "vitest";
@@ -41,6 +42,9 @@ describe("Codex submitted prompt provenance", () => {
     });
     const harness = createStartedThreadHarness();
     const params = createTestParams();
+    const abortController = new AbortController();
+    params.abortSignal = abortController.signal;
+    setRuntimeConfigSnapshot(params.config ?? {});
     params.agentId = "main";
     params.prompt = "  Keep the original whitespace.\n";
     params.trigger = "user";
@@ -78,13 +82,8 @@ describe("Codex submitted prompt provenance", () => {
     const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
     const run = runCodexAppServerAttempt(params);
     try {
-      stage = "wait-for-turn-start";
-      await Promise.race([
-        harness.waitForMethod("turn/start"),
-        run.then((result) => {
-          throw new Error("Codex attempt settled before turn/start", { cause: result });
-        }),
-      ]);
+      stage = "wait-for-turn-acceptance";
+      await run.waitForTurnAccepted();
       const request = harness.requests.find(({ method }) => method === "turn/start")!
         .params as CodexTurnStartParams;
       const sentInput = structuredClone(request.input);
@@ -155,13 +154,11 @@ describe("Codex submitted prompt provenance", () => {
       });
     } finally {
       try {
-        // A preparation failure can precede the notification handler's attachment.
-        if (harness.requests.some(({ method }) => method === "turn/start")) {
-          cleanupStage = "complete-turn";
-          await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-        }
+        // Settle the attempt even when admission rejects before notification handlers attach.
+        cleanupStage = "abort-attempt";
+        abortController.abort();
         cleanupStage = "await-attempt";
-        await run;
+        await run.catch(() => {});
       } finally {
         closeHost();
       }

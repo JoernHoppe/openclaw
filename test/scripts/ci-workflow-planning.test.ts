@@ -11363,7 +11363,6 @@ describe("ci workflow guards", () => {
         runner: "ubuntu-24.04",
         timeout_minutes: 20,
       });
-      // Packed groups carry the identity for release-gate and full manual rows.
       for (const field of ["shard_name", "git_commits", "requires_dist"]) {
         expect(row).not.toHaveProperty(field);
       }
