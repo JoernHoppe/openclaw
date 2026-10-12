@@ -93,10 +93,10 @@ export async function handleCodexConversationInboundClaim(
           }
           const { inspectConversationBinding } =
             await import("openclaw/plugin-sdk/conversation-binding-inspection-runtime");
+          await sandbox.assertCurrent();
           if (!isCurrentPublicBinding(publicBinding, inspectConversationBinding)) {
             return "This Codex conversation was detached or changed before its message could run.";
           }
-          sandbox.assertCurrent();
           const resumed = await resume({
             nodeId: data.nodeId,
             sessionId: data.sessionId,
