@@ -12,6 +12,8 @@ export type SessionTranscriptAuthority = SessionTranscriptContextVersion & {
   indexedSeq: number | null;
   activeMessageCount: number | null;
   needsRebuild: number | null;
+  /** Absent needs a tail lookup; null is a known empty bounded preview. */
+  lastMessagePreview?: string | null;
   actorRewrite?: {
     before: SessionTranscriptContextVersion;
     postimage: SessionActorHotState;
