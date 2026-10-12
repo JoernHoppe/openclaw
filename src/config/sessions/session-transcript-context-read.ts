@@ -127,6 +127,7 @@ export async function readSessionTranscriptContextProjectionAsync<T>(
     },
     signal,
     targetDiscoveryLane,
+    capturedAdmission?.storePath,
   );
 }
 
@@ -346,5 +347,7 @@ export function readSessionTranscriptModelContextAsync<T>(
       );
     },
     signal,
+    undefined,
+    capturedAdmission?.storePath ?? capturedThrough?.storePath,
   );
 }
