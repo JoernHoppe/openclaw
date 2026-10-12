@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from "vitest";
 import { resolveAgentDir } from "../../agents/agent-scope.js";
 import { waitForEmbeddedAgentRunEnd } from "../../agents/embedded-agent-runner/runs.js";
 import { createContextEngineLogicalTurnLease } from "../../agents/harness/context-engine-logical-turn.js";
@@ -45,7 +45,7 @@ describe("worker context engine", () => {
 
   it.each(["direct", "outer"] as const)(
     "runs the selected context engine through worker preparation and %s-owned settlement",
-    async (owner, ctx) => {
+    async (owner) => {
       let phase = "seed";
       let reported = false;
       const events: string[] = [];
@@ -66,9 +66,7 @@ describe("worker context engine", () => {
           JSON.stringify({ owner, phase, settlements, events }),
         );
       };
-      ctx.signal.addEventListener("abort", report, { once: true });
-      ctx.onTestFailed(report);
-      ctx.onTestFinished(() => ctx.signal.removeEventListener("abort", report));
+      onTestFailed(report);
       await seedActivePlacement();
       const input = turn(`context-engine-${owner}`);
       const acceptedFile = path.join(input.workspaceDir, "accepted-project.txt");
