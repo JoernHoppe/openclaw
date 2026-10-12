@@ -1,5 +1,9 @@
 // A real Gateway restart must remove interrupted Dreaming sessions from its public session list.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../src/config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 import { connectGatewayClient, disconnectGatewayClient } from "../src/gateway/test-helpers.e2e.js";
 import { listSessionEntries, upsertSessionEntry } from "../src/plugin-sdk/session-store-runtime.js";
@@ -21,6 +25,7 @@ type GatewaySessionClient = Awaited<ReturnType<typeof connectGatewayClient>>;
 afterEach(async () => {
   await Promise.all(instances.splice(0).map(async (instance) => await instance.cleanup()));
   closeOpenClawAgentDatabasesForTest();
+  clearRuntimeConfigSnapshot();
 });
 
 async function seedSession(params: {
@@ -101,6 +106,7 @@ describe("Gateway dreaming session restart cleanup", () => {
     });
     instances.push(instance);
     instance.state.applyEnv();
+    setRuntimeConfigSnapshot(config);
     expect(instance.env.OPENCLAW_SKIP_CRON).toBe("1");
 
     const sentinel = await seedSession({
