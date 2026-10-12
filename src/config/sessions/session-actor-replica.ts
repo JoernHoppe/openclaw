@@ -27,6 +27,7 @@ import type {
 import { readSessionActorTranscriptAnchors } from "./session-actor-transcript-anchors.js";
 import {
   advanceSessionActorTranscriptReplica,
+  rewriteSessionActorTranscriptReplica,
   sameSessionActorTranscriptVersion,
   type SessionActorTranscriptReplica,
 } from "./session-actor-transcript-replica.js";
@@ -34,6 +35,7 @@ import type { SessionEntrySnapshotField } from "./session-entry-snapshot-values.
 import { deriveSessionPredicateColumns } from "./session-predicate-columns.js";
 import type { SessionRowDatabaseFacts } from "./session-row-facts.types.js";
 import type { SessionTranscriptAnchorSelection } from "./session-transcript-anchor-read.kernel.js";
+import { readPreparedSessionTranscriptChange } from "./session-transcript-authority.js";
 import { collectSessionEntryLookupKeys } from "./store-entry.js";
 
 export type SessionActorEntryFacts = Pick<
@@ -86,6 +88,13 @@ const pool = resolveGlobalSingleton<ReplicaPool>(
     owner.bytes = 0;
   },
 );
+
+function scopedWriteToken(target: FileTarget, sessionIds: readonly string[]) {
+  return readSqliteDatabaseScopedWriteTokenForPath(target.database.nativeLocation, [
+    ...collectSessionEntryLookupKeys(target.sessionKey),
+    ...sessionIds.map(sqliteSessionIdWriteScope),
+  ]);
+}
 
 export function ensureReplicaSubscription(): void {
   if (pool.unsubscribe) {
@@ -158,6 +167,24 @@ export function ensureReplicaSubscription(): void {
         ? { hasBoard: cell.snapshot.hasBoard }
         : cell.entry?.projection;
       discard(cell);
+      const transcript = readPreparedSessionTranscriptChange(change);
+      const rewrite =
+        publishedKey === sessionKey && transcript?.kind === "postimage"
+          ? transcript.value.actorRewrite
+          : undefined;
+      if (
+        rewrite &&
+        source.identity === database.physicalIdentity &&
+        rewrite.postimage.writeToken ===
+          scopedWriteToken({ database, sessionKey }, rewrite.postimage.dependencySessionIds)
+      ) {
+        retainSnapshot(cell, rewrite.postimage, cell.generation);
+        const retained = rewriteSessionActorTranscriptReplica(previousTranscript, rewrite);
+        if (retained) {
+          retainTranscript(cell, retained);
+        }
+        continue;
+      }
       if (
         !("all" in change) &&
         !change.factsInvalidated &&
@@ -200,10 +227,7 @@ export function ensureReplicaSubscription(): void {
           continue;
         }
         const dependencySessionIds = [prepared.fullEntry.sessionId];
-        const writeToken = readSqliteDatabaseScopedWriteTokenForPath(database.nativeLocation, [
-          ...collectSessionEntryLookupKeys(sessionKey),
-          ...dependencySessionIds.map(sqliteSessionIdWriteScope),
-        ]);
+        const writeToken = scopedWriteToken({ database, sessionKey }, dependencySessionIds);
         if (writeToken) {
           const projection =
             prepared.projection ??
@@ -370,10 +394,7 @@ function readCurrentEntryCell(target: FileTarget) {
     forgetUnused(cell);
     return undefined;
   }
-  const token = readSqliteDatabaseScopedWriteTokenForPath(target.database.nativeLocation, [
-    ...collectSessionEntryLookupKeys(target.sessionKey),
-    ...state.dependencySessionIds.map(sqliteSessionIdWriteScope),
-  ]);
+  const token = scopedWriteToken(target, state.dependencySessionIds);
   if (!token) {
     return undefined;
   }
@@ -507,10 +528,7 @@ export function retainSessionActorEntryFacts(
 ): void {
   ensureReplicaSubscription();
   const dependencySessionIds = facts.entry ? [facts.entry.sessionId] : [];
-  const writeToken = readSqliteDatabaseScopedWriteTokenForPath(target.database.nativeLocation, [
-    ...collectSessionEntryLookupKeys(target.sessionKey),
-    ...dependencySessionIds.map(sqliteSessionIdWriteScope),
-  ]);
+  const writeToken = scopedWriteToken(target, dependencySessionIds);
   if (!writeToken) {
     return;
   }
@@ -521,10 +539,7 @@ export function retainSessionActorEntryFacts(
     pool.cells.set(key, cell);
   }
   if (cell.snapshot) {
-    const current = readSqliteDatabaseScopedWriteTokenForPath(target.database.nativeLocation, [
-      ...collectSessionEntryLookupKeys(target.sessionKey),
-      ...cell.snapshot.dependencySessionIds.map(sqliteSessionIdWriteScope),
-    ]);
+    const current = scopedWriteToken(target, cell.snapshot.dependencySessionIds);
     if (current === cell.snapshot.writeToken) {
       touch(cell);
       return;
@@ -599,10 +614,10 @@ export function createSessionActorReplica(
       ) {
         return undefined;
       }
-      return readSqliteDatabaseScopedWriteTokenForPath(database.nativeLocation, [
-        ...collectSessionEntryLookupKeys(target.sessionKey),
-        ...state.dependencySessionIds.map(sqliteSessionIdWriteScope),
-      ]);
+      return scopedWriteToken(
+        { database, sessionKey: target.sessionKey },
+        state.dependencySessionIds,
+      );
     } catch {
       return undefined;
     }

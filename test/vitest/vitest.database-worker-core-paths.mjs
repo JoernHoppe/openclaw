@@ -116,6 +116,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/gateway/server-methods/chat-transcript-persistence.generated-media.test.ts",
   "src/gateway/chat-display-projection.media.test.ts",
   "src/config/sessions/session-message-rewrite.test.ts",
+  "src/config/sessions/session-actor-transcript-reuse.test.ts",
   "src/gateway/server-methods/chat-send-reply-dispatch.test.ts",
   "src/gateway/server-methods/chat-send-reply-session.test.ts",
   "src/gateway/server-methods/chat-send-commentary-media.test.ts",

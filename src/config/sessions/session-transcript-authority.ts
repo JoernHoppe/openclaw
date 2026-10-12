@@ -26,9 +26,12 @@ import {
   preparedSharingChanges,
 } from "./session-accessor.sqlite-entry-cache-publication-state.js";
 import type { SessionEntryPublicationSource } from "./session-accessor.sqlite-entry-cache.types.js";
+import type { SessionActorTranscriptRow } from "./session-actor-bounded-history.js";
+import type { SessionActorHotState } from "./session-actor-state.types.js";
+import { prepareSessionActorTranscriptAuthority } from "./session-actor-transaction.js";
 import type { SessionTranscriptContextVersion } from "./session-transcript-context-version.types.js";
 
-/** Context postimage; exact anchor membership still belongs to the native projection reader. */
+/** Committed context facts, optionally carrying a resident actor's exact metadata rewrite. */
 export type SessionTranscriptAuthority = SessionTranscriptContextVersion & {
   sessionId: string;
   sessionKey: string;
@@ -36,6 +39,11 @@ export type SessionTranscriptAuthority = SessionTranscriptContextVersion & {
   indexedSeq: number | null;
   activeMessageCount: number | null;
   needsRebuild: number | null;
+  actorRewrite?: {
+    before: SessionTranscriptContextVersion;
+    postimage: SessionActorHotState;
+    rows: SessionActorTranscriptRow[];
+  };
 };
 export type SessionTranscriptAuthorityReceipt = SqliteCommitReceipt<
   SessionTranscriptAuthority,
@@ -138,7 +146,7 @@ export function publishSessionTranscriptAuthority(
 ): void {
   publishTranscriptFact(database, context.sessionKey, {
     kind: "postimage",
-    value: Object.freeze(context),
+    value: Object.freeze(prepareSessionActorTranscriptAuthority(database, context)),
   });
 }
 
