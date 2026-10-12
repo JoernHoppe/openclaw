@@ -91,9 +91,6 @@ function retireSupersededSessionFacts(
   return [...supersededKeys].flatMap((sessionKey) => {
     const membershipChanged = owner.membershipInvalidated.has(sessionKey);
     const generationChanged = !generationUnchanged.has(sessionKey);
-    if (!membershipChanged && !generationChanged) {
-      return [];
-    }
     for (const read of preparedSharingReads.get(`file:${params.databaseIdentity}\0${sessionKey}`) ??
       []) {
       if (membershipChanged) {
@@ -104,6 +101,7 @@ function retireSupersededSessionFacts(
         publishRetainedSessionGeneration(read, undefined, false);
       }
     }
+    // Stable policy facts do not make the superseded row's projection current.
     const change: SessionRowChange = {
       agentId: params.agentId,
       storePath: params.storePath,
