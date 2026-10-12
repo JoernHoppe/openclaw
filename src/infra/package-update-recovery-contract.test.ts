@@ -25,7 +25,6 @@ it("reads signed exact identities from persisted package recovery descriptors", 
     interruptedLaunchers: [],
     retention: null,
   };
-  expect(PackageTransactionDescriptorSchema.parse(JSON.parse(JSON.stringify(descriptor)))).toEqual(
-    descriptor,
-  );
+  const serialized = JSON.stringify(descriptor);
+  expect(PackageTransactionDescriptorSchema.parse(JSON.parse(serialized))).toEqual(descriptor);
 });

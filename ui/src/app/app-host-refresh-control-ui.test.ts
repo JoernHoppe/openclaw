@@ -13,8 +13,9 @@ import {
 } from "./gateway-store.test-support.ts";
 import { createApplicationUpdateOverlays } from "./overlays-updates.ts";
 import { loadSettings } from "./settings.ts";
-import { resolveApplicationStartupSettings } from "./startup-settings.ts";
+import * as chunkRecovery from "./stale-chunk-reload.ts";
 import "./app-host.ts";
+import { resolveApplicationStartupSettings } from "./startup-settings.ts";
 
 vi.hoisted(() => {
   // Build identity is captured on import, including imports from an earlier shared test.
@@ -70,6 +71,7 @@ describe("OpenClaw shell Control UI refresh", () => {
 
   afterEach(() => {
     store.gateway.stop();
+    vi.useRealTimers();
     setAvatarGatewayOrigin(null);
     document.body.replaceChildren();
     vi.unstubAllGlobals();
@@ -125,6 +127,8 @@ describe("OpenClaw shell Control UI refresh", () => {
   );
 
   it("continues the browser handoff when manual refresh follows a failed automatic probe", async () => {
+    vi.useFakeTimers();
+    const scheduled = vi.spyOn(chunkRecovery, "scheduleStaleChunkReload");
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
     store.current().opts.onClose?.({
       code: 1008,
@@ -140,9 +144,9 @@ describe("OpenClaw shell Control UI refresh", () => {
       },
       willRetry: false,
     });
-    await new Promise<void>((resolve) => {
-      setImmediate(resolve);
-    });
+    await vi.advanceTimersByTimeAsync(0);
+    const automatic = scheduled.mock.results[0]?.value;
+    expect(automatic).toBeDefined();
     expect(replace).not.toHaveBeenCalled();
     const { shell } = createRefreshShell(store.gateway);
 
@@ -159,6 +163,10 @@ describe("OpenClaw shell Control UI refresh", () => {
     expect(resumed.pendingBootstrapToken).toBe("synthetic-owner-bootstrap");
     expect(resumed.pendingBootstrapProfile).toBe("owner");
     expect(resumed.location.hash).toBe("");
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(automatic).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each(["browser", "native"] as const)(
