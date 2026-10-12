@@ -62,7 +62,10 @@ export async function prepareSessionWorkerPlacementPatchValidation(
     ? await params.context.workerSessionPlacementService?.prepareSessionPlacement?.(entry.sessionId)
     : undefined;
   try {
+    const currentPlacement = placement?.current();
     const runtime =
+      currentPlacement &&
+      currentPlacement.state !== "local" &&
       entry?.sessionId &&
       params.validateModelRuntime &&
       (params.patch.model !== undefined ||
