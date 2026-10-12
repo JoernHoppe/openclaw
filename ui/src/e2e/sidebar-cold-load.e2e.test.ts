@@ -500,13 +500,22 @@ suite.define(() => {
             await page.reload();
             await page.locator('aside.sidebar[data-snapshot-state="cached"]').waitFor();
             await gateway.waitForRequest("connect");
+            const bootstrapQuery = { includeDerivedTitles: true, includeLastMessage: true };
+            await gateway.deferNext("sessions.list", bootstrapQuery);
             await gateway.deferNext("sessions.list", { hasBoard: true });
             await gateway.resolveDeferred("connect");
             await gateway.waitForRequest("sessions.list", { match: { hasBoard: true } });
-            await gateway.rejectDeferred("sessions.list", {
-              code: "UNAVAILABLE",
-              message: "Synthetic dashboard catalog unavailable",
-            });
+            await gateway.waitForRequest("sessions.list", { match: bootstrapQuery });
+            // Finish startup hydration before failing pages so it cannot retry that failure.
+            await gateway.resolveDeferred("sessions.list", undefined, { match: bootstrapQuery });
+            await gateway.rejectDeferred(
+              "sessions.list",
+              {
+                code: "UNAVAILABLE",
+                message: "Synthetic dashboard catalog unavailable",
+              },
+              { match: { hasBoard: true } },
+            );
             await page.locator('aside.sidebar[data-snapshot-state="live"]').waitFor();
             await sidebar
               .getByRole("alert")
