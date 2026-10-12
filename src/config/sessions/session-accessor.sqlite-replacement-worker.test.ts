@@ -11,6 +11,7 @@ import {
   type SqliteWorkerOperations,
   type SqliteWorkerStore,
 } from "../../infra/sqlite-worker-contract.js";
+import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import * as admission from "../../infra/sqlite-worker-operation-admission.js";
 import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
 import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
@@ -27,6 +28,7 @@ import {
   closeOpenClawAgentDatabaseByPathAsync,
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
+import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
 import { ensureSessionTranscriptArchiveSchema } from "../../state/openclaw-agent-session-transcript-archive-schema.js";
 import { createOpenClawDatabaseMaintenanceScope } from "../../state/openclaw-state-db-async-lifecycle.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -44,6 +46,7 @@ import {
   readExactSessionEntryRow,
   writeSessionEntry,
 } from "./session-accessor.sqlite-entry-store.js";
+import { replaceSessionEntry } from "./session-accessor.sqlite-entry.js";
 import {
   applySessionEntryCanonicalReplacements,
   applySessionEntryExactReplacements,
@@ -409,6 +412,30 @@ it("creates a missing durable replacement database entirely through its worker o
     }
     const database = openOpenClawAgentDatabase({ agentId: "main", path: storePath });
     expect(readExactSessionEntryRow(database, sessionKey)?.entry.sessionId).toBe("created");
+  });
+});
+
+it("joins an original absent-target reservation when replacing the first session entry", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    const storePath = state.statePath("reserved-replacement.sqlite");
+    const options = { agentId: "main", path: storePath };
+    const creator = captureOpenClawAgentDatabaseExecution(options, {
+      expectedCreationIdentity: readDatabasePathIdentitySync(storePath),
+    });
+    const sessionKey = "agent:main:reserved-replacement";
+    try {
+      await replaceSessionEntry(
+        { agentId: "main", storePath, sessionKey },
+        { sessionId: "reserved-replacement", updatedAt: 1 },
+      );
+      const database = openOpenClawAgentDatabase(options);
+      expect(readExactSessionEntryRow(database, sessionKey)?.entry.sessionId).toBe(
+        "reserved-replacement",
+      );
+      expect(creator.fileIdentity).toMatchObject({ kind: "file" });
+    } finally {
+      await creator.release();
+    }
   });
 });
 

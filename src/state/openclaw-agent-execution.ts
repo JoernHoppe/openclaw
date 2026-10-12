@@ -143,7 +143,7 @@ function captureFileAgentDatabaseExecution(
         pathname,
         expectedCreationIdentity,
         expectedCreationIdentity.key.startsWith("path:") && existing?.kind === "file"
-          ? existing.creationIdentity
+          ? (existing.creationIdentity ?? identity)
           : identity,
         constraints.expectedIdentity,
       );
