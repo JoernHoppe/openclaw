@@ -211,6 +211,8 @@ function MediaDeviceField(props: { config: ConfigProps; kind: "microphone" | "ca
   );
 }
 export function ChatPreferencesSection(props: ConfigProps) {
+  // Unrelated preference refreshes must not replace the draft before blur commits it.
+  const messageWidth = createMemo(() => props.chatMessageMaxWidth ?? "");
   const followUpSelection = createMemo(() => props.chatFollowUpMode ?? "server");
   const serverQueueMode = createMemo(() => props.serverQueueMode ?? t("chat.followUpModeLoading"));
   const followUpDescription = createMemo(() =>
@@ -273,7 +275,7 @@ export function ChatPreferencesSection(props: ConfigProps) {
                     type="text"
                     spellcheck="false"
                     placeholder="48rem"
-                    value={props.chatMessageMaxWidth ?? ""}
+                    value={messageWidth()}
                     onChange={(event: Event) => {
                       // SAFETY: The listener is bound directly to this input.
                       const input = event.currentTarget as HTMLInputElement;
