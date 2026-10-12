@@ -7,7 +7,9 @@ const viewLoad = vi.hoisted(() => {
   let release!: () => void;
   return {
     started: false,
-    promise: new Promise<void>((resolve) => (release = resolve)),
+    promise: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
     release: () => release(),
   };
 });
