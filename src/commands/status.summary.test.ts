@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveContextTokensForModelFromCache } from "../agents/context-resolution.js";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { SESSION_TOTAL_TOKENS_VERSION } from "../config/sessions/types.js";
 import { setActiveDegradedPlugins } from "../plugins/runtime-degraded-state.js";
 import {
@@ -210,6 +211,7 @@ describe("getStatusSummary", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(resolveSessionStorePathCore).mockReturnValue("/tmp/sessions.json");
     setActiveDegradedPlugins([]);
     clearActiveCredentialDegradedOwner("account", "telegram:work");
     setActiveDegradedSecretOwners([]);
@@ -322,6 +324,10 @@ describe("getStatusSummary", () => {
   });
 
   it("keeps global heartbeat routes separate across agent stores", async () => {
+    // Distinct physical stores keep each agent's literal global row separate.
+    vi.mocked(resolveSessionStorePathCore).mockImplementation(
+      (_store, options) => `/tmp/${options?.agentId}/sessions.json`,
+    );
     vi.mocked(listGatewayAgentsBasic).mockResolvedValue({
       defaultId: "research",
       mainKey: "main",

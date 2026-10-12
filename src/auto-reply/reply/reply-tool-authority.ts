@@ -490,16 +490,26 @@ export function prepareReplyToolAuthority(
     const assertEntry = retainEntry(entry);
     let selectedInput = input;
     let selectedRoute = route;
-    const prepared = await prepareSessionCapabilityRead(() => {
-      assertOpen();
-      capturedReadPlan?.assertCurrent();
-      assertEntry.assertCurrent();
-      return resolvePreparedReplyToolAuthorityFingerprint(
+    // Native incognito keeps its existing synchronous compatibility owner until its cutover.
+    const nativeCapabilityReader =
+      !memory && isIncognitoSessionKey(sessionKey)
+        ? (await import("../../agents/subagents/spawn/subagent-session-store-legacy.js"))
+            .withLegacySessionCapabilityRead
+        : undefined;
+    const resolveFingerprint = () =>
+      resolvePreparedReplyToolAuthorityFingerprint(
         selectedInput,
         selectedRoute,
         memory ? memory.actor.snapshot(memory.authority)?.entry : entry,
         narrow,
       );
+    const prepared = await prepareSessionCapabilityRead(() => {
+      assertOpen();
+      capturedReadPlan?.assertCurrent();
+      assertEntry.assertCurrent();
+      return nativeCapabilityReader
+        ? nativeCapabilityReader(resolveFingerprint)
+        : resolveFingerprint();
     }).catch((error: unknown) => {
       assertEntry.release();
       throw error;
