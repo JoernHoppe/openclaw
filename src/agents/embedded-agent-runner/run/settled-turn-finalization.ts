@@ -77,7 +77,9 @@ export function buildSettledToolFallbackText(
   if (!toolMetas || !last || !toolName) {
     return SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT;
   }
-  const outcome = last.isError ? "failed" : "succeeded";
+  // An absent isError is an unknown terminal outcome, not a success.
+  const outcome =
+    last.isError === false ? "succeeded" : last.isError === true ? "failed" : "outcome unknown";
   return `${SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT} Tool calls: ${toolMetas.length}; last: ${toolName} (${outcome}).`;
 }
 

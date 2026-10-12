@@ -806,8 +806,14 @@ describe("buildSettledToolFallbackText", () => {
         { toolName: "exec", isError: true },
       ]),
     ).toBe(`${SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT} Tool calls: 2; last: exec (failed).`);
+  });
+
+  it("reports an unknown outcome when isError is absent instead of claiming success", () => {
     expect(buildSettledToolFallbackText([{ toolName: "read" }])).toBe(
-      `${SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT} Tool calls: 1; last: read (succeeded).`,
+      `${SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT} Tool calls: 1; last: read (outcome unknown).`,
+    );
+    expect(buildSettledToolFallbackText([{ toolName: "read", isError: undefined }])).toContain(
+      "(outcome unknown)",
     );
   });
 
