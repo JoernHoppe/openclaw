@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
@@ -70,6 +71,7 @@ describe("active-context preflight compaction", () => {
         content: "retain",
         timestamp: 2,
       });
+      assert(retained, "Seeded transcript message was not appended");
       await transcript.appendCompactionAsync(SUMMARY_MARKER, retained, 100_000);
       await transcript.appendMessageAsync({ role: "user", content: "active tail", timestamp: 3 });
       await instance.startGateway();

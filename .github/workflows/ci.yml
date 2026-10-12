@@ -6583,7 +6583,6 @@ jobs:
       - postgres-conformance
       - check-docs
       - skills-python
-      - postgres-conformance
       - checks-windows
       - macos-node
       - macos-swift
