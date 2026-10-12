@@ -5,7 +5,8 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { prepareExecDefaults } from "../../agents/exec-defaults.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
-import { captureSessionEntryCurrentCheckInternal } from "../../config/sessions/session-entry-current-check.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
+import { prepareSessionSourceAuthority } from "../../config/sessions/session-source-authority.js";
 import { prepareExecApprovalsCurrentRead } from "../../infra/exec-approvals-store.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { approveSessionEnvironmentCommand } from "./environments.session-exec-approval.js";
@@ -22,10 +23,11 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
       const { params, respond, context } = options;
       const caller = await resolveSessionEnvironmentCaller(options, params);
       let policyRead:
-        | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckInternal>>
+        | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
         | undefined;
+      let policyAuthority: Awaited<ReturnType<typeof prepareSessionSourceAuthority>> | undefined;
       try {
-        policyRead = await captureSessionEntryCurrentCheckInternal({
+        policyRead = await captureSessionEntryCurrentCheckAsyncInternal({
           ...caller.identity,
           fields: [
             "execHost",
@@ -36,6 +38,7 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
             "createdActor",
           ],
         });
+        policyAuthority = await prepareSessionSourceAuthority(policyRead.source);
         const service = context.workerEnvironmentService;
         const binding = service?.getSessionAttachment(caller.identity.sessionId);
         if (
@@ -63,7 +66,7 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
         let approved = false;
         const resolvePolicy = () => {
           const cfg = context.getRuntimeConfig();
-          policyRead!.assertCurrent();
+          policyAuthority!.assertCurrent();
           const preparation = prepareExecDefaults(
             {
               cfg,
@@ -137,8 +140,12 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
         assertCurrent();
         respond(true, { environmentId: binding.environmentId, ...result });
       } finally {
-        policyRead?.release();
-        caller.release();
+        try {
+          await policyAuthority?.release?.();
+        } finally {
+          policyRead?.release();
+          caller.release();
+        }
       }
     },
     (error) =>

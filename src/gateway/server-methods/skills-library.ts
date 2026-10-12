@@ -16,11 +16,12 @@ import {
 import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { getSessionActorStorageBinding } from "../../config/sessions/session-actor-storage-binding.js";
-import { captureSessionEntryCurrentCheckInternal } from "../../config/sessions/session-entry-current-check.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
 import { captureSessionEntrySourceAssertion } from "../../config/sessions/session-entry-source-authority.js";
 import { captureIncognitoSessionBinding } from "../../config/sessions/session-incognito-binding.js";
 import {
   sessionEntryCommitGuardOptions,
+  prepareSessionSourceAuthority,
   composeSessionSourceAssertion,
   type SessionSourceAssertion,
 } from "../../config/sessions/session-source-authority.js";
@@ -203,17 +204,30 @@ async function selectedSession(options: SkillLibraryRequestOwner, sessionKey: st
     const profiles = await prepareSessionSharingProfiles(options.client);
     const { agentId } = resolveSessionStoreIdentity({ cfg: sourceCfg, sessionKey });
     const facts = await prepareSessionMutationFacts({ cfg: sourceCfg, sessionKey, agentId });
-    let entryRead: Awaited<ReturnType<typeof captureSessionEntryCurrentCheckInternal>> | undefined;
+    let entryRead:
+      | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
+      | undefined;
     let pins: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
+    let entryAuthority: Awaited<ReturnType<typeof prepareSessionSourceAuthority>> | undefined;
+    const release = async () => {
+      try {
+        await entryAuthority?.release?.();
+      } finally {
+        pins?.release();
+        entryRead?.release();
+        facts.release();
+      }
+    };
     try {
       const identity = facts.readCurrent(sourceCfg).target;
-      entryRead = await captureSessionEntryCurrentCheckInternal({
+      entryRead = await captureSessionEntryCurrentCheckAsyncInternal({
         agentId: identity.agentId,
         sessionKey: identity.storeKey,
         storePath: identity.readSource?.path ?? identity.storePath,
         fields: ["pluginOwnerId"],
         errorMessage: "Session selection changed; refresh and retry.",
       });
+      entryAuthority = await prepareSessionSourceAuthority(entryRead.source);
       const entry = entryRead.entry;
       const readSource = identity.readSource;
       if (!entry || !readSource || typeof readSource.databaseIdentity !== "string") {
@@ -227,7 +241,7 @@ async function selectedSession(options: SkillLibraryRequestOwner, sessionKey: st
           isDeepStrictEqual(entry.skillLibrarySelections, after?.skillLibrarySelections),
       });
       const currentTarget = () => {
-        entryRead!.assertCurrent();
+        entryAuthority!.assertCurrent();
         const cfg = options.context.getRuntimeConfig();
         const current = facts.readCurrent(cfg);
         if (
@@ -262,7 +276,7 @@ async function selectedSession(options: SkillLibraryRequestOwner, sessionKey: st
           throw new SessionMutationAuthorizationChangedError(error);
         }
       };
-      const source = composeSessionSourceAssertion([entryRead.assertCurrent], (assertSources) => {
+      const source = composeSessionSourceAssertion([entryRead.source], (assertSources) => {
         assertSources();
         assertMutationCurrent();
       });
@@ -278,16 +292,10 @@ async function selectedSession(options: SkillLibraryRequestOwner, sessionKey: st
             );
           }
         },
-        release() {
-          pins!.release();
-          entryRead!.release();
-          facts.release();
-        },
+        release,
       };
     } catch (error) {
-      pins?.release();
-      entryRead?.release();
-      facts.release();
+      await release();
       throw error;
     }
   }

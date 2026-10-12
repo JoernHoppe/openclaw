@@ -21,13 +21,13 @@ import {
 } from "../agents/worktrees/service.js";
 import type { ManagedWorktreeRecord, WorktreeWorkerAuthority } from "../agents/worktrees/types.js";
 import type { SessionAccessScope } from "../config/sessions/session-accessor.js";
-import { captureSessionEntryCurrentCheckInternal } from "../config/sessions/session-entry-current-check.js";
 import {
   captureSessionEntryMetadataRead,
   captureSessionEntrySourceAssertion,
 } from "../config/sessions/session-entry-source-authority.js";
 import {
   composeSessionSourceAssertion,
+  prepareSessionSourceAuthority,
   type SessionSourceAssertion,
 } from "../config/sessions/session-source-authority.js";
 import { resolveSessionStorePathForScope } from "../config/sessions/session-store-path.js";
@@ -173,7 +173,7 @@ export async function restoreSessionWorktree(params: {
       assertSessionMatches(metadata.readCurrent());
     }
   };
-  const source = captureSessionEntrySourceAssertion({
+  const sourceParams = {
     scope: {
       agentId: scope.agentId ?? resolveAgentIdFromSessionKey(scope.sessionKey),
       sessionKey: scope.sessionKey,
@@ -181,8 +181,6 @@ export async function restoreSessionWorktree(params: {
       env: scope.env,
     },
     expected: entry,
-    // The destination's patch snapshot owns archivedAt; successful unarchive changes it.
-    fields: ["sessionId", "lifecycleRevision", "worktree"],
     assertCurrent: assertSessionCurrent,
     refuse: () => {
       throw new SessionWorktreeLifecycleError(
@@ -190,6 +188,11 @@ export async function restoreSessionWorktree(params: {
         "session-changed",
       );
     },
+  };
+  const source = captureSessionEntrySourceAssertion({
+    ...sourceParams,
+    // The destination's patch snapshot owns archivedAt; successful unarchive changes it.
+    fields: ["sessionId", "lifecycleRevision", "worktree"],
   });
   const assertCurrent = composeSessionSourceAssertion(
     [params.commitGuard, source],
@@ -214,15 +217,13 @@ export async function restoreSessionWorktree(params: {
   );
   const retained = metadata
     ? undefined
-    : await captureSessionEntryCurrentCheckInternal({
-        ...scope,
-        agentId: scope.agentId ?? resolveAgentIdFromSessionKey(scope.sessionKey),
-        fields: ["sessionId", "lifecycleRevision", "archivedAt", "worktree"],
-      });
+    : await prepareSessionSourceAuthority(
+        captureSessionEntrySourceAssertion({
+          ...sourceParams,
+          fields: ["sessionId", "lifecycleRevision", "archivedAt", "worktree"],
+        }),
+      );
   try {
-    if (retained) {
-      assertSessionMatches(retained.entry);
-    }
     const assertRestoreCurrent = composeSessionSourceAssertion([
       assertCurrent,
       retained?.assertCurrent,
@@ -293,6 +294,6 @@ export async function restoreSessionWorktree(params: {
     assertRestoreCurrent();
     return assertCurrent;
   } finally {
-    retained?.release();
+    await retained?.release?.();
   }
 }

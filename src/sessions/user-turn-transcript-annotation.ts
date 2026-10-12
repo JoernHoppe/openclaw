@@ -6,7 +6,7 @@ import {
   resolveSessionTranscriptDatabasePath,
   type SessionTranscriptRuntimeTarget,
 } from "../config/sessions/session-accessor.js";
-import { captureSessionEntryCurrentCheckInternal } from "../config/sessions/session-entry-current-check.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../config/sessions/session-entry-current-check.js";
 import { rewritePreparedTranscriptMessageAtAnchor } from "../config/sessions/session-message-rewrite.js";
 import { waitForSessionTranscriptProjection } from "../config/sessions/session-transcript-reconcile.js";
 import { sessionMatchesExpectedTranscriptTurn } from "../config/sessions/session-transcript-turn-state.js";
@@ -94,7 +94,7 @@ export function bindUserTurnTranscriptAnnotation(params: {
     if (fingerprint !== fields.mirrorSourceFingerprint) {
       throw new Error("native prompt annotation does not match admitted content");
     }
-    const entryAuthority = await captureSessionEntryCurrentCheckInternal({
+    const entryAuthority = await captureSessionEntryCurrentCheckAsyncInternal({
       ...target,
       fields: ["sessionId", "lifecycleRevision", "activeWriterRunId"],
       errorMessage: "current user admission is no longer available for native annotation",
@@ -132,7 +132,7 @@ export function bindUserTurnTranscriptAnnotation(params: {
       }
       const assertNativeCurrent = () => {
         assertLive();
-        entryAuthority.assertCurrent();
+        entryAuthority.source();
         const { logicalTurnId: _logicalTurnId, role: _role, ...anchor } = admission;
         if (!isDeepStrictEqual(readActiveTranscriptEntryAnchor(admission), anchor)) {
           throw new Error("current user admission is no longer available for native annotation");

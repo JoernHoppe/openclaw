@@ -330,6 +330,12 @@ export function prepareSessionEntryReplacementDatabase(
   retainedExecution?: OpenClawAgentDatabaseExecution,
   followRegistration?: AgentDatabaseRequestExecutionSource["onRegistryChange"],
 ): Promise<void> {
+  const prepared = retainedExecution?.capturePreparedGenerationClaim();
+  if (prepared) {
+    assertCurrent();
+    prepared.assertCurrent();
+    return Promise.resolve();
+  }
   return withSessionEntryWorker(
     options,
     undefined,

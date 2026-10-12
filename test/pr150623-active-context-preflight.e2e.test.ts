@@ -74,8 +74,8 @@ describe("active-context preflight compaction", () => {
       assert(retained, "Seeded transcript message was not appended");
       await transcript.appendCompactionAsync(SUMMARY_MARKER, retained, 100_000);
       await transcript.appendMessageAsync({ role: "user", content: "active tail", timestamp: 3 });
-      await instance.startGateway();
 
+      await instance.startGateway();
       const client = await connectGatewayClient({
         url: instance.url,
         token: instance.gatewayToken,
@@ -107,15 +107,15 @@ describe("active-context preflight compaction", () => {
           limit: 20,
         });
         expect(JSON.stringify(history.messages ?? [])).toContain(REPLY_MARKER);
-        await instance.stopGateway();
-        expect(
-          (await SessionManager.openAsync(scope, instance.state.workspaceDir))
-            .getEntries()
-            .filter((entry) => entry.type === "compaction"),
-        ).toHaveLength(1);
       } finally {
         await disconnectGatewayClient(client);
       }
+      await instance.stopGateway();
+      expect(
+        (await SessionManager.openAsync(scope, instance.state.workspaceDir))
+          .getEntries()
+          .filter((entry) => entry.type === "compaction"),
+      ).toHaveLength(1);
     },
   );
 });

@@ -78,9 +78,9 @@ vi.mock("../session-sharing-authorization-async.js", () => ({
 }));
 // mock-isolation: Goal-event tests retain fixture rows and explicitly revoke their custody.
 vi.mock("../../config/sessions/session-entry-current-check.js", () => ({
-  captureSessionEntryCurrentCheckInternal: async () => ({
+  captureSessionEntryCurrentCheckAsyncInternal: async () => ({
     entry: edge.target.entry,
-    assertCurrent: edge.current,
+    source: edge.current,
     release() {},
   }),
 }));

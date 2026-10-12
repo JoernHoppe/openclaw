@@ -12,7 +12,7 @@ import {
   type SessionGoalOperation,
 } from "../../config/sessions/goals-operations.js";
 import { getSessionActorStorageBinding } from "../../config/sessions/session-actor-storage-binding.js";
-import { captureSessionEntryCurrentCheckInternal } from "../../config/sessions/session-entry-current-check.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
 import {
   captureIncognitoSessionBinding,
   withIncognitoSessionBinding,
@@ -52,7 +52,9 @@ async function handleSessionGoalMutation(
 ): Promise<void> {
   const { client, context, respond } = options;
   const method = request.action === "clear" ? "sessions.goal.clear" : "sessions.goal.update";
-  let targetRead: Awaited<ReturnType<typeof captureSessionEntryCurrentCheckInternal>> | undefined;
+  let targetRead:
+    | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
+    | undefined;
   try {
     const authorization = options.sessionMutationAuthorization
       ? { authorization: options.sessionMutationAuthorization, error: null }
@@ -100,7 +102,7 @@ async function handleSessionGoalMutation(
       ? captureSessionActorMutationFacts(memory, target.storeKey, false)
       : binding && captureIncognitoSessionMutationFacts(binding, target.storeKey, false);
     if (!actorFacts && !isIncognitoSessionKey(target.canonicalKey)) {
-      targetRead = await captureSessionEntryCurrentCheckInternal({
+      targetRead = await captureSessionEntryCurrentCheckAsyncInternal({
         ...actorTarget,
         fields: ["pluginOwnerId"],
         errorMessage: "Session changed before its Goal update; retry.",
@@ -142,7 +144,7 @@ async function handleSessionGoalMutation(
       if (!memory) {
         assertRouting(context.getRuntimeConfig());
       }
-      targetRead?.assertCurrent();
+      targetRead?.source.assertScopeCurrent?.();
       assertTarget(
         actorFacts
           ? actorFacts.readCurrent().target
@@ -163,7 +165,7 @@ async function handleSessionGoalMutation(
     const source: SessionSourceAssertion = targetRead
       ? composeSessionSourceAssertion(
           [
-            targetRead.assertCurrent,
+            targetRead.source,
             captureExternalSessionCommitGuard(options.sessionMutationCommitGuard),
             captureExternalSessionCommitGuard(authorization.authorization?.assertCurrent),
           ],

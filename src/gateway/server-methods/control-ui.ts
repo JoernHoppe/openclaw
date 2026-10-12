@@ -12,8 +12,9 @@ import {
   prepareSubagentSessionListReadCache,
 } from "../../agents/subagents/registry/subagent-registry-state.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
-import { captureSessionEntryCurrentCheckInternal } from "../../config/sessions/session-entry-current-check.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
 import { captureIncognitoSessionSource } from "../../config/sessions/session-incognito-binding.js";
+import { prepareSessionSourceAuthority } from "../../config/sessions/session-source-authority.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../../secrets/runtime-state.js";
 import { getSessionRepositoryWorkspaceStore } from "../../state/session-repository-workspaces.js";
 import { truncateUtf16Safe } from "../../utils.js";
@@ -288,7 +289,7 @@ async function prepareCheckDetailsSession(
   sessionKey: string,
   context: GatewayRequestContext,
   client: GatewayClient | null,
-): Promise<(ControlUiSessionPrTarget & { release: () => void }) | null> {
+): Promise<(ControlUiSessionPrTarget & { release: () => Promise<void> }) | null> {
   const sourceCfg = context.getRuntimeConfig();
   const sourceRequest = resolveRequestedGlobalAgentId(sourceCfg, sessionKey);
   if (!sourceRequest.ok) {
@@ -307,16 +308,23 @@ async function prepareCheckDetailsSession(
         agentId: sourceRequest.agentId,
       })
     : undefined;
-  let entryRead: Awaited<ReturnType<typeof captureSessionEntryCurrentCheckInternal>> | undefined;
-  const release = () => {
-    entryRead?.release();
-    facts?.release();
+  let entryRead:
+    | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
+    | undefined;
+  let entryAuthority: Awaited<ReturnType<typeof prepareSessionSourceAuthority>> | undefined;
+  const release = async () => {
+    try {
+      await entryAuthority?.release?.();
+    } finally {
+      entryRead?.release();
+      facts?.release();
+    }
   };
   let retained = false;
   try {
     if (facts) {
       const target = facts.readCurrent(sourceCfg).target;
-      entryRead = await captureSessionEntryCurrentCheckInternal({
+      entryRead = await captureSessionEntryCurrentCheckAsyncInternal({
         agentId: target.agentId,
         sessionKey: target.storeKey,
         storePath: target.readSource?.path ?? target.storePath,
@@ -330,6 +338,7 @@ async function prepareCheckDetailsSession(
         ],
         errorMessage: "Session pull-request target changed",
       });
+      entryAuthority = await prepareSessionSourceAuthority(entryRead.source);
     }
     const claim = binding?.actor.sessions.captureCurrent(sessionKey);
     const assertRoutingCurrent = captureSessionMutationRouting(sourceCfg);
@@ -396,7 +405,7 @@ async function prepareCheckDetailsSession(
           entry,
         };
       }
-      entryRead!.assertCurrent();
+      entryAuthority!.assertCurrent();
       const current = facts!.readCurrent(cfg);
       const target = current.target;
       const entry = entryRead!.entry;
@@ -468,7 +477,7 @@ async function prepareCheckDetailsSession(
     };
   } finally {
     if (!retained) {
-      release();
+      await release();
     }
   }
 }
@@ -675,7 +684,7 @@ export function createControlUiHandlers(
             : gitHubPublicApi.formatControlUiGitHubPreviewError(error).message;
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, message));
       } finally {
-        preparedSession?.release();
+        await preparedSession?.release();
       }
     },
     "controlUi.sessionPullRequests.subscribe": async ({ params, client, context, respond }) => {

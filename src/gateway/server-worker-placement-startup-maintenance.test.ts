@@ -22,6 +22,7 @@ import * as workspaceRetention from "./worker-environments/node-workspace-retain
 import {
   placementTurnOwner,
   type WorkerSessionPlacementRecord,
+  type WorkerSessionTurnClaim,
 } from "./worker-environments/placement-record.js";
 import {
   createWorkerSessionPlacementStore,
@@ -291,6 +292,79 @@ describe("worker placement session maintenance ownership", () => {
           expect(loadSessionEntryReadOnly(trigger)?.sessionId).toBe(
             "concurrent-maintenance-trigger",
           );
+        } finally {
+          interleave.mockRestore();
+          if (claim) {
+            await store.releaseTurnIfOwned(claim);
+          }
+          await sidecar.stop();
+        }
+      });
+    },
+  );
+
+  it.each(["local claim", "local release", "worker dispatch"] as const)(
+    "admits a fresh lifecycle upsert during an unrelated %s",
+    async (publication) => {
+      await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+        const store = createWorkerSessionPlacementStore({ database: openOpenClawStateDatabase() });
+        const localTurn = {
+          sessionId: "unrelated-local-session",
+          sessionKey: "agent:codex:unrelated-local-session",
+          agentId: "codex",
+          owner: { kind: "local" as const },
+          claimId: "unrelated-local-claim",
+          runId: "unrelated-local-run",
+        };
+        let claim: WorkerSessionTurnClaim | undefined;
+        if (publication === "local release") {
+          claim = await store.claimTurn(localTurn);
+        }
+        const { runtime } = createMaintenanceRuntime({ placements: [], preservationStore: store });
+        const sidecar = await startMaintenanceRuntime(runtime);
+        const prepare = store.prepareMaintenancePlacements.bind(store);
+        const interleave = vi
+          .spyOn(store, "prepareMaintenancePlacements")
+          .mockImplementationOnce(async () => {
+            const prepared = await prepare();
+            try {
+              expect(prepared.placements).toEqual([]);
+              if (publication === "worker dispatch") {
+                await store.startDispatch(localTurn);
+              } else if (claim) {
+                await store.releaseTurnIfOwned(claim);
+                claim = undefined;
+              } else {
+                claim = await store.claimTurn(localTurn);
+              }
+              if (publication !== "worker dispatch") {
+                expect(await store.listForReconcileAsync()).toEqual([]);
+              }
+              return prepared;
+            } catch (error) {
+              prepared.release();
+              throw error;
+            }
+          });
+        const scope = {
+          agentId: "main",
+          env: state.env,
+          storePath: resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env }),
+          sessionKey: "agent:main:fresh-local-session",
+        };
+        const mutate = () =>
+          applySessionEntryLifecycleMutation({
+            ...scope,
+            upserts: [
+              {
+                sessionKey: scope.sessionKey,
+                entry: { sessionId: "fresh-local-session", updatedAt: 1000 },
+              },
+            ],
+          });
+        try {
+          await expect(mutate()).resolves.toMatchObject({ afterCount: 1 });
+          expect(loadSessionEntryReadOnly(scope)?.sessionId).toBe("fresh-local-session");
         } finally {
           interleave.mockRestore();
           if (claim) {

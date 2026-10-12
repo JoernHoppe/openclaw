@@ -30,9 +30,12 @@ vi.mock("./environments.session.js", () => ({
 }));
 // mock-isolation: The synthetic retained session isolates execution authorization from database admission.
 vi.mock("../../config/sessions/session-entry-current-check.js", () => ({
-  captureSessionEntryCurrentCheckInternal: async () => ({
+  captureSessionEntryCurrentCheckAsyncInternal: async () => ({
     entry: { sessionId: "conversation" },
-    assertCurrent() {},
+    source: Object.assign(() => {}, {
+      prepareSessionSource: async () => ({ assertCurrent() {}, checks: [] }),
+    }),
+    async assertCurrent() {},
     release() {},
   }),
 }));

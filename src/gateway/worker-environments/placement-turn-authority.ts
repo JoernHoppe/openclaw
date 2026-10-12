@@ -13,6 +13,7 @@ import {
   placementAuthorityOwnerFor as ownerFor,
   placementAuthorityOwners as owners,
 } from "./placement-authority-owner.js";
+import { WorkerPlacementInventoryChangedError } from "./placement-inventory-changed-error.js";
 import {
   affectsPlacementObservation,
   applyPlacementReadPublication,
@@ -112,7 +113,7 @@ function commitChange(owner: PlacementAuthorityOwner, change: ClaimChange, seque
   for (const sessionId of [change.sessionId, undefined]) {
     if (affectsPlacementObservation(change, sessionId)) {
       for (const observation of owner.observations.get(sessionId) ?? []) {
-        observation.revoked = true;
+        observation.revokedBy.add(change.sessionId);
         observation.indeterminate ||= change.indeterminate === true;
       }
     }
@@ -193,7 +194,7 @@ function commitChange(owner: PlacementAuthorityOwner, change: ClaimChange, seque
 function capturePlacementObservation(pathname: string, sessionId?: string) {
   const context = captureOpenClawStateWorkerContext({ path: pathname });
   const owner = ownerFor(context.admission.identity);
-  const observation = { revoked: false, indeterminate: false };
+  const observation = { revokedBy: new Set<string>(), indeterminate: false };
   const observations = owner.observations.get(sessionId) ?? new Set<typeof observation>();
   observations.add(observation);
   owner.observations.set(sessionId, observations);
@@ -220,7 +221,17 @@ function capturePlacementObservation(pathname: string, sessionId?: string) {
   const authority = {
     assertCurrent(this: void) {
       assertUsable();
-      if (observation.revoked || hasPendingPublication(owner, sessionId)) {
+      if (observation.revokedBy.size > 0 || hasPendingPublication(owner, sessionId)) {
+        if (sessionId === undefined) {
+          throw new WorkerPlacementInventoryChangedError(
+            new Set([
+              ...observation.revokedBy,
+              ...[...owner.pending]
+                .filter((change) => affectsPlacementObservation(change))
+                .map((change) => change.sessionId),
+            ]),
+          );
+        }
         throw changed();
       }
     },
@@ -238,12 +249,6 @@ function capturePlacementObservation(pathname: string, sessionId?: string) {
   return { authority, observation, owner, assertUsable };
 }
 
-/** Omit the session to fence non-local placements, including creations after an empty read. */
-function observePlacementAuthority(pathname: string, sessionId?: string) {
-  return capturePlacementObservation(pathname, sessionId).authority;
-}
-
-/** A concurrent placement mutation fails this read; the caller can retry it. */
 export async function preparePlacementAuthorityRead<T>(
   pathname: string,
   sessionId: string | undefined,
@@ -251,7 +256,6 @@ export async function preparePlacementAuthorityRead<T>(
 ) {
   return await preparePlacementRead(
     capturePlacementObservation(pathname, sessionId),
-    sessionId,
     read,
     (value, { authority }) => ({
       value,
@@ -260,7 +264,6 @@ export async function preparePlacementAuthorityRead<T>(
   );
 }
 
-/** The authority owner retains exact reads until one of its writers publishes a change. */
 export async function readPlacementProjection(
   pathname: string,
   sessionId: string,
@@ -302,11 +305,8 @@ export async function prepareSessionPlacementRead(
 ) {
   return await preparePlacementRead(
     capturePlacementObservation(pathname, sessionId),
-    sessionId,
     read,
-    (placement, captured) => {
-      return retainSessionPlacementRead(sessionId, placement, captured);
-    },
+    (placement, captured) => retainSessionPlacementRead(sessionId, placement, captured),
   );
 }
 
@@ -475,7 +475,7 @@ export async function preparePlacementWorkspaceResultAuthority(
   const claim = structuredClone(requestedClaim);
   claim.sessionId = required(claim.sessionId, "session id");
   const publicationSequence = owner.published.get(claim.sessionId) ?? 0;
-  const observation = observePlacementAuthority(pathname, claim.sessionId);
+  const observation = capturePlacementObservation(pathname, claim.sessionId).authority;
   try {
     const projection = await read([claim.sessionId]);
     context.admission.assertCurrent();
