@@ -666,6 +666,8 @@ describe("agent.wait gateway dedupe observations", () => {
       const timedOut = waitThroughGateway({ runId, timeoutMs }, activeKind);
       await started.promise;
       if (reset) {
+        // Native worker shutdown joins its exit through setImmediate.
+        vi.useRealTimers();
         await drainGlobalSingletonLifecycleState("restart");
       } else {
         await vi.advanceTimersByTimeAsync(timeoutMs);
