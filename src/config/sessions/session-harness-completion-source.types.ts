@@ -16,6 +16,7 @@ export type Input = {
   database: { agentId: string; path: string };
   env: NodeJS.ProcessEnv;
   claim: HarnessCompletionRecovery;
+  mode?: "admission" | "committed";
   source: CapturedSessionEntryReadSource;
   admission?: UserTurnTranscriptAdmissionReceipt;
 };

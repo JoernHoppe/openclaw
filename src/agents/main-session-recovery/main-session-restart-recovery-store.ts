@@ -409,6 +409,7 @@ export async function recoverStore(params: {
           const assertion = createHarnessCompletionSourceAssertion({
             claim: harnessCompletion,
             storePath: params.storePath,
+            mode: "committed",
           });
           completionSource = await prepareSessionSourceScope(assertion);
           if (completionSource) {

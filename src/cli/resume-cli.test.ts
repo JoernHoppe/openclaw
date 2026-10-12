@@ -407,8 +407,11 @@ describe("real Gateway session boundary", () => {
       gatewayCode: "INVALID_REQUEST",
       message: 'Unknown agent id "resume-unconfigured"',
     });
+    // Unknown agents are rejected before the fixture's handler-level request log.
     expect(harness.sessionResolveRequests.slice(resolveStart)).toEqual(
-      cases.map(({ key, agentId }) => ({ key, agentId, includeGlobal: true, allowMissing: true })),
+      cases
+        .slice(0, 2)
+        .map(({ key, agentId }) => ({ key, agentId, includeGlobal: true, allowMissing: true })),
     );
     expect(harness.sessionListRequests).toHaveLength(listStart);
     expect(mocks.connect).toHaveBeenCalledTimes(3);

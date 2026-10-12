@@ -210,6 +210,7 @@ export function getOwedHarnessCompletionTask(
 export function createHarnessCompletionSourceAssertion(params: {
   claim: HarnessCompletionRecovery;
   storePath: string;
+  mode?: "admission" | "committed";
   priorAssertion?: SessionSourceAssertion;
 }): SessionSourceAssertion {
   const target = {
@@ -226,6 +227,7 @@ export function createHarnessCompletionSourceAssertion(params: {
           input: {
             sourceRunId: params.claim.sourceRunId,
             claim: params.claim,
+            mode: params.mode,
             admission: resolveSessionTranscriptReadFence({
               agentId: target.agentId,
               sessionId: params.claim.sessionId,
@@ -405,6 +407,7 @@ export function createHarnessCompletionSourceAssertion(params: {
       const snapshot = await retained.owner.readHarnessCompletionSource({
         env,
         claim,
+        mode: params.mode,
         source,
         ...(admission ? { admission } : {}),
       });
