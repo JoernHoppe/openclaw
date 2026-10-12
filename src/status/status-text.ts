@@ -34,7 +34,6 @@ import { resolveFreshSessionTotalTokens, type SessionEntry } from "../config/ses
 import { resolveSessionLifecycleTimestampsAsync } from "../config/sessions/lifecycle-read.js";
 import { hasSessionAutoModelFallbackProvenance } from "../config/sessions/model-override-provenance.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { readRecentSessionUsageFromTranscriptAsync } from "../gateway/session-transcript-usage.js";
 import { resolveProjectedAgentRunProgressState } from "../infra/agent-run-registry.js";
 import { withTimeout } from "../infra/fs-safe.js";
 import {
@@ -618,19 +617,6 @@ export async function buildStatusReplyParts(
     agentId: statusAgentId,
     preparedSessionEntry: sessionEntry,
   });
-  const transcriptUsage =
-    (params.includeTranscriptUsage ?? true) && sessionEntry?.sessionId
-      ? await readRecentSessionUsageFromTranscriptAsync(
-          {
-            agentId: statusAgentId,
-            sessionKey,
-            sessionEntry,
-            sessionId: sessionEntry.sessionId,
-            storePath,
-          },
-          256 * 1024,
-        ).catch(() => null)
-      : undefined;
   return buildStatusMessageParts({
     config: cfg,
     preparedSandboxRuntime,
