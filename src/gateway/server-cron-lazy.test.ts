@@ -228,10 +228,11 @@ describe("createLazyGatewayCronState", () => {
       const recoveryStarted = deferred();
       const recoveryFinished = deferred();
       const cron = createCronService();
-      cron.start = vi.fn(async () => {
+      const start = vi.fn(async () => {
         recoveryStarted.resolve();
         await recoveryFinished.promise;
       });
+      cron.start = start;
       hoisted.setState(createCronState(cron));
       const lazy = createLazyGatewayCronState(createParams());
 
@@ -248,7 +249,7 @@ describe("createLazyGatewayCronState", () => {
 
       expect(cron[operation]).toHaveBeenCalledExactlyOnceWith("demo", "force");
       await lazy.cron.start();
-      expect(cron.start).toHaveBeenCalledOnce();
+      expect(start).toHaveBeenCalledOnce();
     },
   );
 
@@ -256,6 +257,10 @@ describe("createLazyGatewayCronState", () => {
     "keeps a stopped scheduler stopped when a manual %s arrives",
     async (operation) => {
       const cron = createCronService();
+      const start = vi.fn(async () => undefined);
+      const stop = vi.fn();
+      cron.start = start;
+      cron.stop = stop;
       hoisted.setState(createCronState(cron));
       const lazy = createLazyGatewayCronState(createParams());
       await lazy.cron.status();
@@ -263,8 +268,8 @@ describe("createLazyGatewayCronState", () => {
 
       await lazy.cron[operation]("demo", "force");
 
-      expect(cron.start).not.toHaveBeenCalled();
-      expect(cron.stop).toHaveBeenCalledOnce();
+      expect(start).not.toHaveBeenCalled();
+      expect(stop).toHaveBeenCalledOnce();
       expect(cron[operation]).toHaveBeenCalledExactlyOnceWith("demo", "force");
     },
   );
