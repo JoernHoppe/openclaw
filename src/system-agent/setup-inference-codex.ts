@@ -31,6 +31,7 @@ import {
   type StageFailure,
 } from "./setup-inference-core.js";
 import { saveSetupCredential, stageProviderAuthCandidate } from "./setup-inference-credentials.js";
+import { withCodexHomeScope } from "./setup-model-selection.js";
 
 const acceptAutomaticCodexCapabilities: PluginCapabilityConsentHandler = async (review) => {
   const source = review.source;
@@ -66,30 +67,6 @@ type PrepareCodexRuntimeParams = {
   markRetained?: StageContext["deps"]["markRetainedManagedNpmInstall"];
   resolveMetadata?: StageContext["deps"]["resolvePluginMetadataSnapshot"];
 };
-
-function withCodexHomeScope(config: OpenClawConfig, homeScope: "agent" | "user"): OpenClawConfig {
-  const entry = config.plugins?.entries?.codex;
-  const pluginConfig = entry?.config ?? {};
-  return {
-    ...config,
-    plugins: {
-      ...config.plugins,
-      entries: {
-        ...config.plugins?.entries,
-        codex: {
-          ...entry,
-          config: {
-            ...pluginConfig,
-            appServer: {
-              ...(isRecord(pluginConfig.appServer) ? pluginConfig.appServer : {}),
-              homeScope,
-            },
-          },
-        },
-      },
-    },
-  };
-}
 
 async function prepareCodexRuntimePlugin(
   params: PrepareCodexRuntimeParams,

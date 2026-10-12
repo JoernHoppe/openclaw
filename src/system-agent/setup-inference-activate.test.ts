@@ -180,6 +180,39 @@ describe("setup activation credentials and configuration", () => {
     },
   );
 
+  it.each(["oauth", "api_key"] as const)(
+    "activates a separate %s sign-in after sharing the native Codex home",
+    async (authMethod) => {
+      const setup = await fixture({
+        codex: true,
+        homeScope: "user",
+        authMethod,
+        subscription: authMethod === "oauth",
+        primaryModel: modelRef,
+      });
+      setup.config.agents!.defaults!.models![modelRef] = { agentRuntime: { id: "codex" } };
+      await fs.writeFile(setup.configPath, JSON.stringify(setup.config));
+      clearConfigCache();
+      const result = await setup.activate(
+        authMethod === "oauth" ? "provider-auth" : "api-key",
+        undefined,
+        authMethod === "api_key" ? { apiKey: credential.key } : {},
+      );
+      expect(result).toMatchObject({ ok: true });
+      expect(setup.login).toHaveBeenCalledOnce();
+      expect(setup.run.mock.calls[0]?.[0]).toMatchObject({
+        agentHarnessRuntimeOverride: "codex",
+        config: {
+          plugins: { entries: { codex: { config: { appServer: { homeScope: "agent" } } } } },
+        },
+      });
+      expect(
+        (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.appServer,
+      ).toMatchObject({ homeScope: "agent" });
+      expect(setup.readProfile()?.[1].setup).toBeUndefined();
+    },
+  );
+
   it("returns from automatic Codex setup without opening login when stored credentials disappear", async () => {
     const setup = await fixture({ codex: true });
     vi.spyOn(cliCredentials, "readCodexCliCredentialsCached").mockImplementation(() => {

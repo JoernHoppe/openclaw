@@ -280,7 +280,13 @@ describe("OpenClaw automatic setup protocol", () => {
     const collections = { alternatives: [], attempts: [], installedPlugins: [] };
     const results = [
       { ...collections, status: "configured", selected: candidate },
-      { ...collections, status: "activated", selected: candidate, installedPlugins: ["codex"] },
+      {
+        ...collections,
+        status: "activated",
+        selected: { ...candidate, shared: true },
+        separateSignIn: { authOptionId: "openai-device-code", label: "ChatGPT" },
+        installedPlugins: ["codex"],
+      },
       {
         ...collections,
         status: "needs-sign-in",

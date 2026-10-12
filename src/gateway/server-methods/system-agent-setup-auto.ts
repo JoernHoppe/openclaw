@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
+import { parseProviderModelRef } from "@openclaw/model-catalog-core/model-catalog-refs";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { SystemAgentSetupAutoResult } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveAmbientOwnerAgentId } from "../../agents/agent-scope-config.js";
+import { resolveModelRuntimePolicy } from "../../agents/model-runtime-policy.js";
 import { resolveConfiguredPrimaryModelForAgent } from "../../agents/utility-model.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
 import { applyMergePatch, createMergePatch } from "../../config/merge-patch.js";
@@ -79,14 +82,28 @@ async function autoSetup(assertAuthority: () => void): Promise<SystemAgentSetupA
   const failed = new Set<string>();
   const installedPlugins: string[] = [];
   let codexNeedsSignIn = false;
+  let shared = false;
+  let authOptions = detection.authOptions;
   const result = (
     status: SystemAgentSetupAutoResult["status"],
     selected?: SetupInferenceCandidate,
   ): SystemAgentSetupAutoResult => {
     assertCurrent();
+    const separateSignIn = shared
+      ? authOptions.find(
+          (option) =>
+            option.brandId === "openai" &&
+            (option.kind === "oauth" || option.kind === "device-code"),
+        )
+      : undefined;
     return {
       status,
-      ...(selected ? { selected: present(selected) } : {}),
+      ...(selected
+        ? { selected: { ...present(selected), ...(shared ? { shared: true } : {}) } }
+        : {}),
+      ...(separateSignIn
+        ? { separateSignIn: { authOptionId: separateSignIn.id, label: separateSignIn.label } }
+        : {}),
       alternatives: ranked
         .filter((candidate) => candidate !== selected && !failed.has(candidate.kind))
         .map(present),
@@ -94,16 +111,24 @@ async function autoSetup(assertAuthority: () => void): Promise<SystemAgentSetupA
       installedPlugins,
     };
   };
+  const initialSnapshot = await readConfigFileSnapshot();
   if (detection.setupComplete) {
+    const config = initialSnapshot.runtimeConfig ?? initialSnapshot.config;
+    const agentId = resolveAmbientOwnerAgentId(config);
+    const modelRef = resolveConfiguredPrimaryModelForAgent({ cfg: config, agentId });
+    const ref = modelRef ? parseProviderModelRef(modelRef) : undefined;
+    const appServer = config.plugins?.entries?.codex?.config?.appServer;
+    shared = Boolean(
+      ref &&
+      isRecord(appServer) &&
+      appServer.homeScope === "user" &&
+      resolveModelRuntimePolicy({ config, agentId, provider: ref.provider, modelId: ref.model })
+        .policy?.id === "codex",
+    );
     const selected = ranked.find((candidate) => candidate.kind === "existing-model");
     if (selected) {
       return result("configured", selected);
     }
-    const snapshot = await readConfigFileSnapshot();
-    const modelRef = resolveConfiguredPrimaryModelForAgent({
-      cfg: snapshot.config,
-      agentId: resolveAmbientOwnerAgentId(snapshot.config),
-    });
     if (modelRef) {
       return result("configured", {
         kind: "existing-model",
@@ -116,7 +141,6 @@ async function autoSetup(assertAuthority: () => void): Promise<SystemAgentSetupA
     }
     throw new Error("The configured model changed during automatic setup. Retry setup.");
   }
-  const initialSnapshot = await readConfigFileSnapshot();
   const codexWasEnabled = resolvePluginMetadataSnapshot({
     config: initialSnapshot.config,
     workspaceDir: detection.workspace,
@@ -164,6 +188,7 @@ async function autoSetup(assertAuthority: () => void): Promise<SystemAgentSetupA
     if (activation.ok) {
       candidate.modelRef = activation.modelRef;
       if (candidate.kind === "codex-cli") {
+        shared = true;
         recordCodexInstall();
       }
       return true;
@@ -261,6 +286,7 @@ async function autoSetup(assertAuthority: () => void): Promise<SystemAgentSetupA
     }
     const refreshed = await runSystemAgentGatewayTask(() => detectSetupInference());
     ranked = rankSetupInferenceCandidates(refreshed.candidates);
+    authOptions = refreshed.authOptions;
     const codex = ranked.find((candidate) => candidate.kind === "codex-cli");
     if (codex && attempts.length < 4 && (await activate(codex))) {
       return result("activated", codex);

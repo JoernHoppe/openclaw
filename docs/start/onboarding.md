@@ -118,9 +118,11 @@ and token refresh; OpenClaw does not copy or register the OAuth tokens in its
 auth store.
 
 If there is no Codex login, the offered ChatGPT sign-in stays isolated in an
-OpenClaw-owned agent home. To switch an automatically reused login to that
-mode, set `plugins.entries.codex.config.appServer.homeScope: "agent"` in the
-Gateway configuration, then open **Model Setup** and sign in with ChatGPT.
+OpenClaw-owned agent home. These are the two Codex modes: **Reuse** shares your
+existing login and sessions; **Separate** uses an OpenClaw login and agent home.
+To switch from reuse to separate, open **Model Setup** and sign in with ChatGPT
+or enter an OpenAI API key. Completing that sign-in selects the isolated home
+automatically.
 See [Native Codex state](/plugins/codex-harness/native-features#share-threads-with-codex-desktop-and-cli)
 for the home-scope settings. Manual setup retains its existing API-key import
 behavior.

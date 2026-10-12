@@ -94,7 +94,8 @@ is a utility option and is never chosen as the primary model.
 When automatic setup reuses Codex, it shares the Gateway user's `CODEX_HOME`
 (or `~/.codex`), including the login, threads, and `config.toml`. Codex owns
 authentication and token refresh; OpenClaw does not copy the OAuth tokens into
-its auth store. A new ChatGPT sign-in uses an isolated OpenClaw agent home.
+its auth store. A separate ChatGPT or OpenAI API-key sign-in in Model Setup
+uses an isolated OpenClaw agent home, even after reusing a native login.
 See [Codex login and isolation](/start/onboarding#codex-login-and-isolation)
 to switch between these modes.
 

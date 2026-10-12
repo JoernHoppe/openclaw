@@ -43,7 +43,7 @@ import {
   waitForProviderAuth,
 } from "./setup-inference-core.js";
 import { prepareCustomSetupCredentials } from "./setup-inference-custom.js";
-import { projectSetupInferenceConfig } from "./setup-model-selection.js";
+import { projectSetupInferenceConfig, withCodexHomeScope } from "./setup-model-selection.js";
 import {
   withSetupProviderAuthMethod,
   type SetupProviderAuthMethod,
@@ -125,16 +125,8 @@ export async function saveSetupCredential(
     profileId: candidate.profileId,
     credential: candidate.credential,
     pluginId: params.pluginId,
+    agentRuntimeId: params.agentRuntimeId,
   });
-  // A guided provider login can belong to a separately selected runtime plugin.
-  // Retain its connection settings with the saved credential for a cold retry.
-  const runtimePlugin = params.agentRuntimeId
-    ? prepared.plugins?.entries?.[params.agentRuntimeId]
-    : undefined;
-  if (params.agentRuntimeId && runtimePlugin) {
-    ((retryConfig.plugins ??= {}).entries ??= {})[params.agentRuntimeId] =
-      structuredClone(runtimePlugin);
-  }
   if (prepared.plugins?.installs) {
     (retryConfig.plugins ??= {}).installs = prepared.plugins.installs;
   }
@@ -219,7 +211,20 @@ async function stagePreparedCandidate(
     };
   }
   const pluginId = params.pluginId ?? params.choice?.pluginId ?? params.provider?.pluginId;
-  let preparedConfig = params.config;
+  const agentRuntimeId =
+    params.agentRuntimeId ??
+    resolveModelRuntimePolicy({
+      config: params.config,
+      provider: ref.provider,
+      modelId: ref.model,
+      agentId: ctx.routeAgentId,
+    }).policy?.id ??
+    "openclaw";
+  // A new sign-in belongs to OpenClaw even when the previous route shared Codex's home.
+  let preparedConfig =
+    params.credentialState === "new" && agentRuntimeId === "codex"
+      ? withCodexHomeScope(params.config, "agent")
+      : params.config;
   if (profile && params.credentialState === "new") {
     const saved = await saveSetupCredential({
       profile,
@@ -228,7 +233,7 @@ async function stagePreparedCandidate(
       modelRef,
       pluginId,
       authChoice: params.choice?.choiceId,
-      agentRuntimeId: params.agentRuntimeId,
+      agentRuntimeId,
       agentDir: ctx.agentDir,
       beforePersistentEffect: () => {
         assertUtilitySeparation(ctx, modelTarget);
@@ -252,20 +257,13 @@ async function stagePreparedCandidate(
     profileId: profile?.profileId,
     credential: profile?.credential,
     pluginId,
+    agentRuntimeId,
   });
   return {
     modelRef,
     ...(modelTarget ? { modelTarget } : {}),
     config,
-    agentRuntimeId:
-      params.agentRuntimeId ??
-      resolveModelRuntimePolicy({
-        config,
-        provider: ref.provider,
-        modelId: parseInferenceRef(modelRef).model,
-        agentId: ctx.routeAgentId,
-      }).policy?.id ??
-      "openclaw",
+    agentRuntimeId,
     authProfileId: profile?.profileId,
     pluginId,
     pendingPluginInstalls: params.pendingPluginInstalls,

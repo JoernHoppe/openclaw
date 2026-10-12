@@ -83,13 +83,22 @@ const presentedCodex = {
   brandId: "openai",
 };
 
+const chatGptSignIn = {
+  id: "openai-device-code",
+  brandId: "openai",
+  label: "ChatGPT",
+  kind: "device-code" as const,
+  featured: true,
+};
+const separateSignIn = { authOptionId: chatGptSignIn.id, label: chatGptSignIn.label };
+
 function detection(
   candidates: SetupInferenceCandidate[] = [],
   overrides: Partial<SetupInferenceDetection> = {},
 ): SetupInferenceDetection {
   return {
     candidates,
-    authOptions: [],
+    authOptions: [chatGptSignIn],
     manualProviders: [],
     recommendedInstalls: [],
     unavailableCandidates: [],
@@ -146,12 +155,38 @@ describe("Gateway automatic inference setup", () => {
       attempts: [],
       installedPlugins: [],
     });
-    expect(fixture.readConfig).not.toHaveBeenCalled();
+    expect(fixture.readConfig).toHaveBeenCalledOnce();
     expect(fixture.activate).not.toHaveBeenCalled();
     expect(fixture.prepare).not.toHaveBeenCalled();
     expect(fixture.commit).not.toHaveBeenCalled();
     expect(fixture.audit).not.toHaveBeenCalled();
   });
+
+  it.each(["user", "agent"] as const)(
+    "reports configured Codex sharing without a write (home scope: %s)",
+    async (homeScope) => {
+      fixture.readConfig.mockResolvedValue({
+        config: {
+          agents: {
+            defaults: {
+              model: codex.modelRef,
+              models: { [codex.modelRef]: { agentRuntime: { id: "codex" } } },
+            },
+          },
+          plugins: { entries: { codex: { config: { appServer: { homeScope } } } } },
+        },
+      });
+      fixture.detect.mockResolvedValue(
+        detection([{ ...codex, kind: "existing-model" }], { setupComplete: true }),
+      );
+      const result = await runGatewayAutomaticSetup(context(), () => {});
+      expect(result).toMatchObject({ status: "configured" });
+      expect(result.selected?.shared).toBe(homeScope === "user" ? true : undefined);
+      expect(result.separateSignIn).toEqual(homeScope === "user" ? separateSignIn : undefined);
+      expect(fixture.activate).not.toHaveBeenCalled();
+      expect(fixture.commit).not.toHaveBeenCalled();
+    },
+  );
 
   it("records a failed saved sign-in and activates the next ranked route", async () => {
     const saved: SetupInferenceCandidate = {
@@ -168,7 +203,8 @@ describe("Gateway automatic inference setup", () => {
 
     expect(await runGatewayAutomaticSetup(context(), () => {})).toEqual({
       status: "activated",
-      selected: presentedCodex,
+      selected: { ...presentedCodex, shared: true },
+      separateSignIn,
       alternatives: [
         {
           kind: openai.kind,

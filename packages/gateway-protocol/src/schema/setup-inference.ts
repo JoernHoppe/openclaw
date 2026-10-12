@@ -11,6 +11,7 @@ export const SystemAgentSetupAutoCandidateSchema = closedObject({
   modelRef: Type.String(),
   brandId: Type.Optional(Type.String()),
   icon: Type.Optional(Type.String()),
+  shared: Type.Optional(Type.Boolean()),
 });
 
 export const SystemAgentSetupAutoResultSchema = closedObject({
@@ -26,6 +27,9 @@ export const SystemAgentSetupAutoResultSchema = closedObject({
     closedObject({ kind: Type.String(), label: Type.String(), error: Type.String() }),
   ),
   signIn: Type.Optional(closedObject({ authOptionId: Type.String(), label: Type.String() })),
+  separateSignIn: Type.Optional(
+    closedObject({ authOptionId: Type.String(), label: Type.String() }),
+  ),
   installedPlugins: Type.Array(Type.String()),
 });
 
