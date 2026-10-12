@@ -423,7 +423,7 @@ export async function commitReplySessionInitialization(params: {
             if (staleCommit === undefined) {
               params.onCreated?.({
                 agentId: params.agentId,
-                sessionKey: resolved.normalizedKey,
+                sessionKey,
                 storePath,
                 sessionId: committedSessionEntry.sessionId,
                 lifecycleRevision: committedSessionEntry.lifecycleRevision,
