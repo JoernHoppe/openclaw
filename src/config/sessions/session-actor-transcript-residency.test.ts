@@ -241,7 +241,7 @@ it("settles a resident correlation rewrite once and leaves rollback payloads unc
       }
     });
     try {
-      const before = context.seed();
+      context.seed();
       const row = readTranscriptEventRows(f.database, f.scope.sessionId)[1]!;
       const rewritten = {
         ...question,
@@ -259,8 +259,14 @@ it("settles a resident correlation rewrite once and leaves rollback payloads unc
         }),
       ).toThrow("Synthetic rewrite rollback");
       expect(publications).toEqual([]);
+      expect(context.read()).toBeUndefined();
+      expect(context.anchors()).toBeUndefined();
+      expect(context.summary()).toBeUndefined();
+      expect(readSessionTranscriptBoundedActiveContextCore(f.scope, limits).events).toEqual(
+        transcript(f),
+      );
+      const before = context.seed();
       expect(context.read()?.snapshot.events).toEqual(transcript(f));
-      expect(f.read().version).toEqual(before.version);
 
       runSqliteImmediateTransactionSync(f.database.db, rewrite);
       expect(publications).toHaveLength(1);

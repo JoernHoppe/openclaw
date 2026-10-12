@@ -4,7 +4,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   createSqliteCommitReceipt,
   hasSqliteCommitReceiptCoverage,
-  type SqliteCommitReceipt,
   type SqliteCommittedFact,
 } from "../../infra/sqlite-commit-receipt.js";
 import {
@@ -25,30 +24,11 @@ import {
   readPreparedSessionEntryPublicationSource,
   preparedSharingChanges,
 } from "./session-accessor.sqlite-entry-cache-publication-state.js";
-import type { SessionEntryPublicationSource } from "./session-accessor.sqlite-entry-cache.types.js";
-import type { SessionActorTranscriptRow } from "./session-actor-bounded-history.js";
-import type { SessionActorHotState } from "./session-actor-state.types.js";
 import { prepareSessionActorTranscriptAuthority } from "./session-actor-transaction.js";
-import type { SessionTranscriptContextVersion } from "./session-transcript-context-version.types.js";
-
-/** Committed context facts, optionally carrying a resident actor's exact metadata rewrite. */
-export type SessionTranscriptAuthority = SessionTranscriptContextVersion & {
-  sessionId: string;
-  sessionKey: string;
-  leafEventId: string | null;
-  indexedSeq: number | null;
-  activeMessageCount: number | null;
-  needsRebuild: number | null;
-  actorRewrite?: {
-    before: SessionTranscriptContextVersion;
-    postimage: SessionActorHotState;
-    rows: SessionActorTranscriptRow[];
-  };
-};
-export type SessionTranscriptAuthorityReceipt = SqliteCommitReceipt<
+import type {
   SessionTranscriptAuthority,
-  SessionEntryPublicationSource
->;
+  SessionTranscriptAuthorityReceipt,
+} from "./session-transcript-authority.types.js";
 
 const staged = resolveGlobalSingleton(
   Symbol.for("openclaw.transcriptAuthorityStaged"),

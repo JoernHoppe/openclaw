@@ -4,7 +4,7 @@ import {
   sqliteSessionIdWriteScope,
 } from "../../infra/sqlite-database-admission.js";
 import type { SessionActorStoredState } from "./session-actor-hydration.types.js";
-import type { SessionTranscriptAuthority } from "./session-transcript-authority.js";
+import type { SessionTranscriptAuthority } from "./session-transcript-authority.types.js";
 
 type PublishTranscript = (authority: SessionTranscriptAuthority) => SessionTranscriptAuthority;
 let current:

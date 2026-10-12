@@ -126,8 +126,9 @@ their canonical replacement rows in the existing committed authority receipt.
 The resident actor updates its payloads and mutation timestamp in that same
 transaction; the main-thread replica installs those rows without another worker
 read. This includes an identical model-prompt capture after hydration. Rollback
-keeps the previous context, and cold actors, content or topology changes, unknown
-writes, and byte-limit overflow retain the canonical reader. No extra receipt,
+leaves stored messages unchanged and retains the database owner's failed-write
+cache invalidation. Cold actors, content or topology changes, unknown writes,
+and byte-limit overflow retain the canonical reader. No extra receipt,
 freshness query, permission grant, or stored format is introduced.
 
 Trajectory append and retention writers publish the session and trajectory

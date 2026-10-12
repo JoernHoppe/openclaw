@@ -6,7 +6,7 @@ import {
 } from "./session-actor-bounded-history.js";
 import type { SessionActorHotState, SessionActorOutcome } from "./session-actor-contract.js";
 import type { PreparedSessionTranscriptHydration } from "./session-history-read.types.js";
-import type { SessionTranscriptAuthority } from "./session-transcript-authority.js";
+import type { SessionTranscriptAuthority } from "./session-transcript-authority.types.js";
 import type { SessionTranscriptContextVersion } from "./session-transcript-context-version.types.js";
 
 type Bounded = Extract<PreparedSessionTranscriptHydration, { kind: "bounded" }>;
