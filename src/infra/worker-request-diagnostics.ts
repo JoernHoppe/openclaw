@@ -1,6 +1,7 @@
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { hasInternalDiagnosticEventInterest } from "./diagnostic-event-listener-presence.js";
 import { emitTrustedDiagnosticEvent } from "./diagnostic-events.js";
+import { isDiagnosticFlagEnabled } from "./diagnostic-flags.js";
 import type { DiagnosticWorkerRequestFields } from "./diagnostic-process-types.js";
 import {
   classifySqliteWorkerExecute,
@@ -8,7 +9,13 @@ import {
 } from "./sqlite-worker-request-class.js";
 import type { WorkerRequestKind } from "./worker-request-kind.js";
 
-export type WorkerRequestObservation = { started(): void; completed(): void };
+export type WorkerRequestObservation = {
+  timing?: DiagnosticWorkerRequestFields["timing"];
+  started(): void;
+  completed(): void;
+};
+
+const detailedTiming = isDiagnosticFlagEnabled("sqlite.worker-timing");
 
 const requestPrefixes = [
   ["pluginState.", "plugin_state"],
@@ -62,11 +69,13 @@ export function trackWorkerRequest(
 ): WorkerRequestObservation {
   const label = requestClasses.has(requestClass) ? requestClass : "other";
   const enqueuedAt = performance.now();
+  const timing: DiagnosticWorkerRequestFields["timing"] =
+    detailedTiming && kind === "sqlite_writer" ? { enqueued: enqueuedAt } : undefined;
   let startedAt: number | undefined;
   let completed = false;
   const emit = (
     phase: DiagnosticWorkerRequestFields["phase"],
-    timing: Pick<DiagnosticWorkerRequestFields, "queueWaitMs" | "durationMs"> = {},
+    durations: Pick<DiagnosticWorkerRequestFields, "queueWaitMs" | "durationMs"> = {},
   ) => {
     if (!hasInternalDiagnosticEventInterest("worker.request")) {
       return;
@@ -77,18 +86,23 @@ export function trackWorkerRequest(
       requestClass: label,
       phase,
       queueDepth: queued.get(kind) ?? 0,
-      ...timing,
+      ...durations,
+      ...(phase === "completed" && timing ? { timing } : {}),
     });
   };
   const dequeue = () => queued.set(kind, (queued.get(kind) ?? 0) - 1);
   queued.set(kind, (queued.get(kind) ?? 0) + 1);
   emit("queued");
   const observation = {
+    timing,
     started: () => {
       if (completed || startedAt !== undefined) {
         return;
       }
       startedAt = performance.now();
+      if (timing) {
+        timing.dispatched = startedAt;
+      }
       queuedSignal?.removeEventListener("abort", observation.completed);
       dequeue();
       emit("started", { queueWaitMs: startedAt - enqueuedAt });
