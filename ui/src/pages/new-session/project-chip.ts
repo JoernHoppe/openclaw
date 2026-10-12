@@ -105,6 +105,7 @@ export function renderProjectChip(params: {
   onNewWorkspace?: () => void;
   deviceFolder?: boolean;
   onDeviceFolder?: () => void;
+  deviceFolderDisabledReason?: string;
   gatewayLabel: string;
   submitting: boolean;
   pendingPlacement: boolean;
@@ -229,7 +230,11 @@ export function renderProjectChip(params: {
                           value: "device-folder",
                           label: t("newSession.deviceFolder"),
                           icon: icons.folder,
-                          sub: t("newSession.deviceFolderDescription"),
+                          sub:
+                            params.deviceFolderDisabledReason ??
+                            t("newSession.deviceFolderDescription"),
+                          disabled: Boolean(params.deviceFolderDisabledReason),
+                          title: params.deviceFolderDisabledReason,
                           checked: params.deviceFolder === true,
                           onSelect: params.onDeviceFolder,
                         },

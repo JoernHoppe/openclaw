@@ -19,6 +19,58 @@ afterEach(() => {
 });
 
 describe("DraftSubmissionFlow submit gates", () => {
+  it("blocks existing-folder creation after an incompatible runtime change and explains recovery", async () => {
+    const { place, flow, gateway, context } = createDraftFixture({
+      methods: ["environments.list", "sessions.create", "sessions.dispatch"],
+      scopes: ["operator.admin", "operator.read", "operator.write"],
+      request: async (method) =>
+        method === "environments.list"
+          ? {
+              environments: [
+                {
+                  id: "node:runner",
+                  type: "node",
+                  status: "available",
+                  sessionHost: true,
+                  workerHost: { deviceFolders: true },
+                  workerSlots: { total: 1, available: 1 },
+                },
+              ],
+              profiles: [],
+            }
+          : {},
+      agents: [
+        {
+          id: "main",
+          workspace: "/workspace",
+          agentRuntime: {
+            id: "openclaw",
+            source: "agent",
+            cloudPlacementExecutionMode: "worker-turn",
+            devicePlacement: { requiredNodeCommands: [], consumesWorkerSlot: true },
+          },
+        },
+      ],
+    });
+    await gateway.refreshCloudProfiles();
+    place.selectDevice("runner");
+    place.selectDeviceFolder();
+    place.setDeviceFolderPath("/srv/project");
+    flow.setMessage("Keep my folder");
+    expect(flow.canSubmit()).toBe(true);
+    context.agents.state.agentsList!.agents[0]!.agentRuntime = {
+      id: "remote",
+      source: "agent",
+      cloudPlacementExecutionMode: "remote-exec",
+      devicePlacement: { requiredNodeCommands: [], consumesWorkerSlot: false },
+    };
+    expect(flow.canSubmit()).toBe(false);
+    expect(flow.submitDisabledReason()).toContain("worker-turn runtime");
+    await flow.submit();
+    expect(context.sessions.createResult).not.toHaveBeenCalled();
+    expect(place.deviceFolder).toEqual({ deviceId: "runner", path: "/srv/project" });
+  });
+
   it.each(["retry", "choose-workspace"] as const)(
     "retains a saved project after failed discovery until %s resolves the choice",
     async (recovery) => {

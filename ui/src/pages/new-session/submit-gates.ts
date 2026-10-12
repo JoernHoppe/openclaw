@@ -261,13 +261,15 @@ export function resolveNewSessionSubmitBlock(
   if (place.folderSubmissionBlocked()) {
     return {
       gate: "folder",
-      reason: t(
-        place.deviceFolder
-          ? place.deviceFolderAvailable
-            ? "newSession.deviceFolderPathRequired"
-            : "newSession.deviceFolderUnavailable"
-          : "newSession.checkingPlace",
-      ),
+      reason:
+        (place.deviceFolder && place.deviceFolderRuntimeUnsupportedReason) ||
+        t(
+          place.deviceFolder
+            ? place.deviceFolderAvailable
+              ? "newSession.deviceFolderPathRequired"
+              : "newSession.deviceFolderUnavailable"
+            : "newSession.checkingPlace",
+        ),
     };
   }
   if (pendingPlacementActive) {

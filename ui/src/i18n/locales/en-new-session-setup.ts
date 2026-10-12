@@ -12,6 +12,8 @@ const enNewSessionSetup = {
     deviceFolderPathPlaceholder: "/path/to/existing/folder",
     deviceFolderUnavailable:
       "This device cannot use an existing folder right now. Check its connection and session-hosting support, or choose another workspace.",
+    deviceFolderRuntimeUnsupported:
+      "Existing device folders require a worker-turn runtime. Choose a compatible model/runtime or another workspace; your folder path is kept.",
     deviceFolderPathRequired:
       "Enter an absolute path to an existing folder on the selected device.",
     requiredWorkerHint: "Say what you’d like to work on.",

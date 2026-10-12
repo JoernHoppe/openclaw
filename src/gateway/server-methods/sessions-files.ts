@@ -79,6 +79,24 @@ function sessionFilesError(type: string, message: string, details?: Record<strin
   });
 }
 
+function rejectDeviceFolderFiles(
+  entry: Pick<InternalSessionEntry, "deviceFolder"> | undefined,
+  respond: RespondFn,
+): boolean {
+  if (!entry?.deviceFolder) {
+    return false;
+  }
+  respond(
+    false,
+    undefined,
+    sessionFilesError(
+      "device_folder_files_unavailable",
+      "Files access is unavailable for existing folders on paired devices. Use the session's file tools on the selected device.",
+    ),
+  );
+  return true;
+}
+
 function loadSessionFileRoot(loaded: ReturnType<typeof loadGatewaySessionEntryReadOnly>) {
   if (!loaded.entry?.sessionId) {
     return {
@@ -169,6 +187,7 @@ export function withSessionFileRoot<T>(
           "lifecycleRevision",
           "archivedAt",
           "repositoryWorkspaceId",
+          "deviceFolder",
           "sessionRoot",
           "spawnedCwd",
           "spawnedWorkspaceDir",
@@ -332,6 +351,9 @@ async function handleSessionFilesRead(
     { ...params, agentId },
     context.getRuntimeConfig(),
     async (source, assertSourceCurrent) => {
+      if (rejectDeviceFolderFiles(source.entry, respond)) {
+        return;
+      }
       const assertCurrent = () => {
         assertSourceCurrent();
         read?.assertCurrent();
@@ -496,6 +518,9 @@ export const sessionsFilesHandlers: GatewayRequestHandlers = {
       { ...params, agentId },
       context.getRuntimeConfig(),
       async (loaded, assertSourceCurrent) => {
+        if (rejectDeviceFolderFiles(loaded.entry, respond)) {
+          return;
+        }
         if (!loaded.agentId || !loaded.entry?.sessionId) {
           respondSessionFileNotFound(respond, params.path);
           return;
@@ -583,6 +608,9 @@ export const sessionsFilesHandlers: GatewayRequestHandlers = {
         { sessionKey: params.key, agentId },
         context.getRuntimeConfig(),
         async (loaded, assertCurrent) => {
+          if (rejectDeviceFolderFiles(loaded.entry, respond)) {
+            return;
+          }
           if (loaded.entry?.repositoryWorkspaceId) {
             respond(true, {
               ok: false,

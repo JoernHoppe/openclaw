@@ -385,7 +385,8 @@ root list or `[]` if you do not want unrestricted in-place folder selection.
 For a specific paired device that advertises `workerHost.deviceFolders: true`,
 choose **Existing folder on device** in the workspace picker and enter an
 absolute path on that device. This option is not available for **Auto**, cloud
-workers, or devices that do not advertise the capability. The device validates
+workers, runtimes without worker-turn execution, or devices that do not advertise
+the capability. The device validates
 the folder; the Gateway does not browse or resolve this path locally.
 
 The session records `deviceFolder: { deviceId, path }` and dispatches to that
@@ -398,7 +399,10 @@ does not remove the existing folder.
 
 Device-folder sessions cannot move to another device or continue on the Gateway.
 Attachment staging is not supported for these sessions; use a managed workspace
-when you need to upload attachments.
+when you need to upload attachments. The Gateway Files panel and workspace reveal
+are unavailable for device-folder sessions; use the agent's file tools on the
+selected device instead. Gateway file operations reject these sessions rather
+than reading or writing a similarly named local workspace.
 
 ### Isolate hosted worker sessions in containers
 
@@ -456,15 +460,21 @@ Existing explicit image settings are preserved; replace unsupported Node images 
 upgrading OpenClaw. Worker startup requires a supported runtime; older releases may
 fail before the runtime diagnostic can run.
 
-Each worker container receives only two host bind mounts: its verified worker
-bundle root is read-only, and its assigned session workspace is read-write.
-Both are mounted at their original absolute host paths so the sealed bundle
-and workspace descriptor remain valid; the session workspace is also the
-container working directory. OpenClaw passes only the existing frozen,
+Each worker container mounts its verified worker bundle root read-only and its
+assigned session workspace read-write. When the worker's private HOME differs
+from that workspace, it receives a third, read-write mount for HOME. For
+existing-folder sessions, this private HOME belongs to OpenClaw's namespaced
+session-generation storage and follows its lease and retention lifecycle; it
+is not the node user's home directory. Collecting that private state does not
+remove the user-owned existing folder.
+
+These directories are mounted at their original absolute host paths so the
+sealed bundle and workspace descriptor remain valid; the session workspace is
+also the container working directory. OpenClaw passes only the existing frozen,
 non-secret worker environment allowlist and adds no other host mounts.
 Container isolation protects the rest of the host filesystem and separates
 the worker process, but the worker can still modify its assigned workspace
-and connect to the Gateway.
+and private HOME and connect to the Gateway.
 
 The container uses the engine's normal outbound networking and must be able
 to reach the Gateway worker WebSocket endpoint. A Gateway address such as

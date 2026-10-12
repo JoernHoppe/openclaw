@@ -114,6 +114,7 @@ describe("device-folder tunnel", () => {
       ReturnType<typeof createDeviceWorkerRuntime>["launchNodeWorker"]
     >(async ({ input }) => {
       const acquisition = await test.runtime.acquirePreparedWorkspace({
+        gatewayNamespace: input.gatewayNamespace,
         environmentId: input.descriptor.admission.environmentId,
         sessionId: input.descriptor.admission.sessionId,
         ownerEpoch: input.descriptor.admission.ownerEpoch,

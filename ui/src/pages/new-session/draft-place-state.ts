@@ -87,6 +87,16 @@ export class DraftPlaceState {
   }
 
   get deviceFolderAvailable(): boolean {
+    return this.deviceFolderOffered && !this.deviceFolderRuntimeUnsupportedReason;
+  }
+
+  get deviceFolderRuntimeUnsupportedReason(): string | undefined {
+    return this.devicePlacementRuntime()?.cloudPlacementExecutionMode !== "worker-turn"
+      ? t("newSession.deviceFolderRuntimeUnsupported")
+      : undefined;
+  }
+
+  get deviceFolderOffered(): boolean {
     return canUseDeviceFolder(this.deviceId, this.devices());
   }
 

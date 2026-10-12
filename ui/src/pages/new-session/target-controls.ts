@@ -278,7 +278,8 @@ export function renderNewSessionPlaceControls({
             freshWorkspace: place.freshWorkspace,
             onNewWorkspace: place.remotePlacement ? () => place.selectNewWorkspace() : undefined,
             deviceFolder: Boolean(place.deviceFolder),
-            onDeviceFolder: place.deviceFolderAvailable
+            deviceFolderDisabledReason: place.deviceFolderRuntimeUnsupportedReason,
+            onDeviceFolder: place.deviceFolderOffered
               ? () => place.selectDeviceFolder()
               : undefined,
             gatewayLabel,
@@ -316,7 +317,11 @@ export function renderNewSessionPlaceControls({
               }
             }}
           />
-          <span class="muted">${t("newSession.deviceFolderDescription")}</span>
+          <span class="muted"
+            >${
+              place.deviceFolderRuntimeUnsupportedReason ?? t("newSession.deviceFolderDescription")
+            }</span
+          >
         </label>`
       : nothing
   }${
