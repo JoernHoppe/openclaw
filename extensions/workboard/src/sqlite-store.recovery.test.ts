@@ -10,18 +10,7 @@ it("recovers Workboard after its slot fails with another client retaining the ac
   const dir = await mkdtemp(path.join(os.tmpdir(), "workboard-recovery-"));
   const dbPath = path.join(dir, "workboard.sqlite");
   const workerModuleUrl = new URL("./sqlite-store.worker.ts", import.meta.url);
-  let worker: Worker | undefined;
-  const post = Worker.prototype.postMessage;
-  const capture = vi.spyOn(Worker.prototype, "postMessage").mockImplementation(function (
-    this: Worker,
-    ...args: Parameters<Worker["postMessage"]>
-  ) {
-    const request = args[0];
-    if (request?.type === "open" && request.databasePath === dbPath) {
-      worker = this;
-    }
-    return post.apply(this, args);
-  });
+  const capture = vi.spyOn(Worker.prototype, "postMessage");
   const stores = createWorkboardSqliteStores({ dbPath, workerModuleUrl });
   const sibling = createWorkboardSqliteStores({ dbPath, workerModuleUrl });
   try {
@@ -31,7 +20,11 @@ it("recovers Workboard after its slot fails with another client retaining the ac
       board: { id: "ops", name: "Operations", createdAt: 1, updatedAt: 1 },
     };
     await stores.boards.register("ops", board);
-    assert(worker, "Workboard worker was not opened");
+    const openRequestIndex = capture.mock.calls.findIndex(
+      ([request]) => request?.type === "open" && request.databasePath === dbPath,
+    );
+    const worker = capture.mock.contexts[openRequestIndex];
+    assert(worker instanceof Worker, "Workboard worker was not opened");
     worker.emit("error", new Error("database is locked"));
     await expect(stores.boards.lookup("ops")).resolves.toEqual(board);
     await expect(sibling.boards.lookup("ops")).resolves.toEqual(board);
