@@ -25,6 +25,10 @@ import {
   resetGlobalHookRunner,
 } from "openclaw/plugin-sdk/hook-runtime";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerCopilotCleanupTests } from "./attempt-cleanup.test-support.js";
@@ -377,8 +381,13 @@ function makeFinalizationParams(
   return params;
 }
 
+beforeEach(() => {
+  setRuntimeConfigSnapshot({});
+});
+
 afterEach(() => {
   resetGlobalHookRunner();
+  clearRuntimeConfigSnapshot();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.useRealTimers();
@@ -852,6 +861,7 @@ describe("runCopilotAttempt", () => {
       layout: "state-only",
       prefix: "copilot-offloaded-image-",
     });
+    setRuntimeConfigSnapshot({});
     const inboundDir = openClawState.statePath("media", "inbound");
     const mediaId = "telegram-photo.png";
     await fsp.mkdir(inboundDir, { recursive: true });
