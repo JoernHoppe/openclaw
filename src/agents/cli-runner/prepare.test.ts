@@ -2992,13 +2992,14 @@ describe("prepareCliRunContext", () => {
           sessionKey: original.sessionKey,
           resetTriggered: false,
         });
-        sourceOperation.bindToolAuthoritySnapshot(
+        await sourceOperation.bindToolAuthoritySnapshotAsync(
           prepareReplyToolAuthority({
             run: { ...original, provider: sourceRoute.provider, traceAuthorized: true },
           }),
         );
       }
-      const toolAuthorityFingerprint = sourceOperation?.bindToolAuthorityRoute(sourceRoute);
+      const toolAuthorityFingerprint =
+        await sourceOperation?.bindToolAuthorityRouteAsync(sourceRoute);
       const context = await fixture.prepare({
         ...original,
         runId,
@@ -3059,12 +3060,12 @@ describe("prepareCliRunContext", () => {
               resetTriggered: false,
             });
             const nextRoute = { provider: "next-policy", model: "next-model" };
-            answeringPlaceholder.bindToolAuthoritySnapshot(
+            await answeringPlaceholder.bindToolAuthoritySnapshotAsync(
               prepareReplyToolAuthority({
                 run: { ...original, ...nextRoute, clientCaps: [] },
               }),
             );
-            answeringPlaceholder.bindToolAuthorityRoute(nextRoute);
+            await answeringPlaceholder.bindToolAuthorityRouteAsync(nextRoute);
             expect(replyRunRegistry.get(original.sessionKey)).toBe(answeringPlaceholder);
           }
           const answer = () =>
