@@ -1,9 +1,9 @@
-import { racePromiseWithAbortSignal } from "../../infra/abort-signal.js";
 import { getAsyncWorkSignal } from "../../shared/async-work-scope.js";
-import { createDeferredCore } from "../../shared/deferred.js";
 import { freezeJsonSnapshot } from "../../shared/immutable-data.js";
-import { registerListener } from "../../shared/listeners.js";
-import type { WorkerSessionPlacementReadResult } from "./placement-read-projection.types.js";
+import type {
+  WorkerPlacementRecoveryCandidate,
+  WorkerSessionPlacementReadResult,
+} from "./placement-read-projection.types.js";
 import type { WorkerSessionPlacementRecord } from "./placement-record.js";
 import type {
   ClaimChange,
@@ -22,6 +22,21 @@ export function affectsPlacementObservation(change: ClaimChange, sessionId?: str
       ? change.kind !== "claim" || !change.localOnly
       : change.sessionId === sessionId)
   );
+}
+
+export function prunePublication(owner: PlacementAuthorityOwner, sessionId: string): void {
+  if (
+    !owner.claims.has(sessionId) &&
+    !owner.workspaceResults.has(sessionId) &&
+    !owner.observations.has(sessionId) &&
+    !owner.placementReaders.has(sessionId) &&
+    ![...owner.pending].some((change) => change.sessionId === sessionId)
+  ) {
+    owner.published.delete(sessionId);
+    if (!owner.tools.get(sessionId)?.authority) {
+      owner.tools.delete(sessionId);
+    }
+  }
 }
 
 /** Install committed postimages without revoking a destination on ordinary turn claims. */
@@ -123,6 +138,30 @@ export function retainProjection(
   }
 }
 
+/** Local claim writes change only placement; the owner retains the other projection facts. */
+export function projectCachedLocalPlacementTurnClaim(
+  owner: PlacementAuthorityOwner | undefined,
+  placement: WorkerSessionPlacementRecord,
+): WorkerSessionPlacementReadResult["projection"] | undefined {
+  if (
+    !owner?.active ||
+    placement.state !== "local" ||
+    hasPendingPublication(owner, placement.sessionId)
+  ) {
+    return undefined;
+  }
+  const retained = owner.projections.get(placement.sessionId);
+  if (!retained) {
+    return undefined;
+  }
+  const projection = structuredClone(retained.projection);
+  projection.placements = new Map(projection.placements).set(
+    placement.sessionId,
+    structuredClone(placement),
+  );
+  return projection;
+}
+
 /** The authority owner retains exact reads until one of its writers publishes a change. */
 export async function readCachedPlacementProjection(
   captured: PlacementReadObservation,
@@ -164,38 +203,43 @@ export async function prepareCachedPlacementPreservationRead(
   );
 }
 
+/** Recovery work stays live; empty inventories sleep until a placement writer commits. */
+export async function readCachedPlacementRecoveryCandidates(
+  captured: PlacementReadObservation,
+  read: () => Promise<WorkerPlacementRecoveryCandidate[]>,
+): Promise<WorkerPlacementRecoveryCandidate[]> {
+  const { owner, observation, authority, assertUsable } = captured;
+  try {
+    const signal = getAsyncWorkSignal();
+    signal?.throwIfAborted();
+    assertUsable();
+    const candidates = owner.recoveryCandidatesEmpty ? [] : await read();
+    signal?.throwIfAborted();
+    assertUsable();
+    // Discovery may overlap Stop; recovery acquires exact session authority before acting.
+    if (candidates.length === 0 && !observation.revoked && !hasPendingPublication(owner)) {
+      owner.recoveryCandidatesEmpty = true;
+    }
+    return candidates;
+  } finally {
+    authority.release();
+  }
+}
+
 export async function preparePlacementRead<T, Result>(
   captured: PlacementReadObservation,
-  sessionId: string | undefined,
+  _sessionId: string | undefined,
   read: (owner: PlacementAuthorityOwner) => Promise<T>,
   consume: (value: T, captured: PlacementReadObservation) => Result,
 ): Promise<Result> {
-  const { authority, observation, owner, assertUsable } = captured;
+  const { authority, owner } = captured;
   const signal = getAsyncWorkSignal();
-  const assertReading = () => {
-    signal?.throwIfAborted();
-    assertUsable();
-  };
   try {
-    for (;;) {
-      assertReading();
-      while (hasPendingPublication(owner, sessionId)) {
-        const settled = createDeferredCore();
-        const unsubscribe = registerListener(owner.settlementListeners, settled.resolve);
-        try {
-          await racePromiseWithAbortSignal(settled.promise, signal);
-        } finally {
-          unsubscribe();
-        }
-        assertReading();
-      }
-      observation.revoked = false;
-      const value = await read(owner);
-      assertReading();
-      if (!observation.revoked && !hasPendingPublication(owner, sessionId)) {
-        return consume(value, captured);
-      }
-    }
+    signal?.throwIfAborted();
+    const value = await read(owner);
+    signal?.throwIfAborted();
+    authority.assertCurrent();
+    return consume(value, captured);
   } catch (error) {
     authority.release();
     throw error;

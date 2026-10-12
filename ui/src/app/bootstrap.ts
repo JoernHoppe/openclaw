@@ -294,7 +294,7 @@ export function bootstrapApplication(): ApplicationRuntime {
     connectionBootstrap,
     initialChatRoute:
       startsApplicationRouter &&
-      sessionRefFromPath(applicationLocation.pathname, basePath)?.namespace === "chat",
+      sessionRefFromPath(applicationLocation.pathname, basePath) !== null,
   });
   const scopeUpgrade = createScopeUpgradeCapability(gateway);
   const config = createApplicationConfigCapability({

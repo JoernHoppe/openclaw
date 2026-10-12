@@ -88,11 +88,13 @@ function modelConfig(store: string, agents: NonNullable<OpenClawConfig["agents"]
         openai: {
           api: model.api,
           baseUrl: model.baseUrl,
-          models: [model].map(({ provider: _provider, ...definition }) => definition),
+          models: [model, { ...model, id: "gpt-5.5", name: "GPT-5.5" }].map(
+            ({ provider: _provider, ...definition }) => definition,
+          ),
         },
       },
     },
-    agents: { defaults: { model: "openai/gpt-5.6-sol" }, ...agents },
+    agents: { defaults: { model: "openai/gpt-5.5" }, ...agents },
     session: { store },
   };
   expect(validateConfigObject(cfg)).toMatchObject({ ok: true });
@@ -565,11 +567,16 @@ test("dispatched authorization rejects an instance replaced during catalog prepa
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const member = await ensureCanonicalUserProfileForEmail("member@example.com");
     const sessionKey = "agent:main:commit-bound-authorization";
-    // A write-scoped model reset revalidates retained thinking. Admin scope would
+    // A write-scoped model reset revalidates the retained context window. Admin scope would
     // bypass the session-instance authorization this request must exercise.
     await upsertSessionEntryCore(
       { agentId: "main", sessionKey },
-      { sessionId: "session-shared", updatedAt: 1, visibility: "shared", thinkingLevel: "off" },
+      {
+        sessionId: "session-shared",
+        updatedAt: 1,
+        visibility: "shared",
+        contextWindow: "extended",
+      },
     );
     const entered = createDeferredCore();
     const release = createDeferredCore();
@@ -622,7 +629,7 @@ test("dispatched authorization rejects an instance replaced during catalog prepa
           {
             sessionId: "session-draft-replacement",
             updatedAt: 2,
-            thinkingLevel: undefined,
+            contextWindow: undefined,
             visibility: "draft",
             createdVia: "operator",
             createdActor: { type: "human", source: "profile", id: "owner" },
@@ -651,7 +658,7 @@ test("dispatched authorization rejects an instance replaced during catalog prepa
         visibility: "draft",
       });
       expect(current).not.toHaveProperty("label");
-      expect(current).not.toHaveProperty("thinkingLevel");
+      expect(current).not.toHaveProperty("contextWindow");
     } finally {
       release.resolve();
       await Promise.allSettled([request, replacement]);

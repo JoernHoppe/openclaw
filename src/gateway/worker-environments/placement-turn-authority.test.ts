@@ -657,11 +657,7 @@ it.each(["preparing", "bound", "final source check"] as const)(
           phase === "preparing" ? "worker turn authority changed" : "run closed during binding",
         );
       }
-      if (phase === "final source check") {
-        expect(getWorkerTurnExecutionIdentityCapability(store, claim)).toBeUndefined();
-      } else {
-        expect(assertSourceCurrent).not.toHaveBeenCalled();
-      }
+      expect(getWorkerTurnExecutionIdentityCapability(store, claim)).toBeUndefined();
     } finally {
       preparation?.mockRestore();
       releaseAgentRunDelegatedAuthority(delegated);
@@ -878,11 +874,11 @@ it("shares claim revocation across facades while restart clearing leaves worker 
   });
   const inventory = await store.prepareMaintenancePlacements();
   try {
-    expect(facade.clearLocalTurnClaimsAfterRestart()).toBe(1);
+    expect(await facade.clearLocalTurnClaimsAfterRestartAsync()).toBe(1);
     expect(localAuthority.isCurrent()).toBe(false);
     expect(workerAuthority.isCurrent()).toBe(true);
     inventory.assertCurrent();
-    facade.retireSessionPlacement({
+    await facade.retireSessionPlacementAsync({
       sessionId: local.sessionId,
       expectedState: "local",
       expectedGeneration: local.placementGeneration,

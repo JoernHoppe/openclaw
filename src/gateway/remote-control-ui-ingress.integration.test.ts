@@ -37,6 +37,7 @@ import {
   connect,
   request,
   expectHello,
+  PNG_BYTES,
   usePeer,
   expectReadWriteWithoutAdmin,
   expectOwnerReadAccess,
@@ -54,6 +55,7 @@ import {
 } from "./remote-control-ui-mcp-relay.test-support.js";
 import { GatewayConnectionWork } from "./server-connection-work.js";
 import { MAX_PREAUTH_PAYLOAD_BYTES } from "./server-constants.js";
+import { getControlUiModule } from "./server-http-modules.js";
 import { createGatewayHttpRequestHandler } from "./server-http-request.js";
 import { attachGatewayUpgradeHandler } from "./server-http-upgrades.js";
 import { createRequestGatewayMethodRegistry } from "./server-methods.js";
@@ -85,10 +87,6 @@ const FRAME_ANCESTORS = [
 const SHARED_TOKEN = "remote-control-ui-integration-shared-token";
 const SCOPES = ["operator.read", "operator.write"] as const;
 const OWNER_SESSION_KEY = "agent:main:ingress-owner-chat";
-const PNG_BYTES = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGO4E2DzHwAF3AJov2Ds8QAAAABJRU5ErkJggg==",
-  "base64",
-);
 describe("remote Control UI ingress production composition", () => {
   let state: OpenClawTestState;
   let ingress: GatewayControlUiIngressV2 | undefined;
@@ -259,6 +257,8 @@ describe("remote Control UI ingress production composition", () => {
       broadcast: requestContext.broadcast,
       buildRequestContext: () => gatewayContext,
     });
+    // Keep source transformation outside the remote HTTP progress deadline.
+    await getControlUiModule();
     http = createGatewayHttpRequestHandler({
       clients,
       controlUiEnabled: true,

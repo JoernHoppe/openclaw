@@ -11,6 +11,11 @@ import type {
   GatewayIngressPrincipalBindingV1,
 } from "../plugins/gateway-ingress.types.js";
 
+export const PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGO4E2DzHwAF3AJov2Ds8QAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 const CLIENT = {
   id: "openclaw-control-ui",
   version: "dev",

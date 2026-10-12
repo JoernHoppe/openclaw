@@ -76,6 +76,13 @@ that process stops, restart the host with `openclaw node run --session-host`,
 which reuses the saved pairing. See
 [Reconnect a paired node](/cli/connect#reconnect-a-paired-node).
 
+After a host reboot, the node releases interrupted native worker slots and records
+the interrupted turn when its saved launch boot identity differs from the current
+OS boot identity. The next turn can start normally after the node reconnects.
+Older launch records and hosts whose boot identity cannot be read keep the existing
+conservative cleanup checks. Container workers still require their container
+engine to confirm cleanup, including when that engine runs on another host.
+
 In Control UI New Session, a
 write-scoped operator chooses either a specific paired device or **Auto**.
 Without an explicit project or folder selection, **New workspace** starts an
@@ -333,6 +340,12 @@ While a device runner is unavailable, including after session hosting is disable
 the Gateway pauses advisory disk-space checks and retains the last sample for
 that placement. Checks resume on the next scheduled sweep after the current
 runner reconnects. Disabling hosting does not discard the session's workspace.
+
+The Gateway samples the volume containing the placement's remote workspace.
+New placements, placement activity, and runner availability changes refresh the
+sample on the next maintenance pass. An unchanged idle placement reuses its
+successful sample for up to 15 minutes. Samples are advisory and do not block
+turns or workspace writes.
 
 See [Anthropic: Claude sessions across computers](/providers/anthropic#claude-sessions-across-computers)
 for the Control UI behavior and storage sources.

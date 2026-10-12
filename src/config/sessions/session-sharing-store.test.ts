@@ -143,7 +143,6 @@ describe("session sharing store", () => {
       expect(isOpenClawAgentDatabaseOpen(resolveOpenClawAgentSqlitePath(scope))).toBe(false);
       await expect(
         reclamation.runSqliteSessionReclamation({
-          forceInProcess: false,
           plan: createSessionMaintenanceFinalizationOperation({
             agentId: scope.agentId,
             databaseOptions: scope,
@@ -280,6 +279,8 @@ describe("session sharing store", () => {
         { identityId: "zoe", addedBy: "owner", addedAt: 2 },
       ]);
       expect(isSessionMember(scope, "alice")).toBe(true);
+      expect(removeSessionMember(scope, "alice", { addedBy: "owner", addedAt: 2 })).toBeNull();
+      expect(listSessionMembers(scope)).toHaveLength(2);
       expect(removeSessionMember(scope, "alice")).toEqual({
         identityId: "alice",
         addedBy: "owner",
@@ -311,6 +312,29 @@ describe("session sharing store", () => {
           .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'session_members'")
           .get(),
       ).toBeUndefined();
+    });
+  });
+
+  it("does not remove a newer membership grant using an older grant", async () => {
+    await withOpenClawTestState({ layout: "state-only" }, async ({ env }) => {
+      const scope = { agentId: "main", env, sessionKey: "agent:main:main" };
+      await upsertSessionEntryCore(scope, { sessionId: "session-main", updatedAt: 1 });
+      const original = addSessionMember(scope, {
+        identityId: "guest",
+        addedBy: "owner",
+        addedAt: 2,
+      }).member;
+      expect(removeSessionMember(scope, "guest", original)).toEqual(original);
+      const replacement = addSessionMember(scope, {
+        identityId: "guest",
+        addedBy: "owner",
+        addedAt: 3,
+      }).member;
+
+      expect(removeSessionMember(scope, "guest", original)).toBeNull();
+      expect(listSessionMembers(scope)).toEqual([replacement]);
+      expect(removeSessionMember(scope, "guest", replacement)).toEqual(replacement);
+      expect(listSessionMembers(scope)).toEqual([]);
     });
   });
 

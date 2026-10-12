@@ -34,7 +34,7 @@ export function normalizeAssistantMediaSource(source: string): string | null {
   return trimmed;
 }
 
-type AssistantMediaPolicy = NonNullable<ReturnType<typeof resolveAssistantMediaPolicy>>;
+type AssistantMediaPolicy = NonNullable<Awaited<ReturnType<typeof resolveAssistantMediaPolicy>>>;
 type AssistantMediaFile = NonNullable<AssistantMediaTicketPayload["file"]>;
 
 function sameAssistantMediaFile(actual: AssistantMediaFile, expected: AssistantMediaFile) {

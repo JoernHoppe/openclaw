@@ -44,6 +44,8 @@ import {
 } from "./remote-control-ui-ingress.integration.test-support.js";
 import { dispatchGatewayRequestInProcess } from "./server-in-process-dispatch.js";
 import type { GatewayClient } from "./server-methods/client-types.js";
+import { coreGatewayHandlers } from "./server-methods/core-handlers.js";
+import { prepareGatewayRequestHandler } from "./server-methods/lazy-core-handlers.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import type { GatewayClientRegistry } from "./server/client-registry.js";
 
@@ -401,6 +403,10 @@ export async function expectMcpRelayPrincipalAuthority({
   openRemote: (handle: GatewayControlUiIngressV2) => Promise<Peer>;
   configure: (config: OpenClawConfig, auth: ResolvedGatewayAuth) => Promise<void>;
 }) {
+  // Keep lazy source transformation outside the relay's real RPC deadlines.
+  for (const method of ["agents.list", "sessions.list", "sessions.describe", "chat.history"]) {
+    await prepareGatewayRequestHandler(coreGatewayHandlers[method]!);
+  }
   const admin = await ensureCanonicalUserProfileForEmail("admin@ingress.example.test");
   const restricted = await ensureCanonicalUserProfileForEmail("reader@ingress.example.test");
   for (const person of [admin, restricted]) {

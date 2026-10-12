@@ -43,7 +43,6 @@ import {
   normalizeReasoningLevel,
   normalizeThinkLevel,
   normalizeUsageDisplay,
-  resolveSupportedThinkingLevelFromProfile,
   resolveThinkingProfile,
 } from "../auto-reply/thinking.js";
 import type { InternalSessionEntry as SessionEntry } from "../config/sessions.js";
@@ -116,6 +115,8 @@ type SessionPatchProjectionParams = {
   operatorAuthority?: AdmittedRunOperatorAuthority;
   /** Resolved spawn identity supplied only by the trusted creation owner. */
   preparedModelSelection?: ModelRef;
+  /** Creation snapshots selected models, including the configured default. */
+  pinModelSelection?: boolean;
 };
 
 type SessionPatchProjectionResult =
@@ -530,7 +531,7 @@ function* projectSessionPatchSteps(
       if (!resolved.ok) {
         return invalid(resolved.error);
       }
-      selection = resolved;
+      selection = { ...resolved, isDefault: !params.pinModelSelection && resolved.isDefault };
     }
     if (selection) {
       const prepared = prepareSessionPatchModelSelection({
@@ -584,10 +585,21 @@ function* projectSessionPatchSteps(
       }
       // Catalog membership does not guarantee an activatable harness. Reject before
       // committing the session so sticky defaults cannot retain an unusable selection.
+      // Use the execution decision: a turn runs an unavailable implicit harness on OpenClaw.
       const harnessSelection = {
         provider: selection.provider,
         modelId: selection.model,
-        runtime: resolveThinkingRuntime(selection.provider, selection.model, next),
+        runtime:
+          params.preparedAgentRuntime ??
+          resolveEffectiveAgentRuntime({
+            cfg,
+            provider: selection.provider,
+            modelId: selection.model,
+            agentId: sessionAgentId,
+            sessionKey: storeKey,
+            sessionEntry: next,
+            mode: "execution",
+          }),
         agentId: sessionAgentId,
       };
       if (
@@ -613,7 +625,7 @@ function* projectSessionPatchSteps(
         entry: next,
         currentProvider: next.providerOverride ?? next.modelProvider ?? resolvedDefault.provider,
         selection,
-        explicitDefaultSelection: raw === null || (statusModelPatch && selection.isDefault),
+        explicitDefaultSelection: selection.isDefault,
         profileOverride: selection.profile,
         ...(params.providerAuthMetadataSnapshot
           ? { metadataSnapshot: params.providerAuthMetadataSnapshot }
@@ -629,20 +641,14 @@ function* projectSessionPatchSteps(
     }
   }
 
-  if ("thinkingLevel" in patch || "model" in patch || "agentRuntime" in patch) {
+  if (typeof rawThinking === "string") {
     const effectiveProvider = next.providerOverride ?? resolvedDefault.provider;
     const effectiveModel = next.modelOverride ?? resolvedDefault.model;
-    const thinkingLevel = normalizeThinkLevel(next.thinkingLevel);
-    if (!thinkingLevel) {
-      delete next.thinkingLevel;
-    } else {
-      const profile = yield* loadThinkingProfileForPatch(effectiveProvider, effectiveModel, next);
-      if ("thinkingLevel" in patch && !profile.levels.some(({ id }) => id === thinkingLevel)) {
-        return invalid(
-          `thinkingLevel "${thinkingLevel}" is not supported for ${effectiveProvider}/${effectiveModel} (use ${profile.levels.map(({ label }) => label).join("|")})`,
-        );
-      }
-      next.thinkingLevel = resolveSupportedThinkingLevelFromProfile(profile, thinkingLevel);
+    const profile = yield* loadThinkingProfileForPatch(effectiveProvider, effectiveModel, next);
+    if (!profile.levels.some(({ id }) => id === next.thinkingLevel)) {
+      return invalid(
+        `thinkingLevel "${next.thinkingLevel}" is not supported for ${effectiveProvider}/${effectiveModel} (use ${profile.levels.map(({ label }) => label).join("|")})`,
+      );
     }
   }
 

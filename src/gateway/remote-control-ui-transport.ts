@@ -16,11 +16,11 @@ import {
 } from "../plugins/gateway-ingress.types.js";
 import { readGatewayPluginReadCookies } from "./control-ui-plugin-auth-cookie.js";
 import { markGatewayIngressTransport } from "./ingress-attribution.js";
+import { MAX_PAYLOAD_BYTES } from "./payload-limits.js";
 import type { RemoteControlUiIngressContext } from "./remote-control-ui-context.js";
 import { createRemoteControlUiResponseAccounting } from "./remote-control-ui-http-response.js";
 import type { GatewayControlUiIngressHost } from "./remote-control-ui-ingress-host.js";
 import { bindRemoteControlUiSocketBuffer } from "./remote-control-ui-socket-buffer.js";
-import { MAX_PAYLOAD_BYTES } from "./server-constants.js";
 
 const MAX_BODY_BYTES = 100 * 1024 * 1024;
 const MAX_QUEUED_MESSAGES = 64;

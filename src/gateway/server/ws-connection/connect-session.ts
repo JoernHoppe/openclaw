@@ -308,10 +308,6 @@ export async function attachAuthenticatedGatewayConnect(
     pairingLocality !== "remote" &&
     connectParams.client.id === GATEWAY_CLIENT_IDS.GATEWAY_CLIENT &&
     connectParams.client.mode === GATEWAY_CLIENT_MODES.BACKEND;
-  const isTrustedApprovalRuntime =
-    isLocalBackendClient &&
-    scopes.includes(APPROVALS_SCOPE) &&
-    isOperatorApprovalRuntimeToken(connectParams.auth?.approvalRuntimeToken);
   const agentRuntimeIdentityProof = connectParams.auth?.agentRuntimeIdentityToken;
   let trustedAgentRuntimeIdentity:
     | Awaited<ReturnType<typeof verifyAgentRuntimeIdentityToken>>
@@ -385,7 +381,6 @@ export async function attachAuthenticatedGatewayConnect(
     ...(authenticatedOperator ? { authenticatedOperator: true as const } : {}),
     ...(authenticatedControlUi ? { authenticatedControlUi: true as const } : {}),
     ...(controlUiAdmin ? { controlUiAdmin: true as const } : {}),
-    ...(isTrustedApprovalRuntime ? { approvalRuntime: true } : {}),
     ...(trustedAgentRuntimeIdentity ? { agentRuntimeIdentity: trustedAgentRuntimeIdentity } : {}),
     ...(remoteIngressPrincipal
       ? {
@@ -512,6 +507,14 @@ export async function attachAuthenticatedGatewayConnect(
       });
       return;
     }
+  }
+
+  if (
+    isLocalBackendClient &&
+    scopes.includes(APPROVALS_SCOPE) &&
+    (await isOperatorApprovalRuntimeToken(connectParams.auth?.approvalRuntimeToken))
+  ) {
+    nextClient.internal = { ...nextClient.internal, approvalRuntime: true };
   }
 
   const policyFailure = resolveGatewayConnectPolicyFailure(context, state);

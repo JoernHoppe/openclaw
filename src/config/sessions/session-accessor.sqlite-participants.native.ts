@@ -2,11 +2,11 @@ import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
 } from "../../infra/kysely-sync.js";
+import { withSqliteDatabaseWriteScope } from "../../infra/sqlite-database-admission.js";
 import { assertTransactionUsable } from "../../infra/sqlite-transaction.js";
 import { emitSessionLifecycleEvent } from "../../sessions/session-lifecycle-events.js";
 import {
   deferOpenClawAgentPostCommitPublication,
-  getOpenClawAgentDatabaseIfOpen,
   runOpenClawAgentWriteTransaction,
   type OpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
@@ -118,21 +118,23 @@ function recordSessionParticipantWithAliasRead(
       "sum",
     );
     const writeGeneration = trackSessionEntryCacheWrite(database, () =>
-      executeSqliteQuerySync(
-        database.db,
-        kysely
-          .insertInto("session_participants")
-          .values({
-            session_key: resolved.sessionKey,
-            identity_namespace: namespace,
-            actor_id: existing?.actor_id ?? actorId,
-            ...aggregate,
-          })
-          .onConflict((conflict) =>
-            conflict
-              .columns(["session_key", "identity_namespace", "actor_id"])
-              .doUpdateSet(aggregate),
-          ),
+      withSqliteDatabaseWriteScope(database.db, [resolved.sessionKey], () =>
+        executeSqliteQuerySync(
+          database.db,
+          kysely
+            .insertInto("session_participants")
+            .values({
+              session_key: resolved.sessionKey,
+              identity_namespace: namespace,
+              actor_id: existing?.actor_id ?? actorId,
+              ...aggregate,
+            })
+            .onConflict((conflict) =>
+              conflict
+                .columns(["session_key", "identity_namespace", "actor_id"])
+                .doUpdateSet(aggregate),
+            ),
+        ),
       ),
     );
     publishSessionEntryCacheParticipantUpdate(database, resolved.sessionKey, {
@@ -153,13 +155,8 @@ function recordSessionParticipantWithAliasRead(
     return existing ? "updated" : "inserted";
   };
   if (transaction) {
-    if (getOpenClawAgentDatabaseIfOpen(options) !== transaction || !transaction.db.isTransaction) {
-      throw new Error("Session participant write lost its owning transaction");
-    }
     assertTransactionUsable(transaction.db);
-    const result = write(transaction);
-    assertTransactionUsable(transaction.db);
-    return result;
+    return write(transaction);
   }
   return runOpenClawAgentWriteTransaction(write, options, {
     operationLabel: "sessions.record-participant",

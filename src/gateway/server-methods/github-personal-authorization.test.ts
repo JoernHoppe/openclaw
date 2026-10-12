@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRemoteControlUiIngressTestContext } from "../remote-control-ui.test-support.js";
 import {
   prepareGitHubPublicationOptionsRead,
-  preparePersonalGitHubSessionAction,
+  preparePersonalGitHubSessionActionV2,
 } from "./github-personal-authorization.js";
 import type { GatewayClient, GatewayRequestContext } from "./types.js";
 
@@ -14,17 +14,38 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../session-utils.js", () => ({
   loadGatewaySessionEntryReadOnly: mocks.loadSession,
 }));
+// mock-isolation: Session preparation uses the same synthetic rows without starting a state worker.
+vi.mock("../session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: async (params: { key: string; agentId?: string }) =>
+    mocks.loadSession(params.key, { agentId: params.agentId }),
+}));
+// mock-isolation: Publication requester admission does not open profile or session stores here.
+vi.mock("../github-publication-requester.js", () => ({
+  prepareGitHubPublicationRequesterV2: async () => ({
+    requester: {
+      signal: new AbortController().signal,
+      prepareSource: () => {
+        throw new Error("Publication source preparation is outside this authorization test.");
+      },
+    },
+    release: () => {},
+  }),
+}));
 vi.mock("../../agents/tools/gateway-caller-context.js", () => ({
   getGatewayToolCallerIdentity: () => undefined,
 }));
+// mock-isolation: Options disclosure uses synthetic profile authority without opening the host profile store.
 vi.mock("../../state/user-channel-identity-operations.js", () => ({
-  prepareUserProfileRoleAuthority: async (profileId: string) => ({
+  prepareUserProfileRolePolicyAuthority: async (profileId: string) => ({
     profileId,
     isCurrent: () => true,
   }),
 }));
-vi.mock("../../state/user-github-connections.js", () => ({
-  resolvePersonalGitHubOwner: (profile: string) => profile,
+// mock-isolation: Authorization policy fixtures do not open or hydrate the profile database.
+vi.mock("../../state/user-profile-list.js", () => ({
+  captureResidentUserProfileAccess: (profileId: string) => ({
+    assertCurrent: () => ({ id: profileId, role: null }),
+  }),
 }));
 vi.mock("../operator-role-policy.js", () => ({
   resolveOperatorRolePolicy: () => (mocks.roleScopes ? { scopes: mocks.roleScopes } : null),
@@ -103,11 +124,17 @@ describe("GitHub publication request discovery", () => {
     request.context.getClientConnIds = () => new Set();
     const read = await prepareGitHubPublicationOptionsRead(request, { sessionKey: "main" });
     expect(read.personal.kind).toBe("eligible");
-    const publication = preparePersonalGitHubSessionAction(request, { sessionKey: "main" });
-    expect(() => publication.assertCurrent()).not.toThrow();
-    grant.abort();
-    expect(() => read.currentSession()).toThrow("connection is no longer current");
-    expect(() => publication.assertCurrent()).toThrow("current authenticated human");
+    const publication = await preparePersonalGitHubSessionActionV2(request, {
+      sessionKey: "main",
+    });
+    try {
+      expect(() => publication.action.assertCurrent()).not.toThrow();
+      grant.abort();
+      expect(() => read.currentSession()).toThrow("connection is no longer current");
+      expect(() => publication.action.assertCurrent()).toThrow("current authenticated human");
+    } finally {
+      publication.release();
+    }
   });
 
   it.each([
@@ -183,31 +210,4 @@ describe("GitHub publication request discovery", () => {
       expect(() => read.assertSessionUnchanged(restored)).not.toThrow();
     },
   );
-
-  it("shares store discovery across every personal session authority re-read", () => {
-    const agentId = "research";
-    mocks.loadSession.mockReturnValue(sessionRead(agentId));
-    const action = preparePersonalGitHubSessionAction(createRequest(), {
-      sessionKey: "main",
-      agentId,
-    });
-    action.assertCurrent();
-
-    expect(mocks.loadSession).toHaveBeenCalledTimes(3);
-    const targetDiscoveryCache = mocks.loadSession.mock.calls[0]?.[1]?.targetDiscoveryCache;
-    expect(targetDiscoveryCache).toBeInstanceOf(Map);
-    expect(mocks.loadSession).toHaveBeenNthCalledWith(1, "main", {
-      agentId,
-      targetDiscoveryCache,
-    });
-    for (const call of [2, 3]) {
-      expect(mocks.loadSession.mock.calls[call - 1]?.[1]?.targetDiscoveryCache).toBe(
-        targetDiscoveryCache,
-      );
-      expect(mocks.loadSession).toHaveBeenNthCalledWith(call, `agent:${agentId}:main`, {
-        agentId,
-        targetDiscoveryCache,
-      });
-    }
-  });
 });

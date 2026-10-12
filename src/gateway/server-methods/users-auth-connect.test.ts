@@ -6,7 +6,7 @@ import { createDeferredCore } from "../../shared/deferred.js";
 import { createRemoteControlUiIngressTestContext } from "../remote-control-ui.test-support.js";
 import {
   setupModelAccountConnectTest,
-  resolveUserProfileId,
+  resolveProfileId,
   prepareUserProfileSelectionAuthority,
   connectUserModelAccount,
   listUserProfileAuthLinks,
@@ -334,7 +334,7 @@ describe("users model-account connection lifecycle", () => {
       writer.scopes = ["operator.read"];
     }
     if (change === "merge") {
-      resolveUserProfileId.mockImplementation((id) => (id === "profile-1" ? "profile-merged" : id));
+      resolveProfileId.mockImplementation((id) => (id === "profile-1" ? "profile-merged" : id));
     }
     if (change === "answerer disconnect") {
       clients.delete(answerer);
