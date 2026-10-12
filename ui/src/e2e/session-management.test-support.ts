@@ -124,24 +124,42 @@ export async function activateSelfRemovingControl(control: Locator): Promise<voi
     const target = element as HTMLElement & { disabled?: boolean };
     const style = getComputedStyle(target);
     const bounds = target.getBoundingClientRect();
+    // Match Playwright's viewport-clipped click point for partially visible controls.
+    const left = Math.max(0, bounds.left);
+    const right = Math.min(innerWidth, bounds.right);
+    const top = Math.max(0, bounds.top);
+    const bottom = Math.min(innerHeight, bounds.bottom);
+    const point = { x: (left + right) / 2, y: (top + bottom) / 2 };
     const root = target.getRootNode();
     const hitTestRoot = root instanceof ShadowRoot ? root : document;
-    const hitTarget = hitTestRoot.elementFromPoint(
-      bounds.left + bounds.width / 2,
-      bounds.top + bounds.height / 2,
-    );
+    const hitTarget = hitTestRoot.elementFromPoint(point.x, point.y);
     if (
       !target.isConnected ||
       style.display === "none" ||
       style.visibility === "hidden" ||
       bounds.width <= 0 ||
       bounds.height <= 0 ||
+      right <= left ||
+      bottom <= top ||
       target.disabled === true ||
       target.getAttribute("aria-disabled") === "true" ||
       !hitTarget ||
       (hitTarget !== target && !target.contains(hitTarget))
     ) {
-      throw new Error("Self-removing control must be visible and enabled before activation");
+      throw new Error(
+        "Self-removing control must be visible and enabled before activation: " +
+          JSON.stringify({
+            bounds: bounds.toJSON(),
+            viewport: { width: innerWidth, height: innerHeight },
+            point,
+            connected: target.isConnected,
+            display: style.display,
+            visibility: style.visibility,
+            disabled: target.disabled === true,
+            ariaDisabled: target.getAttribute("aria-disabled"),
+            hitTag: hitTarget?.tagName ?? null,
+          }),
+      );
     }
     target.click();
   });
