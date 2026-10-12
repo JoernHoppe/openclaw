@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
 import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQaGatewayChild } from "../../../../extensions/qa-lab/api.js";
 import type { AuditRunInspectResult } from "../../../../packages/gateway-protocol/src/index.js";
 import {
@@ -376,9 +376,27 @@ describe("node worker launch wire", () => {
         );
         expect(permissionReplies).toHaveLength(1);
         expect(wireMessageText(permissionReplies?.[0])).toContain(provider.execOutput);
-        const permissionDescribed = (await gateway.call("sessions.describe", {
-          key: SESSION_KEY,
-        })) as { session?: { execCwd?: string; spawnedCwd?: string } };
+        // The reply is committed before its workspace result finishes settling.
+        const permissionGateway = gateway;
+        const permissionDescribed = await vi.waitFor(
+          async () => {
+            const current = (await permissionGateway.call("sessions.describe", {
+              key: SESSION_KEY,
+            })) as {
+              session?: {
+                execCwd?: string;
+                spawnedCwd?: string;
+                placement?: { workspaceBaseManifestRef?: string };
+              };
+            };
+            expect(current.session?.placement?.workspaceBaseManifestRef).toBeTruthy();
+            expect(current.session?.placement?.workspaceBaseManifestRef).not.toBe(
+              described.session?.placement?.workspaceBaseManifestRef,
+            );
+            return current;
+          },
+          { timeout: Math.max(1, permissionDeadline - Date.now()), interval: 100 },
+        );
         const permissionLocalDir =
           permissionDescribed.session?.execCwd ?? permissionDescribed.session?.spawnedCwd;
         expect(permissionLocalDir).toBeTruthy();

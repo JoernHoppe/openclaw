@@ -189,6 +189,7 @@ async function readEnvironments(operator: GatewayClient): Promise<EnvironmentRea
 
 async function expectPublicBundleStatus(params: {
   operator: GatewayClient;
+  gateway: WireGateway;
   host: PairedNodeWorkerHost;
   nodeId: string;
   phase: "before-loss" | "after-loss" | "after-repair";
@@ -234,6 +235,7 @@ async function expectPublicBundleStatus(params: {
               };
             }),
           invokeErrors: params.host.invokeErrors.map(String),
+          gatewayLogTail: params.gateway.logs().slice(-4_000),
         }),
       ).slice(0, 8_000);
       expect(node?.workerBundle?.status, diagnostic).toBe(params.status);
@@ -630,6 +632,7 @@ describe("paired node worker lifecycle wire", () => {
         // Bundle maintenance reports only the public status/version projection and repairs loss.
         await expectPublicBundleStatus({
           operator,
+          gateway,
           host: workerNode,
           nodeId,
           phase: "before-loss",
@@ -645,6 +648,7 @@ describe("paired node worker lifecycle wire", () => {
         await waitForNewRetainCommand(retainCountBeforeReconnect);
         await expectPublicBundleStatus({
           operator,
+          gateway,
           host: workerNode,
           nodeId,
           phase: "after-loss",
@@ -662,6 +666,7 @@ describe("paired node worker lifecycle wire", () => {
         await waitForNewRetainCommand(retainCountBeforeRepair);
         await expectPublicBundleStatus({
           operator,
+          gateway,
           host: workerNode,
           nodeId,
           phase: "after-repair",

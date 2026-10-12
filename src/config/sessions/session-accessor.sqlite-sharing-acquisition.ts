@@ -57,6 +57,7 @@ export function publishRetainedSessionEntryPredicate(
   read: PreparedSessionSharingRead,
   entry: SessionEntry | undefined,
   known: boolean,
+  options?: { preserveMatchingEntry?: boolean },
 ): void {
   const predicate = read.predicate;
   if (!predicate) {
@@ -77,7 +78,7 @@ export function publishRetainedSessionEntryPredicate(
   } else if (!matches) {
     predicate.revision += 1;
     predicate.state = "changed";
-  } else {
+  } else if (!options?.preserveMatchingEntry) {
     predicate.entry = entry;
   }
 }

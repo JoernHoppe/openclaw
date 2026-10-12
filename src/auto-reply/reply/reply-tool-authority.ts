@@ -469,7 +469,10 @@ export function prepareReplyToolAuthority(
       assertCurrent() {
         assertOpen();
         if (!predicate.isCurrent()) {
-          throw new Error("Tool authority classification session changed");
+          const reason = predicate.canRefresh()
+            ? "entry predicate pending or unknown"
+            : "entry predicate changed or released";
+          throw new Error(`Tool authority classification session changed (${reason})`);
         }
       },
     };
@@ -662,7 +665,9 @@ export function prepareReplyToolAuthority(
           (entry?.sessionId !== original.sessionId ||
             entry?.lifecycleRevision !== original.lifecycleRevision)
         ) {
-          throw new Error("Tool authority classification session changed");
+          throw new Error(
+            "Tool authority classification session changed (caller session identity)",
+          );
         }
         for (const input of [snapshot, projected]) {
           if (

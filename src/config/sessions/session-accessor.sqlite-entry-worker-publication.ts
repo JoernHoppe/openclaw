@@ -82,18 +82,27 @@ export function publishSessionEntryWorkerInvalidations(
   sessionChanges.emitBatch(changes, undefined, beforePublicNotifications);
 }
 
-/** A superseded receipt is discarded wholesale; the next read refreshes its facts. */
-function retireSessionEntryMembership(
+/** Later metadata commits cannot certify membership or a generation changed by an older write. */
+function retireSupersededSessionFacts(
   params: { agentId: string; storePath: string; databaseIdentity: string },
-  keys: readonly string[],
+  owner: PendingSessionEntryPublication,
+  generationUnchanged: ReadonlySet<string>,
 ): SessionRowChange[] {
-  return [...new Set(keys)].map((sessionKey) => {
+  return [...owner.superseded].flatMap((sessionKey) => {
+    const membershipChanged = owner.membershipInvalidated.has(sessionKey);
+    const generationChanged = !generationUnchanged.has(sessionKey);
+    if (!membershipChanged && !generationChanged) {
+      return [];
+    }
     for (const read of preparedSharingReads.get(`file:${params.databaseIdentity}\0${sessionKey}`) ??
       []) {
-      read.facts = undefined;
-      recordAcquiringSessionEntry(read.acquisition, undefined, undefined);
-      publishRetainedSessionEntryPredicate(read, undefined, false);
-      publishRetainedSessionGeneration(read, undefined, false);
+      if (membershipChanged) {
+        read.facts = undefined;
+        recordAcquiringSessionEntry(read.acquisition, undefined, undefined);
+      }
+      if (generationChanged) {
+        publishRetainedSessionGeneration(read, undefined, false);
+      }
     }
     const change: SessionRowChange = {
       agentId: params.agentId,
@@ -107,7 +116,7 @@ function retireSessionEntryMembership(
       sharingChange: "unchanged",
       databaseIdentity: params.databaseIdentity,
     });
-    return change;
+    return [change];
   });
 }
 
@@ -179,7 +188,7 @@ export function retainSessionEntryWorkerPublication(params: {
             : [],
         ),
       );
-      const invalidations = retireSessionEntryMembership(params, [...owner.superseded]);
+      const invalidations = retireSupersededSessionFacts(params, owner, owner.generationUnchanged);
       publication.settle(undefined, false);
       return install(current, invalidations);
     },
@@ -211,6 +220,12 @@ export function retainSessionEntryWorkerPublication(params: {
             continue;
           }
           if (!currentKeys.has(record.sessionKey)) {
+            for (const read of preparedSharingReads.get(`${identityKey}\0${record.sessionKey}`) ??
+              []) {
+              publishRetainedSessionEntryPredicate(read, record.value.entry, true, {
+                preserveMatchingEntry: true,
+              });
+            }
             continue;
           }
           const entry = record.value.entry;
@@ -311,6 +326,21 @@ export function retainSessionEntryWorkerPublication(params: {
         receipt?.kind === "session-transcript-initialized" ? receipt : undefined;
       const current = (sessionKey: string) => !owner.superseded.has(sessionKey);
       const known = !unknown && replacement !== undefined;
+      // Member-only successors cannot certify policy; matching old facts must retain newer metadata.
+      if (known || unknown) {
+        for (const sessionKey of owner.superseded) {
+          for (const read of preparedSharingReads.get(`${identityKey}\0${sessionKey}`) ?? []) {
+            publishRetainedSessionEntryPredicate(
+              read,
+              replacement?.current.get(sessionKey),
+              known,
+              {
+                preserveMatchingEntry: true,
+              },
+            );
+          }
+        }
+      }
       // A later native metadata write cannot restore membership omitted by an alias move.
       const membershipInvalidated = new Set(
         replacement
@@ -328,13 +358,15 @@ export function retainSessionEntryWorkerPublication(params: {
           ...membershipInvalidated,
         ]),
       ];
-      const supersededMembership = [...owner.superseded].filter((key) => !changed.includes(key));
-      if (changed.length || supersededMembership.length) {
+      const generationUnchanged = new Set(
+        replacement?.generationUnchangedKeys ?? owner.generationUnchanged,
+      );
+      const superseded = retireSupersededSessionFacts(params, owner, generationUnchanged);
+      if (changed.length || superseded.length) {
         invalidateSessionEntryCaches(params.databaseIdentity);
       }
       const changes: SessionRowChange[] = [];
       const sharingUnchanged = new Set(replacement?.sharingUnchangedKeys);
-      const generationUnchanged = new Set(replacement?.generationUnchangedKeys);
       const { prepared, currentMetadata, readCurrent } = prepareSessionEntryPublicationFacts({
         replacement,
         owner,
@@ -479,7 +511,7 @@ export function retainSessionEntryWorkerPublication(params: {
         }
         changes.push(change);
       }
-      changes.push(...retireSessionEntryMembership(params, supersededMembership));
+      changes.push(...superseded);
       // Unknown successors also retire older facts; a late receipt cannot resolve their outcome.
       for (const sessionKey of changed) {
         recordCommittedSessionEntryPublication(params.databaseIdentity, sessionKey, owner);
