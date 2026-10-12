@@ -11,7 +11,10 @@ import {
   projectSessionSharingEntry,
   retainPreparedSessionSharingFacts,
 } from "../config/sessions/session-accessor.sqlite-entry-cache.js";
-import type { SessionEntryCreationOperation } from "../config/sessions/session-accessor.sqlite-entry-cache.types.js";
+import type {
+  SessionEntryCreationOperation,
+  SessionSharingEntry,
+} from "../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { readCommittedIncognitoSessionSharing } from "../config/sessions/session-accessor.sqlite-incognito-sharing.js";
 import { readSessionEntriesFromStoreInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import type { CapturedSessionEntryReadSource } from "../config/sessions/session-entry-read-source.types.js";
@@ -125,9 +128,7 @@ export async function prepareSessionMutationFacts(
   let followRegistration: ((change: AgentDatabaseRegistryChange) => void) | undefined;
   let creation: SessionEntryCreationOperation | undefined;
   let expectedPlaceholder: SessionEntryPlaceholder | undefined;
-  let adoptCreatedEntry:
-    | ((entry: ReturnType<typeof projectSessionSharingEntry>) => void)
-    | undefined;
+  let adoptCreatedEntry: ((entry: SessionSharingEntry) => void) | undefined;
   let assertSource: () => void;
   const selectedPaths = new Set<string>();
   let selectedDatabaseIdentity: string | undefined;

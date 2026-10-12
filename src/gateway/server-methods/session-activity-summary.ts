@@ -6,7 +6,11 @@ import {
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { hasOperatorBoundary } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
-import { prepareSessionMutationFacts } from "../session-sharing-preparation.js";
+import {
+  prepareSessionMutationFacts,
+  type PreparedSessionSourceFacts,
+  type SessionFactsRead,
+} from "../session-sharing-preparation.js";
 import {
   prepareProjectedSessionSharing,
   prepareSessionSharingProfiles,
@@ -33,7 +37,7 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
       }
       const cfg = context.getRuntimeConfig();
       const profiles = await prepareSessionSharingProfiles(client);
-      const reads: Awaited<ReturnType<typeof prepareSessionMutationFacts>>[] = [];
+      const reads: SessionFactsRead<PreparedSessionSourceFacts>[] = [];
       try {
         const requestedTargets = [];
         for (const requested of params.sessions) {

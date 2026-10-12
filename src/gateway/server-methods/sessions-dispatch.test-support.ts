@@ -93,10 +93,7 @@ vi.mock("../session-utils-store-worker.js", async () => {
         prepared = (async () => {
           const storePath = path.join(tempDirs.make("openclaw-dispatch-session-"), "sessions.json");
           for (const [sessionKey, entry] of Object.entries(target.store)) {
-            await replaceSessionEntry(
-              { agentId: target.agentId, storePath, sessionKey },
-              { updatedAt: 1, ...entry },
-            );
+            await replaceSessionEntry({ agentId: target.agentId, storePath, sessionKey }, entry);
           }
           return storePath;
         })();

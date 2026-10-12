@@ -405,22 +405,25 @@ vi.mock("../../config/sessions/session-entry-read-facts.js", async (importOrigin
     ...actual,
     readRetainedSessionEntryFacts: (
       ...[database, request]: Parameters<typeof actual.readRetainedSessionEntryFacts>
-    ): ReturnType<typeof actual.readRetainedSessionEntryFacts> => ({
-      kind: "session-exact-entries",
-      entries: sessionStoreMocks.currentEntry
-        ? request.sessionKeys.map((sessionKey) => ({
-            sessionKey,
-            entry: { sessionId: "", updatedAt: 0, ...sessionStoreMocks.currentEntry },
-          }))
-        : [],
-      lifecycleTimestamps: {},
-      source: { ...database, databaseIdentity: "dispatch-fixture" },
-      databaseIdentity: {
-        identity: "dispatch-fixture",
-        incarnation: "dispatch-fixture",
-        filename: database.path,
-      },
-    }),
+    ): ReturnType<typeof actual.readRetainedSessionEntryFacts> =>
+      request.sessionKeys === undefined
+        ? undefined
+        : {
+            kind: "session-exact-entries",
+            entries: sessionStoreMocks.currentEntry
+              ? request.sessionKeys.map((sessionKey) => ({
+                  sessionKey,
+                  entry: { sessionId: "", updatedAt: 0, ...sessionStoreMocks.currentEntry },
+                }))
+              : [],
+            lifecycleTimestamps: {},
+            source: { ...database, databaseIdentity: "dispatch-fixture" },
+            databaseIdentity: {
+              identity: "dispatch-fixture",
+              incarnation: "dispatch-fixture",
+              filename: database.path,
+            },
+          },
   };
 });
 vi.mock("../../config/sessions/session-accessor.sqlite-entry.js", async (importOriginal) => {
