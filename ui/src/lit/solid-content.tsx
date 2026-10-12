@@ -27,7 +27,7 @@ export function renderLegacyTemplate(template: unknown, target: HTMLElement, hos
 /** Retained content keeps its DOM while foreground directive work is disconnected. */
 export const SolidContentPresentation = createContext<Accessor<boolean>>(() => true);
 
-export const emptyLegacyContent = nothing;
+export const emptyLegacyContent: typeof nothing = nothing;
 
 type LitContentMount = {
   update: (value: unknown) => void;

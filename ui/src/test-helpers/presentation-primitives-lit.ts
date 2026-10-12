@@ -19,7 +19,6 @@ import {
   resolveCloudProfileIcon,
 } from "../components/provider-icon.ts";
 import * as settings from "../components/settings-ui.ts";
-import { renderSettingsWorkspace } from "../components/settings-workspace.ts";
 import { Icon } from "../components/solid/icon.tsx";
 import { PanelIconButton } from "../components/solid/panel-icon-button.tsx";
 import "../components/solid/panel-empty-state.tsx";
@@ -32,6 +31,7 @@ import {
 } from "../components/solid/settings-ui.tsx";
 import { solidContent } from "../lit/solid-content.tsx";
 import { finishFixture, group, recordAction, root } from "./presentation-primitives-fixture.ts";
+import { renderSettingsWorkspace } from "./settings-workspace-lit.ts";
 
 const keyboardStyles = document.createElement("style");
 keyboardStyles.textContent = kbdStyles.cssText;
