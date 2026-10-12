@@ -21,4 +21,5 @@ export type WorkerTurnLauncherOptions = WorkerTurnAdmissionOptions & {
   redispatchPlacement: WorkerPlacementRedispatch;
   prepareAcceptedWorkspacePublication?: (claim: WorkerSessionTurnClaim) => Promise<void>;
   publishAcceptedWorkspace?: (claim: WorkerSessionTurnClaim) => Promise<void>;
+  persistAbandonedPartial?: (claim: WorkerSessionTurnClaim) => Promise<void>;
 };

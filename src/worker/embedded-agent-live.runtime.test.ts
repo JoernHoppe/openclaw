@@ -167,13 +167,7 @@ describe("createWorkerLiveRuntime", () => {
             endedAt: expect.any(Number),
             stopReason: expectedStopReason,
             ...(expectedStopReason === "aborted" ? { aborted: true } : {}),
-            ...(expectedStopReason === "error"
-              ? {
-                  error: expect.stringContaining(
-                    cleanupFailed ? "cleanup failed" : "inference failed",
-                  ),
-                }
-              : {}),
+            error: expect.stringContaining(cleanupFailed ? "cleanup failed" : "inference failed"),
           },
         },
       ]);
@@ -222,13 +216,11 @@ describe("createWorkerLiveRuntime", () => {
       } else {
         expect(emitted[0]?.payload).not.toHaveProperty("replayInvalid");
       }
-      if (aborted) {
-        expect(emitted[0]?.payload).not.toHaveProperty("error");
-      }
+      expect(emitted[0]?.payload).toHaveProperty("error", "later provider failure");
     },
   );
 
-  it("redacts lifecycle errors before terminal cloud egress", async () => {
+  it("retains and redacts interruption errors before terminal cloud egress", async () => {
     const emitted: WorkerLiveEvent[] = [];
     const runtime = createWorkerLiveRuntime({
       enqueuePreview: () => false,
@@ -236,10 +228,10 @@ describe("createWorkerLiveRuntime", () => {
     });
 
     runtime.enqueueRunFailure({
-      aborted: false,
+      aborted: true,
       error: new AggregateError(
         [new Error(`native close failed data:video/mp4;base64,QUJDRA== ${"x".repeat(8_000)}`)],
-        "cleanup failed",
+        "Runtime-local inference lost Gateway admission",
       ),
     });
     await runtime.emitTerminal();
@@ -247,8 +239,11 @@ describe("createWorkerLiveRuntime", () => {
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.payload).toMatchObject({
       phase: "finishing",
-      stopReason: "error",
-      error: expect.stringContaining("cleanup failed | native close failed"),
+      stopReason: "aborted",
+      aborted: true,
+      error: expect.stringContaining(
+        "Runtime-local inference lost Gateway admission | native close failed",
+      ),
     });
     expect(JSON.stringify(emitted)).not.toContain("QUJDRA==");
     const event = emitted[0];

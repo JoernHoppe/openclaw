@@ -691,16 +691,16 @@ export function createWorkerSessionTurnPlacementProvider(options: WorkerTurnLaun
                   placement,
                   turnClaim,
                   error,
-                  ...(terminalOwner && terminalAtMs !== undefined
-                    ? {
-                        terminal: {
+                  persistAbandonedPartial: options.persistAbandonedPartial,
+                  terminal:
+                    terminalOwner && terminalAtMs !== undefined
+                      ? {
                           observedAtMs: terminalAtMs,
                           registerRecovery: (recover) => {
                             terminalOwner.recoverTerminal = recover;
                           },
-                        },
-                      }
-                    : {}),
+                        }
+                      : undefined,
                 });
               } else {
                 await releaseClaimIfOwned(options.placements, turnClaim);
