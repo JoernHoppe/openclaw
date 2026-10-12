@@ -362,9 +362,8 @@ export function OpenClawApp(props: {
       terminal()
         ? isTerminalAvailable(snapshot(), config.read().terminalEnabled ?? false)
         : isDesktopPanelAvailable(snapshot());
-    const owner = () => selection.read().state.selectedId ?? snapshot().assistantAgentId;
     const agentId = () => {
-      const id = owner();
+      const id = selection.read().state.selectedId ?? snapshot().assistantAgentId;
       return id ? normalizeAgentId(id) : null;
     };
     const themeMode = () => {
