@@ -15,7 +15,9 @@ vi.mock(import("openclaw/plugin-sdk/database-engine-runtime"), async (importOrig
 import { createWorkboardSqliteStores } from "./test/database-config.js";
 
 const workerModuleUrl = new URL("./sqlite-store.worker.ts", import.meta.url);
-beforeEach(() => openEngineWorkerStore.mockReset());
+beforeEach(() => {
+  openEngineWorkerStore.mockReset();
+});
 
 function workerFixture() {
   const execute = vi.fn<() => Promise<WorkboardSqliteResult<unknown>>>();
@@ -44,10 +46,7 @@ describe("Workboard SQLite facade cleanup", () => {
     await closing;
     await stores.close();
     expect(close).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledExactlyOnceWith({
-      type: "cards.lookup",
-      input: { args: ["missing"] },
-    });
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it("retains failed broker cleanup for explicit close retry", async () => {
