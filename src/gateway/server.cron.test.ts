@@ -1101,6 +1101,7 @@ describe("gateway server cron", () => {
 
   test.for(["success", "error"] as const)(
     "keeps owner-topic repair pending through retries until the agent turn settles with %s",
+    { timeout: 45_000 },
     async (outcome, { signal }) => {
       const { dir } = await setupCronTestRun({ cronEnabled: true });
       const group = "-100155462274";
@@ -1209,7 +1210,6 @@ describe("gateway server cron", () => {
       await runCronJobAndWaitForFinished(ws, jobId);
       expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce();
     },
-    45_000,
   );
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
