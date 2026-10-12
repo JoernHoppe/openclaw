@@ -140,8 +140,6 @@ describe("runtime-owned embedded liveness", () => {
       runtimeOwnsLiveness = false;
       await vi.advanceTimersByTimeAsync(30_000);
       expect(recover).toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.all(recover.mock.results.map((result) => result.value));
       expect(abort).toHaveBeenCalled();
     } finally {
       unsubscribe();

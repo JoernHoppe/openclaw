@@ -445,7 +445,11 @@ export function createChatSendWorkAdmission(params: {
         settlement.release();
       }
     },
-    withInputCommitPublication<T>(this: void, run: () => Promise<T>): Promise<T> {
+    withInputCommitPublication<T>(
+      this: void,
+      run: () => Promise<T>,
+      onCommitted?: Parameters<typeof withSessionTranscriptSourcePublication>[1],
+    ): Promise<T> {
       const terminal = params.terminal;
       if (!terminal) {
         throw new Error("Chat input publication requires its original admission target");
@@ -469,6 +473,7 @@ export function createChatSendWorkAdmission(params: {
           }
           admittedSource ??= source;
           admittedLifecycleRevision = committedEntry.lifecycleRevision;
+          onCommitted?.(source, committedEntry);
         },
         run,
       );
