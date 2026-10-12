@@ -323,11 +323,18 @@ describe("node worker launch wire", () => {
             idempotencyKey: permissionRunId,
           }),
         ).resolves.toMatchObject({ runId: permissionRunId, status: "started" });
-        const permissionCompleted = await operator.request<{ status?: string }>(
-          "agent.wait",
-          { runId: permissionRunId, timeoutMs: PROOF_TIMEOUT_MS },
-          { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
-        );
+        const permissionOperator = operator;
+        const permissionDeadline = Date.now() + PROOF_TIMEOUT_MS;
+        const permissionCompleted = await waitFor("permission worker turn completion", async () => {
+          const remainingMs = Math.max(0, permissionDeadline - Date.now());
+          const observation = await permissionOperator.request<{ status?: string }>(
+            "agent.wait",
+            { runId: permissionRunId, timeoutMs: remainingMs },
+            { timeoutMs: remainingMs + 5_000 },
+          );
+          // Queued turns return immediately while the prior worker finishes settlement.
+          return observation.status === "pending" ? undefined : observation;
+        });
         expect(
           permissionCompleted,
           redactSensitiveText(
