@@ -1,9 +1,4 @@
 import fs from "node:fs";
-import {
-  readDeferredPluginMigrations,
-  readDeferredPluginMigrationsAsync,
-  type DeferredPluginMigration,
-} from "../infra/deferred-plugin-migrations.js";
 import { loadDotEnvAsync } from "../infra/dotenv.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { tryProcessCwd } from "../infra/safe-cwd.js";
@@ -195,17 +190,12 @@ export function captureRuntimeConfigAsyncReader(
   return Object.assign(read, { assertCurrent });
 }
 
-function createCurrentConfigReader(params: {
-  configPath?: string;
-  env?: NodeJS.ProcessEnv;
-  deferredPluginMigrations?: readonly DeferredPluginMigration[];
-}) {
+function createCurrentConfigReader(params: { configPath?: string; env?: NodeJS.ProcessEnv }) {
   return createConfigIO({
     configPath: params.configPath,
     env: cloneEnvWithPlatformSemantics(params.env ?? process.env),
     observe: false,
     pluginValidation: "core-only",
-    deferredPluginMigrations: params.deferredPluginMigrations,
     shellEnvFallback: "defer",
     suppressFutureVersionWarning: true,
     logger: { warn: () => {}, error: () => {} },
@@ -258,33 +248,19 @@ export function readCurrentConfigForPolicyCheck(params: {
   configPath: string;
   env: NodeJS.ProcessEnv;
 }): OpenClawConfig {
-  return readCurrentConfigForPolicyCheckWithMigrations({
-    ...params,
-    deferredPluginMigrations: readDeferredPluginMigrations({ env: params.env }),
-  });
-}
-
-/** Reread current disk policy without querying migration state; the caller owns row freshness. */
-export function readCurrentConfigForPolicyCheckWithMigrations(params: {
-  configPath: string;
-  env: NodeJS.ProcessEnv;
-  deferredPluginMigrations: readonly DeferredPluginMigration[];
-}): OpenClawConfig {
   return createCurrentConfigReader(params).loadConfig({ skipSuspiciousRecovery: true });
 }
 
-/** Await fresh migration facts for this read; retained synchronous guards use their own boundary. */
+/** Read canonical disk policy asynchronously without inspecting migration state. */
 export async function readCurrentConfigForPolicyCheckAsync(params: {
   configPath: string;
   env: NodeJS.ProcessEnv;
 }): Promise<OpenClawConfig> {
   const configPath = params.configPath;
   const env = cloneEnvWithPlatformSemantics(params.env);
-  const deferredPluginMigrations = await readDeferredPluginMigrationsAsync({ env });
   return await createCurrentConfigReader({
     configPath,
     env,
-    deferredPluginMigrations,
   }).loadConfigAsync({ skipSuspiciousRecovery: true });
 }
 

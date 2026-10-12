@@ -55,6 +55,7 @@ import {
   preparePostCorePluginConfig,
   persistValidatedDowngradeConfig,
   readPostCorePreUpdateSourceConfig,
+  readUpdateConfigFileSnapshot,
 } from "./update-command-config.js";
 import {
   completePostCorePluginUpdate,
@@ -263,7 +264,7 @@ async function prepareUpdateFinalization(
   await assertOpenClawStateWriteAllowedAtPath({
     databasePath: resolveOpenClawStateSqlitePath(process.env),
   });
-  const configSnapshot = await readConfigFileSnapshot({
+  const configSnapshot = await readUpdateConfigFileSnapshot({
     skipPluginValidation: true,
     observe: false,
   });
@@ -294,7 +295,10 @@ async function prepareUpdateFinalization(
   const channel = requestedChannel ?? storedChannel ?? effectiveChannel ?? DEFAULT_PACKAGE_CHANNEL;
   if (requestedChannel) {
     await withPluginLifecycleLease(phase, async () => {
-      const snapshot = await readConfigFileSnapshot({ skipPluginValidation: true, observe: false });
+      const snapshot = await readUpdateConfigFileSnapshot({
+        skipPluginValidation: true,
+        observe: false,
+      });
       return await persistRequestedUpdateChannel({
         configSnapshot: snapshot,
         requestedChannel,

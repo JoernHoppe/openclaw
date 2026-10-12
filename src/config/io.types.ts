@@ -116,7 +116,7 @@ export class ConfigRuntimeRefreshError extends Error {
 export type ConfigIoFactoryOptions = ConfigIoDeps & {
   pluginValidation?: "full" | "skip" | "core-only";
   preservedLegacyRootKeys?: readonly string[];
-  /** Admission can prepare migration facts before their checkpoint is writable. */
+  /** Doctor supplies pending facts; normal config reads never inspect migration state. */
   deferredPluginMigrations?: readonly DeferredPluginMigration[];
   shellEnvFallback?: "load" | "defer";
 };
