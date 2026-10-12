@@ -17,9 +17,13 @@ const instance = crypto.randomUUID();
 const store = new CustodianSessionStore();
 const client = {
   async request<T>(method: string): Promise<T> {
-    if (method !== "openclaw.setup.auto") throw new Error(`Unexpected fixture method: ${method}`);
+    if (method !== "openclaw.setup.auto") {
+      throw new Error(`Unexpected fixture method: ${method}`);
+    }
     const response = await fetch(`/fixture/setup${location.search}`);
-    if (!response.ok) throw new Error(`Fixture setup failed: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`Fixture setup failed: ${response.status}`);
+    }
     return response.json();
   },
 } as GatewayBrowserClient;
@@ -44,7 +48,7 @@ function report() {
       instance,
       path: location.pathname,
       capabilityAtBoot,
-      currentGateway: window.__OPENCLAW_NATIVE_SETUP__?.currentGateway,
+      currentGateway: window["__OPENCLAW_NATIVE_SETUP__"]?.currentGateway,
       setupStatus: store.autoSetup.result?.status,
     }),
   });
