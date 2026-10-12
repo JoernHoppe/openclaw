@@ -33,6 +33,8 @@ describe("session cost usage refresh", () => {
       const params = { agentId: "backoff-test", startMs: 0, endMs: Date.now() };
       const refresh = vi.mocked(refreshCostUsageCacheForAgent);
       let queuedSubset: ReturnType<typeof loadSessionCostSummariesFromCache> | undefined;
+      const subsetQueued = createDeferredCore();
+      const releaseFullRefresh = createDeferredCore();
       let calls = 0;
       refresh.mockImplementation(async () => {
         calls += 1;
@@ -45,6 +47,8 @@ describe("session cost usage refresh", () => {
             sessions: [{ sessionFile }],
           });
           await queuedSubset;
+          subsetQueued.resolve();
+          await releaseFullRefresh.promise;
           return "refreshed";
         }
         if (calls === 12) {
@@ -81,8 +85,10 @@ describe("session cost usage refresh", () => {
         await vi.advanceTimersByTimeAsync(4_999);
         expect(refresh).toHaveBeenCalledTimes(10);
         await vi.advanceTimersByTimeAsync(1);
-        // Join the subset's real filesystem lookup before advancing the retry clock.
-        await queuedSubset;
+        // Settle the real subset read, then release outside clock advancement so
+        // its zero-delay successor is not shifted by fake timers' nested-tick rule.
+        await subsetQueued.promise;
+        releaseFullRefresh.resolve();
         await vi.advanceTimersByTimeAsync(0);
         expect(refresh).toHaveBeenCalledTimes(12);
         expect(refresh.mock.calls[10]?.[0].sessionFiles).toBeUndefined();
@@ -102,6 +108,7 @@ describe("session cost usage refresh", () => {
         try {
           // Complete queued work even if an assertion failed before the final retry.
           refresh.mockResolvedValue("refreshed");
+          releaseFullRefresh.resolve();
           await queuedSubset;
           await vi.runOnlyPendingTimersAsync();
           expect(
