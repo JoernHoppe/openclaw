@@ -133,6 +133,7 @@ export function createSessionObserver(deps: SessionObserverDeps): SessionObserve
       }
     },
     finishClose: () => {
+      pendingTerminalErrors.forEach((_timer, runId) => clearPendingTerminalError(runId));
       lifecycle.dispose();
       terminalRuns.clear();
       contextlessTerminalRuns.clear();

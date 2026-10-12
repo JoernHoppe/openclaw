@@ -1,8 +1,8 @@
-import { setImmediate as nextTurn } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createGatewayWorkerPlacementMoveBarrier } from "./server-worker-placement-move-barrier.js";
-import { loadSessionEntry } from "./session-utils.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
+import { loadSessionEntry, resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils.js";
 import { writeSessionStore } from "./test-helpers.js";
 import {
   directSessionReq,
@@ -85,14 +85,8 @@ test.each(["delete", "archive", "recover"] as const)(
               path: "/fixture/worktree",
             }),
           },
-          resolveGatewaySessionStoreTargetInWorker: async () => ({
-            storePath,
-            canonicalKey: sessionKey,
-            storeKeys: [sessionKey],
-            agentId: "main",
-            store: { [sessionKey]: loadSessionEntry(sessionKey).entry! },
-          }),
-          resolveCanonicalSessionEntryFromStoreKeys: () => loadSessionEntry(sessionKey).entry,
+          resolveGatewaySessionStoreTargetInWorker,
+          resolveCanonicalSessionEntryFromStoreKeys,
         } as never;
       },
       revokeSessionAuthority: () => {},
@@ -176,7 +170,7 @@ test.each(["delete", "archive", "recover"] as const)(
         }),
       ]);
       releaseMove.resolve();
-      await nextTurn();
+      await moving;
       acquiredBeforeCleanup = moveAcquired;
     } finally {
       // Unwind the baseline's real queues before asserting the ordering failure.

@@ -590,7 +590,10 @@ test.each(["ready", "cleared-selection"] as const)(
     await expect(loadSeededTranscriptEvents(fixture.transcriptScope)).resolves.toEqual(transcript);
 
     if (catalogMode === "cleared-selection") {
-      await patchSessionEntryCore({ storePath, sessionKey: key }, () => ({ thinkingLevel: "off" }));
+      await patchSessionEntryCore({ storePath, sessionKey: key }, () => ({
+        thinkingLevel: "off",
+        contextWindow: "extended",
+      }));
     }
     const restore = vi.spyOn(ManagedWorktreeService.prototype, "restore");
     const restored = patch(false);
@@ -604,7 +607,6 @@ test.each(["ready", "cleared-selection"] as const)(
       await expect(fs.access(worktree.path)).rejects.toThrow();
       if (catalogMode === "cleared-selection") {
         await patchSessionEntryCore({ storePath, sessionKey: key }, () => ({
-          thinkingLevel: undefined,
           contextWindow: undefined,
         }));
       }
@@ -612,9 +614,8 @@ test.each(["ready", "cleared-selection"] as const)(
       expect(await restored).toMatchObject({ ok: true });
       expect(restore).toHaveBeenCalledOnce();
       expect(loadGatewayModelCatalog).toHaveBeenCalledOnce();
-      expect(loadSessionEntry({ storePath, sessionKey: key })?.thinkingLevel).toBe(
-        catalogMode === "cleared-selection" ? undefined : "off",
-      );
+      expect(loadSessionEntry({ storePath, sessionKey: key })?.thinkingLevel).toBe("off");
+      expect(loadSessionEntry({ storePath, sessionKey: key })?.contextWindow).toBeUndefined();
     } finally {
       catalogRelease.resolve();
       await Promise.allSettled([restored]);

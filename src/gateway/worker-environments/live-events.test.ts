@@ -376,6 +376,42 @@ describe("worker live events", () => {
     }
   });
 
+  it("ACKs an accepted event after its source closes during trajectory settlement", async () => {
+    const source = sourceFor();
+    const writer = holdWorkerTranscriptWriter(store);
+    await writer.entered;
+    let settled = false;
+    const result = rx
+      .apply({
+        readAckedSeq,
+        identity: ID,
+        source,
+        request: live(1, lifecycle({ phase: "start", startedAt: 100 })),
+      })
+      .then((value) => {
+        settled = true;
+        return value;
+      });
+    let released: Promise<void> | undefined;
+    try {
+      await setImmediate();
+      expect(events.map((event) => event.data.phase)).toEqual(["start"]);
+      expect(settled).toBe(false);
+      released = source.release();
+      writer.release();
+      await writer.done;
+      expect(await result).toEqual({ ok: true, result: { ackedSeq: 1 } });
+      await released;
+      await fail(msg(2, "after source closure", 1), "invalid-event");
+      expect(events.map((event) => event.data.phase)).toEqual(["start"]);
+    } finally {
+      writer.release();
+      await writer.done;
+      await result;
+      await released;
+    }
+  });
+
   it("rotates owners", async () => {
     await ack(msg(1, "first"));
     const credentialHash = ["rotated", "credential", "hash"].join("-");
