@@ -177,6 +177,60 @@ describe("channel-final transcript mirrors", () => {
     expect(await readSessionTranscriptEvents(scope)).toEqual(before);
   });
 
+  it.each(["latest", "source run"])(
+    "correlates authored media captions through %s source lookup",
+    async (lookup) => {
+      const mediaUrls = ["https://example.com/one/chart.png"];
+      await append(
+        {
+          role: "assistant",
+          content: "Chart",
+          openclawDelivery: { mediaUrls },
+          __openclaw: { runId: "media-source-run" },
+        },
+        "media-source-answer",
+      );
+      if (lookup === "source run") {
+        await append(
+          { role: "assistant", content: "Chart", __openclaw: { runId: "media-source-run" } },
+          "plain-source-answer",
+        );
+      }
+      const request = {
+        ...delivery("media-source-delivery", "Chart"),
+        mediaUrls,
+        ...(lookup === "source run" ? { sourceRunId: "media-source-run" } : {}),
+      };
+      await appendAssistantMirrorMessageByIdentity(request);
+      const plainRequest = {
+        ...delivery("plain-source-delivery", "Chart"),
+        sourceRunId: "media-source-run",
+      };
+      if (lookup === "source run") {
+        await appendAssistantMirrorMessageByIdentity(plainRequest);
+      }
+      const mirrors = (await entries()).filter((entry) => entry.idempotencyKey);
+      expect(mirrors[0]?.message).toMatchObject({
+        content: [{ type: "text", text: "Chart\nchart.png" }],
+      });
+      const sourceIds = [
+        "media-source-answer",
+        ...(lookup === "source run" ? ["plain-source-answer"] : []),
+      ];
+      expect(mirrors).toMatchObject(
+        sourceIds.map((sourceAssistantMessageId) => ({
+          message: { openclawDeliveryMirror: { sourceAssistantMessageId } },
+        })),
+      );
+      const beforeReplay = rows();
+      await appendAssistantMirrorMessageByIdentity(request);
+      if (lookup === "source run") {
+        await appendAssistantMirrorMessageByIdentity(plainRequest);
+      }
+      expect(rows()).toEqual(beforeReplay);
+    },
+  );
+
   it.each([false, true])(
     "correlates queued answers from the source run (identical text: %s)",
     async (identical) => {

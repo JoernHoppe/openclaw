@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import type { AgentMessage } from "../../agents/runtime/index.js";
 import type { SessionManager } from "../../agents/sessions/session-manager.js";
-import { redactTranscriptMessage } from "../../agents/transcript-redact.js";
+import { sanitizeTranscriptMessage } from "../../agents/transcript-sanitize.js";
 import { makeZeroUsageSnapshot } from "../../agents/usage.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
@@ -519,7 +519,6 @@ async function appendExactAssistantMessageWithSource(
               ? await findLatestEquivalentAssistantMessageId(
                   appendTarget,
                   preparedUnkeyedMessage as SessionTranscriptAssistantMessage,
-                  params.config,
                 )
               : undefined;
           equivalentAssistant = messageId
@@ -626,10 +625,9 @@ async function readLatestVisibleTranscriptMessage(scope: {
 async function findLatestEquivalentAssistantMessageId(
   target: SessionTranscriptTurnWriteContext,
   message: SessionTranscriptAssistantMessage,
-  config?: OpenClawConfig,
 ): Promise<string | undefined> {
   const expected = projectAssistantTranscriptMirrorIdentity(
-    redactTranscriptMessage(message, config),
+    sanitizeTranscriptMessage(message),
   );
   if (!expected) {
     return undefined;
@@ -644,7 +642,7 @@ async function findLatestEquivalentAssistantMessageId(
     });
     const candidate = latest
       ? projectAssistantTranscriptMirrorIdentity(
-          redactTranscriptMessage(latest.message as AgentMessage, config),
+          sanitizeTranscriptMessage(latest.message as AgentMessage),
         )
       : undefined;
     return isDeepStrictEqual(candidate, expected) ? latest?.id : undefined;
