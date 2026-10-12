@@ -46,6 +46,7 @@ import { registerChatAbortController } from "./chat-abort.js";
 import {
   captureGatewayDeviceRevocation,
   invalidateGatewayDeviceRevocation,
+  readGatewayDeviceSourceAuthority,
 } from "./device-revocation.js";
 import { mockSessionStatusModelDependencies } from "./local-request-context.session-status.test-support.js";
 import {
@@ -766,12 +767,13 @@ describe("built-in session tool role authority", () => {
         });
         let current = true;
         const settled = createDeferredCore();
+        const sourceReleased = createDeferredCore();
         const source = captureGatewayDeviceRevocation(
           context,
           { deviceId: "archive-device", role: "operator" },
           () => current,
           undefined,
-          { isCurrent: () => true, subscribe: () => () => {} },
+          { isCurrent: () => true, subscribe: () => () => sourceReleased.resolve() },
         );
         try {
           const archive = () =>
@@ -843,6 +845,8 @@ describe("built-in session tool role authority", () => {
         }
         await settled.promise;
         await archived.promise;
+        await sourceReleased.promise;
+        expect(readGatewayDeviceSourceAuthority(source.isCurrent)?.()).toBe(false);
         expect(loadSessionEntry({ agentId: "main", sessionKey })).toMatchObject({
           sessionId,
           archivedAt: expect.any(Number),

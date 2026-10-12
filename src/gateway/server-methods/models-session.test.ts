@@ -25,6 +25,7 @@ import {
   readUserModelAuthProfile,
 } from "../../state/user-model-accounts.js";
 import { publishUserProfileAliasChange } from "../../state/user-profile-events.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { setDisplayName } from "../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -171,6 +172,7 @@ describe("direct session model catalogs", () => {
   it("shares a saved selection revision with session events without retiring it for activity", async () => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       await state.writeConfig(f.config);
       const scope = { agentId: "main", sessionKey: "agent:main:catalog-revision" };
       await writeSessionFixture(scope, {
@@ -223,6 +225,7 @@ describe("direct session model catalogs", () => {
     async (ownership) => {
       await withOpenClawTestState(isolated, async (state) => {
         const f = fixture();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         await state.writeConfig(f.config);
         const sessionKey = "agent:main:hidden-catalog";
         await writeSessionFixture(
@@ -257,6 +260,7 @@ describe("direct session model catalogs", () => {
   it("keeps a scoped models.list result across only a committed read acknowledgment", async () => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       await state.writeConfig(f.config);
       const scope = { agentId: "main", sessionKey: "agent:main:catalog-read-marker" };
       await writeSessionFixture(scope, {
@@ -343,6 +347,7 @@ describe("direct session model catalogs", () => {
     await withOpenClawTestState(isolated, async (state) => {
       let closedStorePath: string | undefined;
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       await state.writeConfig(f.config);
       const scope = { agentId: "main", sessionKey: "agent:main:held-saved" };
       await writeSessionFixture(scope, {
@@ -429,6 +434,7 @@ describe("direct session model catalogs", () => {
     async (changeSelected) => {
       await withOpenClawTestState(isolated, async (state) => {
         const f = fixture();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         await state.writeConfig(f.config);
         const selected = { agentId: "main", sessionKey: "agent:main:metadata-selected" };
         const other = { ...selected, sessionKey: "agent:main:metadata-other" };
@@ -484,6 +490,7 @@ describe("direct session model catalogs", () => {
   it("uses a saved session pin after the viewer changes their default and keeps agent reads separate", async () => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       f.config.agents = {
         ...f.config.agents,
         ownership: "explicit",
@@ -542,6 +549,7 @@ describe("direct session model catalogs", () => {
   it("projects a saved native session without borrowing host authentication state", async () => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       await state.writeConfig(f.config);
       clearUserProfileAuthLink({ profileId: f.person.id, provider: "openai" });
       const sessionKey = "agent:main:harness:catalog-native:saved";
@@ -603,6 +611,7 @@ describe("direct session model catalogs", () => {
   it("does not substitute a viewer default for a session with no saved pin", async () => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       await state.writeConfig(f.config);
       const agent = await f.request({ agentId: "main", view: "configured" });
       expect(agent).toHaveBeenCalledWith(
@@ -622,6 +631,7 @@ describe("direct session model catalogs", () => {
   it("previews a retained self-owned draft without changing shared inventory or account defaults", async () => {
     await withOpenClawTestState(isolated, async () => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       clearUserProfileAuthLink({ profileId: f.person.id, provider: "openai" });
       const before = readUserModelAuthProfile(f.authProfileId);
       const preview = await f.request({
@@ -659,6 +669,7 @@ describe("direct session model catalogs", () => {
     async (caller) => {
       await withOpenClawTestState(isolated, async () => {
         const f = fixture();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         let authProfileId = f.authProfileId;
         if (caller === "foreign admin") {
           const other = ensureProfileForEmail("other-reader@example.test");
@@ -691,6 +702,7 @@ describe("direct session model catalogs", () => {
   it("rejects a combined saved-session and draft-account request", async () => {
     await withOpenClawTestState(isolated, async () => {
       const f = fixture();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const result = await f.request({
         sessionKey: "agent:main:saved",
         authProfileId: f.authProfileId,
@@ -709,6 +721,7 @@ describe("direct session model catalogs", () => {
     async (loss) => {
       await withOpenClawTestState(isolated, async () => {
         const f = fixture();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const entered = createDeferred();
         const release = createDeferred();
         const abort = new AbortController();

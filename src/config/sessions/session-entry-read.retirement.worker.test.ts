@@ -58,14 +58,14 @@ it.each(["refusal", "eviction"] as const)(
       });
       const consume = vi.fn();
       const reading = withSessionEntriesFromStoresInWorker(
-        // List projection reaches the worker even when the seeded write retained complete facts.
         [
           {
             agentId: "main",
             storePath: database.path,
             sessionKeys: [sessionKey],
-            projection: "list",
             env,
+            // Exercise worker cleanup even when creation receipts retain the full entry.
+            projection: "list",
           },
         ],
         ([read]) => {

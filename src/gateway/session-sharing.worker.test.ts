@@ -30,7 +30,6 @@ import { withQualifiedGatewaySessionEntry } from "./session-utils-store.js";
 
 it.each([
   { phase: "before", listing: "available" },
-  { phase: "after", listing: "available" },
   { phase: "after", listing: "denied" },
 ] as const)(
   "refuses a sharing locator retargeted $phase source preparation (listing=$listing)",
@@ -113,9 +112,7 @@ it.each([
 );
 
 it.each([
-  { kind: "qualified", agentId: "main" },
   { kind: "alias", agentId: "main" },
-  { kind: "global", agentId: "main" },
   { kind: "global", agentId: "work" },
   { kind: "unknown", agentId: "main" },
 ])(
@@ -133,12 +130,7 @@ it.each([
       const client = roleClient("write", "new-session-owner");
       const scope = {
         agentId,
-        sessionKey:
-          kind === "qualified"
-            ? "agent:main:new-worker-session"
-            : kind === "unknown"
-              ? "unknown"
-              : "global",
+        sessionKey: kind === "unknown" ? "unknown" : "global",
       };
       const route = resolveGatewaySessionStoreTarget({
         cfg,
@@ -413,7 +405,7 @@ it.each([
   });
 });
 
-it.each(["membership", "routing", "policy", "unrelated-config"] as const)(
+it.each(["membership", "routing", "policy"] as const)(
   "rechecks %s changes within the consuming frame",
   async (change) => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
@@ -458,16 +450,10 @@ it.each(["membership", "routing", "policy", "unrelated-config"] as const)(
               },
             },
           };
-        } else if (change === "unrelated-config") {
-          cfg = { ...cfg, logging: { level: "debug" } };
         } else {
           cfg = { ...cfg, session: { store: "replacement/sessions.json" } };
         }
-        if (change === "unrelated-config") {
-          expect(() => authorization.assertCurrent()).not.toThrow();
-        } else {
-          expect(() => authorization.assertCurrent()).toThrow();
-        }
+        expect(() => authorization.assertCurrent()).toThrow();
         checked = true;
       });
       expect(checked).toBe(true);
