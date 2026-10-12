@@ -187,14 +187,23 @@ export function resolveWorkerTurnTranscriptTarget(
       : resolveExplicitIncognitoAgentSqliteTarget(target.storePath, { agentId: target.agentId })
         ? loadSessionEntryReadOnly(target)
         : currentPreparedTranscript(target).readCurrent();
-  if (
-    currentEntry?.sessionId !== target.sessionId ||
-    (target.expectedLifecycleRevision !== undefined &&
-      currentEntry.lifecycleRevision !== target.expectedLifecycleRevision) ||
-    (target.expectedWriterRunId !== undefined &&
-      currentEntry.activeWriterRunId !== target.expectedWriterRunId)
-  ) {
-    throw new Error("Cloud worker transcript identity is no longer current");
+  const mismatchedFields = [
+    currentEntry?.sessionId !== target.sessionId ? "sessionId" : undefined,
+    target.expectedLifecycleRevision !== undefined &&
+    currentEntry?.lifecycleRevision !== target.expectedLifecycleRevision
+      ? "lifecycleRevision"
+      : undefined,
+    target.expectedWriterRunId !== undefined &&
+    currentEntry?.activeWriterRunId !== target.expectedWriterRunId
+      ? "activeWriterRunId"
+      : undefined,
+  ].filter((field) => field !== undefined);
+  if (!currentEntry || mismatchedFields.length > 0) {
+    throw new Error(
+      `Cloud worker transcript identity is no longer current (target resolution: ${
+        currentEntry ? `mismatched ${mismatchedFields.join(", ")}` : "missing projection"
+      })`,
+    );
   }
   return target;
 }
@@ -346,14 +355,22 @@ export function captureWorkerTurnTranscriptSource(
     : (["sessionId", "lifecycleRevision", "activeWriterRunId"] as const).filter((field) =>
         Object.hasOwn(expected, field),
       );
-  const refuse =
+  const refuse: (facts?: { entry?: WorkerTranscriptSourceIdentity }) => never =
     predicate?.refuse ??
-    ((): never => {
-      throw new Error("Cloud worker transcript identity is no longer current");
+    ((facts): never => {
+      throw new Error(
+        `Cloud worker transcript identity is no longer current (source callback: ${
+          facts === undefined
+            ? "worker predicate rejected"
+            : facts.entry
+              ? `mismatched ${fields.filter((field) => facts.entry?.[field] !== expected[field]).join(", ")}`
+              : "missing projection"
+        })`,
+      );
     });
   const assertEntry = (entry: WorkerTranscriptSourceIdentity | undefined) => {
     if (!entry || fields.some((field) => entry[field] !== expected[field])) {
-      refuse();
+      refuse({ entry });
     }
   };
   if (memory) {
@@ -382,11 +399,7 @@ export function captureWorkerTurnTranscriptSource(
       const current = captured ?? findPreparedTranscript(target);
       const prepared = current ?? (await prepareWorkerTranscript(target, () => {}));
       try {
-        const assertPrepared = () => {
-          prepared.assertCurrent();
-          assertEntry(prepared.readCurrent());
-        };
-        assertPrepared();
+        prepared.assertCurrent();
         return {
           assertCurrent: prepared.assertCurrent,
           checks: [
