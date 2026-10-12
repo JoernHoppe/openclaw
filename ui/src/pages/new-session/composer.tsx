@@ -378,7 +378,7 @@ function StartControl(props: { options: NewSessionComposerOptions }) {
   const busy = () =>
     props.options.submitting || props.options.attachmentDraft.reads.pendingReads > 0;
   return (
-    <openclaw-tooltip prop:content={props.options.submitDisabledReason ?? label()}>
+    <openclaw-tooltip content={props.options.submitDisabledReason ?? label()}>
       <button
         type="button"
         class={[

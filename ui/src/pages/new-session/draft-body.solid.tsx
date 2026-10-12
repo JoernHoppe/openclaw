@@ -45,9 +45,18 @@ export type NewSessionBodyProps = {
   completion?: { label: string; onOpen?: () => void; disabled?: boolean };
   showDraft?: boolean;
   inChat?: boolean;
+  hideAnnouncement?: boolean;
   renderDraft: () => JSX.Element;
   onOpenImage: (item: ImageLightboxItem) => void;
 };
+
+export function newSessionAnnouncement(
+  props: Pick<NewSessionBodyProps, "pendingMessage" | "completion" | "statusLabel">,
+) {
+  return props.pendingMessage
+    ? (props.completion?.label ?? props.statusLabel ?? t("newSession.starting"))
+    : undefined;
+}
 
 export function DraftError(props: DraftErrorProps) {
   return (
@@ -84,11 +93,11 @@ export function NewSessionBody(props: NewSessionBodyProps) {
   // Late cleanup can fail while a replacement submission is still pending.
   return (
     <>
-      <div class="sr-only" role="status" aria-live="polite">
-        {props.pendingMessage
-          ? (props.completion?.label ?? props.statusLabel ?? t("newSession.starting"))
-          : undefined}
-      </div>
+      <Show when={!props.hideAnnouncement}>
+        <div class="sr-only" role="status" aria-live="polite">
+          {newSessionAnnouncement(props)}
+        </div>
+      </Show>
       <div
         class={[
           props.inChat ? "" : "new-session-page__scroll",
