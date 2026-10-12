@@ -561,6 +561,11 @@ export async function prepareSessionMutationFacts(
                     });
                     initializedReads.add(key);
                   }
+                  const pending = retained.prepareRead();
+                  if (pending) {
+                    await pending;
+                    assertActive();
+                  }
                   const current = retained.readCurrent();
                   if (!current) {
                     throw new SessionMutationFactsUnavailableError();
