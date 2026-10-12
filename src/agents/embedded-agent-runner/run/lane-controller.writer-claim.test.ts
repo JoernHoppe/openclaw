@@ -6,10 +6,6 @@ import {
   replaceSessionEntry,
 } from "../../../config/sessions/session-accessor.js";
 import * as sessionEntryWriter from "../../../config/sessions/session-accessor.sqlite-entry.js";
-import {
-  bindPreparedSessionSourceAssertion,
-  prepareSessionSourceAuthority,
-} from "../../../config/sessions/session-source-authority.js";
 import { useTempSessionsFixture } from "../../../config/sessions/test-helpers.js";
 import { SessionTranscriptWriterClaimReboundError } from "../../../config/sessions/transcript-write-context.js";
 import { appendExactAssistantMessageToSessionTranscript } from "../../../config/sessions/transcript.js";
@@ -333,12 +329,13 @@ describe("embedded run durable writer admission", () => {
           }
         },
       });
-      const source = bindPreparedSessionSourceAssertion(
+      const prepared = prepareSystemAgentRunAdmission(
+        {},
+        "run-b",
+        "main",
+        "writer-test",
         assertSourceCurrent,
-        await prepareSessionSourceAuthority(assertSourceCurrent),
       );
-      await using _ = { [Symbol.asyncDispose]: () => source.release() };
-      const prepared = prepareSystemAgentRunAdmission({}, "run-b", "main", "writer-test", source);
       const admittedRunContext = await prepared.admit("embedded");
       const sameStoreQueriesInGrants: string[] = [];
       probe.admission(workerAdmission, (request, grant, callback) => {

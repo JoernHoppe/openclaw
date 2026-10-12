@@ -10,7 +10,7 @@ import { withSessionEntryReadOnlyInWorker } from "../../config/sessions/session-
 import type { CapturedSessionEntryReadSource } from "../../config/sessions/session-entry-read-source.types.js";
 import { captureIncognitoSessionBinding } from "../../config/sessions/session-incognito-binding.js";
 import {
-  bindPreparedSessionSourceAssertion,
+  composeSessionSourceAssertion,
   releaseSessionSourceAuthorities,
   type PreparedSessionSourceAuthority,
   type SessionSourceAssertion,
@@ -417,9 +417,33 @@ export async function prepareWorkerTurnTranscriptSource(
   ...args: Parameters<typeof captureWorkerTurnTranscriptSource>
 ) {
   const source = captureWorkerTurnTranscriptSource(...args);
-  const prepared = source.prepareSessionSource
-    ? await source.prepareSessionSource()
-    : { assertCurrent: source, checks: [], nativeSource: source.nativeSource };
-  const retained = bindPreparedSessionSourceAssertion(source, prepared);
-  return Object.assign(retained, { [Symbol.asyncDispose]: () => retained.release() });
+  const prepared =
+    source.prepareSessionSource && !findPreparedTranscript(args[0])
+      ? await prepareWorkerTranscript(args[0], () => {})
+      : undefined;
+  try {
+    const captured = prepared
+      ? preparedWorkerTranscript.run(prepared, () => captureWorkerTurnTranscriptSource(...args))
+      : source;
+    if (source.prepareSessionSource) {
+      captured();
+    }
+    let active = true;
+    const retained = composeSessionSourceAssertion([captured], (assertSource) => {
+      if (!active) {
+        throw new Error("Cloud worker transcript authority has been released");
+      }
+      assertSource();
+    });
+    const release = async () => {
+      if (active) {
+        active = false;
+        await prepared?.release();
+      }
+    };
+    return Object.assign(retained, { release, [Symbol.asyncDispose]: release });
+  } catch (error) {
+    await releaseSessionSourceAuthorities(prepared ? [prepared] : [], [error]);
+    throw error;
+  }
 }

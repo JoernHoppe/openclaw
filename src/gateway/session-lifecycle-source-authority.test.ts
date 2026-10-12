@@ -23,11 +23,7 @@ import {
   patchSessionEntryCore,
   replaceSessionEntrySync,
 } from "../config/sessions/session-accessor.sqlite-entry.js";
-import {
-  bindPreparedSessionSourceAssertion,
-  composeSessionSourceAssertion,
-  prepareSessionSourceAuthority,
-} from "../config/sessions/session-source-authority.js";
+import { composeSessionSourceAssertion } from "../config/sessions/session-source-authority.js";
 import type { InternalSessionEntry as SessionEntry } from "../config/sessions/types.js";
 import { SessionWorkStartChangedError } from "../config/sessions/work-start-error.js";
 import {
@@ -117,11 +113,7 @@ async function recoveryFixture(name: string) {
     canonicalKey: sessionKey,
     entry: loadSessionEntry(target),
   });
-  const assertion = createHarnessCompletionSourceAssertion({ claim, storePath: target.storePath });
-  const source = bindPreparedSessionSourceAssertion(
-    assertion,
-    await prepareSessionSourceAuthority(assertion),
-  );
+  const source = createHarnessCompletionSourceAssertion({ claim, storePath: target.storePath });
   const admission = prepareSystemAgentRunAdmission({}, runId, "main", "lifecycle-source", source);
   const admittedRunContext = await admission.admit("embedded");
   const writeContext = expectDefined(
@@ -172,7 +164,6 @@ async function recoveryFixture(name: string) {
     async close() {
       await owner.drain();
       admission.close();
-      await source.release();
       await scheduler.stop();
     },
   };

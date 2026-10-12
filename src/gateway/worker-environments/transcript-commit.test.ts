@@ -151,7 +151,7 @@ describe("worker transcript commit application", () => {
   });
 
   it("commits through an admitted database alias without invalidating retained tool policy", async () => {
-    const entry = await loadSessionEntry(sessionTarget);
+    const entry = loadSessionEntry(sessionTarget);
     const databasePath = resolveOpenClawAgentSqlitePath(
       toDatabaseOptions(resolveSqliteTranscriptScope(sessionTarget)),
     );
