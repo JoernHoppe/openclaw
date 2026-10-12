@@ -62,7 +62,7 @@ export async function withSessionTranscriptReadSource<T>(
   readInWorker: (source: SessionTranscriptWorkerReadSource) => Promise<T>,
   signal?: AbortSignal,
   lane?: SessionHistoryWorkerLane,
-  anchorStorePath?: string,
+  throughStorePath?: string,
 ): Promise<T> {
   const captured = {
     ...scope,
@@ -108,7 +108,7 @@ export async function withSessionTranscriptReadSource<T>(
       requestedPaths: readonly string[],
     ) => {
       const expectedIdentity = identity.key.startsWith("file:") ? identity : undefined;
-      const readPath = expectedIdentity ? (anchorStorePath ?? resolved.path) : resolved.path;
+      const readPath = expectedIdentity ? (throughStorePath ?? resolved.path) : resolved.path;
       const options = toDatabaseOptions({ ...resolved, path: readPath });
       return withSessionHistoryWorkerDatabase(
         { ...options, requestedPaths },

@@ -5,6 +5,7 @@ import {
   createMockPluginRegistry,
   loadUserTurnTranscriptRecorderFactoryForTest,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { readVisibleSessionTranscriptMessageEntries } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -34,6 +35,9 @@ describe("Codex submitted prompt provenance", () => {
   it("forks a sender-attributed turn using the exact submitted text without changing its display", async () => {
     const harness = createStartedThreadHarness();
     const params = createTestParams();
+    const abortController = new AbortController();
+    params.abortSignal = abortController.signal;
+    setRuntimeConfigSnapshot(params.config ?? {});
     params.agentId = "main";
     params.prompt = "  Keep the original whitespace.\n";
     params.trigger = "user";
@@ -55,7 +59,7 @@ describe("Codex submitted prompt provenance", () => {
         idempotencyKey: `${params.runId}:user`,
         sender: { id: "profile-fork-test", name: "Fork test" },
       },
-      target: { ...target, sessionEntry: undefined, config: params.config },
+      target: { ...target, sessionEntry: undefined },
     });
     await recorder.persistApproved();
     params.userTurnTranscriptRecorder = recorder;
@@ -66,12 +70,7 @@ describe("Codex submitted prompt provenance", () => {
     const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
     const run = runCodexAppServerAttempt(params);
     try {
-      await Promise.race([
-        harness.waitForMethod("turn/start"),
-        run.then(() => {
-          throw new Error("Codex attempt settled before turn/start dispatch");
-        }),
-      ]);
+      await run.waitForTurnAccepted();
       const request = harness.requests.find(({ method }) => method === "turn/start")!
         .params as CodexTurnStartParams;
       const sentInput = structuredClone(request.input);
@@ -135,11 +134,10 @@ describe("Codex submitted prompt provenance", () => {
         boundary: { beforeTurnId: "turn-1", lastRetainedTurnId: null },
         editorText: params.prompt,
       });
-      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-      await run;
     } finally {
-      harness.close();
-      await Promise.allSettled([run]);
+      // Settle the attempt even when admission rejects before notification handlers attach.
+      abortController.abort();
+      await run.catch(() => {});
       closeHost();
     }
   });
