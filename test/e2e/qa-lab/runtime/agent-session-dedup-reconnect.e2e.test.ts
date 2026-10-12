@@ -122,7 +122,7 @@ describe("agent session deduplication across reconnect", () => {
     async () => {
       let stage = "start-provider";
       onTestFailed(() => {
-        console.error(`Session dedup reconnect failed at stage=${stage}`);
+        process.stderr.write(`Session dedup reconnect failed at stage=${stage}\n`);
       });
       const provider = await startHeldResponsesProvider({
         modelRef: MODEL_REF,
