@@ -34,8 +34,19 @@ describe("models.list native account catalog", () => {
   afterEach(() => vi.restoreAllMocks());
   it("models.list selects a native user-home API-key catalog through the prepared Gateway owner", async (ctx) => {
     let stage = "isolated state setup";
+    const startedAt = performance.now();
+    const requests: string[] = [];
+    let lastCatalog:
+      | (Pick<ModelsListResult, "pendingProviders"> & {
+          models: Pick<ModelsListResult["models"][number], "id" | "available">[];
+        })
+      | undefined;
     const reportStage = () =>
-      console.error(`[native-catalog-test] aborted while awaiting ${stage}`);
+      console.error(`[native-catalog-test] aborted while awaiting ${stage}`, {
+        elapsedMs: Math.round(performance.now() - startedAt),
+        requests: requests.slice(-32),
+        lastCatalog,
+      });
     const markStage = (next: string) => {
       stage = next;
       if (ctx.signal.aborted) {
@@ -82,7 +93,6 @@ describe("models.list native account catalog", () => {
               });
               await rm(socketDir, { recursive: true, force: true });
             });
-            const requests: string[] = [];
             let account: Record<string, unknown> | null = { type: "apiKey" };
             server.on("connection", (socket) => {
               socket.on("message", (data) => {
@@ -198,15 +208,28 @@ describe("models.list native account catalog", () => {
                 });
               // Cold catalog preparation and native discovery are host-dependent; wake on owner
               // publications instead of timing the first demanded read.
-              const nativeCatalogSettled = (available: boolean) =>
-                waitForCatalogPublication({
+              const nativeCatalogSettled = (available: boolean) => {
+                const phase = stage;
+                return waitForCatalogPublication({
                   signal: ctx.signal,
-                  read: () => registeredList(),
+                  read: async () => {
+                    markStage(`${phase}: models.list request`);
+                    const result = await registeredList();
+                    lastCatalog = {
+                      pendingProviders: result.pendingProviders,
+                      models: result.models
+                        .filter((row) => row.id === "synthetic-opaque")
+                        .map((row) => ({ id: row.id, available: row.available })),
+                    };
+                    markStage(`${phase}: publication wait`);
+                    return result;
+                  },
                   ready: (result) =>
                     !result.pendingProviders?.includes("openai") &&
                     result.models.find((row) => row.id === "synthetic-opaque")?.available ===
                       available,
                 });
+              };
               markStage("initial native catalog publication");
               await nativeCatalogSettled(true);
               markStage("published catalog assertions");

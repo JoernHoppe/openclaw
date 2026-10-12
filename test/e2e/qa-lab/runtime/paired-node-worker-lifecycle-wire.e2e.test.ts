@@ -837,6 +837,9 @@ describe("paired node worker lifecycle wire", () => {
         expect(workerNode.invokeErrors).toEqual([]);
       } catch (error) {
         testFailure = { error };
+        process.stderr.write(
+          `Paired node worker lifecycle failed; Gateway log tail:\n${redactSensitiveText(gateway?.logs().slice(-8_000) ?? "Gateway did not start")}\n`,
+        );
       } finally {
         provider.releaseAll();
         const cleanup = await Promise.allSettled([
