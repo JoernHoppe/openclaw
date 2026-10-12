@@ -122,7 +122,7 @@ describe("embedded attempt preparation dispatch", () => {
   });
 
   it("yields after expensive synchronous work before admitting the next stage", async () => {
-    let elapsed = 0;
+    let elapsed = performance.now();
     const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
     const events: string[] = [];
     try {
@@ -135,6 +135,24 @@ describe("embedded attempt preparation dispatch", () => {
         prepare("attempt.tool-catalog", () => events.push("next")),
       ]);
       expect(events).toEqual(["expensive", "control", "next"]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("yields after CPU work in an async continuation before starting the next stage", async () => {
+    let elapsed = performance.now();
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const events: string[] = [];
+    try {
+      await prepare("attempt.bundle-tools", async () => {
+        await Promise.resolve();
+        events.push("projection");
+        elapsed += 10;
+        setImmediate(() => events.push("control"));
+      });
+      await prepare("attempt.tool-catalog", () => events.push("catalog"));
+      expect(events).toEqual(["projection", "control", "catalog"]);
     } finally {
       clock.mockRestore();
     }

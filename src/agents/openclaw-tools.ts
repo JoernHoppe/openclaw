@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isCoreCanvasHostEnabled } from "../canvas/config.js";
 import { createShowWidgetTool, hasRegisteredShowWidgetKinds } from "../canvas/widget-tool.js";
@@ -132,6 +133,7 @@ export async function createOpenClawToolsWithPreparation(
     options,
     shared,
   );
+  await yieldToEventLoop();
   shared.assertCurrent();
   captured.assertInvocationCurrent?.();
   const steps = createOpenClawToolsSteps(captured, delegated, webSearchConfigured, mediaTools);
@@ -141,6 +143,8 @@ export async function createOpenClawToolsWithPreparation(
       "message" in next.value
         ? [await createMessageToolAsync(next.value.message)]
         : await resolveOpenClawPluginToolsForOptionsAsync(next.value.plugins);
+    // Cached preparation can resolve entirely in microtasks; let sockets and timers run.
+    await yieldToEventLoop();
     shared.assertCurrent();
     captured.assertInvocationCurrent?.();
     next = steps.next(tools);

@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { HEARTBEAT_RESPONSE_TOOL_NAME } from "../auto-reply/heartbeat-tool-response.js";
 import type { SessionEventSourcePolicy } from "../auto-reply/reply/session-event-contract.js";
 import { messageToolOwnsVisibleReply } from "../auto-reply/source-reply-delivery-mode.js";
@@ -700,6 +701,8 @@ export async function createOpenClawCodingToolsInternalAsync(
           "pluginTools" in step.value
             ? await resolveOpenClawPluginToolsForOptionsAsync(step.value.pluginTools)
             : await createOpenClawToolsWithPreparation(step.value, shared);
+        // Schema normalization is another CPU slice after the tool factories settle.
+        await yieldToEventLoop();
         shared.assertCurrent();
         step = assembly.next(tools);
       }
