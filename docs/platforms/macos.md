@@ -95,7 +95,6 @@ tokens. Choose **Use a separate login** on the card to sign in to an isolated
 OpenClaw agent home. You can also change providers or sign in separately through
 **Model Setup**. See [Codex login and isolation](/start/onboarding#codex-login-and-isolation).
 
-
 For the CLI/Gateway setup path, use [Getting started](/start/getting-started).
 For permission recovery, use [macOS permissions](/platforms/mac/permissions).
 
