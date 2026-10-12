@@ -32,10 +32,16 @@ export function defineTypographyModuleBoundaryTests(
           await trigger.waitFor();
           expect(popupModule.requests()).toBe(0);
           await trigger.focus();
-          const tooltip = trigger.locator("..");
-          const popup = tooltip.locator(".tooltip-surface[popover]");
           await popupModule.request;
           expect(popupModule.requests()).toBe(1);
+          const popupId = await trigger.evaluate((element) => {
+            const tooltip = [...document.querySelectorAll("openclaw-tooltip")].find(
+              (host) => host.anchor === element,
+            );
+            return tooltip?.shadowRoot?.querySelector(".tooltip-surface[popover]")?.id;
+          });
+          expect(popupId).toBeTruthy();
+          const popup = page.locator(`#${popupId}`);
           expect(await popup.isVisible()).toBe(false);
           await expect.poll(() => trigger.getAttribute("aria-describedby")).not.toBeNull();
           popupModule.release();
