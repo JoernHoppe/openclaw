@@ -7,6 +7,7 @@ import {
 } from "../../packages/gateway-protocol/src/index.js";
 import { prepareSessionEntryMutationDatabases } from "../config/sessions/session-accessor.entry-mutation.js";
 import { patchSessionEntryCore } from "../config/sessions/session-accessor.js";
+import type { SessionEntryCreateWithTranscriptOptions } from "../config/sessions/session-accessor.types.js";
 import { getSessionActorStorageBinding } from "../config/sessions/session-actor-storage-binding.js";
 import {
   composeSessionSourceAssertion,
@@ -42,6 +43,7 @@ export function prepareGatewaySessionLifecycleTargets(params: {
     ready: Promise<void>;
     assertCurrent: () => void;
     selectTargetInLifecycle?: boolean;
+    followRegistration?: SessionEntryCreateWithTranscriptOptions["followRegistration"];
   };
   targets: readonly {
     target: Pick<GatewaySessionStoreTarget, "agentId" | "canonicalKey" | "storePath">;
@@ -72,6 +74,7 @@ export function prepareGatewaySessionLifecycleTargets(params: {
               scope: creationScope,
               assertCurrent: params.creation.assertCurrent,
               relatedScopes: scopes.slice(1),
+              followRegistration: params.creation.followRegistration,
             },
           ],
           params.creation.ready,

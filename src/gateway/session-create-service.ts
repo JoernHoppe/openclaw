@@ -299,6 +299,13 @@ async function createAdmittedGatewaySession(
       agentId,
       assertActive: commitGuard,
     }));
+  const followRegistration: SessionEntryCreateWithTranscriptOptions["followRegistration"] = (
+    change,
+  ) =>
+    params.followSharingRegistration?.(
+      { agentId: target.agentId, sessionKey: target.canonicalKey },
+      change,
+    );
   const initializingSessionFailure = () =>
     unavailableSessionRequest(
       `Session ${target.canonicalKey} is still initializing; retry creation later.`,
@@ -348,6 +355,7 @@ async function createAdmittedGatewaySession(
           creation: {
             ready: operatorReady,
             assertCurrent: () => commitGuard?.(),
+            followRegistration,
             selectTargetInLifecycle: Boolean(
               explicitTargetKey && !initialTargetEntry && !params.initialEntry,
             ),
@@ -1058,6 +1066,7 @@ async function createAdmittedGatewaySession(
             }
           : {}),
         ...(commitGuard ? { commitGuard } : {}),
+        followRegistration,
         ...(bindPreparedCreation || params.bindSharingCreation
           ? {
               bindCreation: (operation) => {

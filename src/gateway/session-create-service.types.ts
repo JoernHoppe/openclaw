@@ -20,7 +20,10 @@ import type {
   ModelAccountConnectAction,
   UserModelAccountSelection,
 } from "./model-account-authority.js";
-import type { GatewayOperatorRoleActor } from "./server-methods/shared-types.js";
+import type {
+  GatewayOperatorRoleActor,
+  SessionMutationAuthorization,
+} from "./server-methods/shared-types.js";
 import type { SessionCreatePhase } from "./session-create-diagnostics.js";
 
 type TrustedCatalogSessionTarget = {
@@ -219,6 +222,7 @@ export type CreateGatewaySessionParams = {
   onCreatedSessionCommitted?: (created: CreatedGatewaySession) => void;
   afterSessionCommitted?: SessionEntryCreateWithTranscriptOptions["afterCommitted"];
   bindSharingCreation?: SessionEntryCreateWithTranscriptOptions["bindCreation"];
+  followSharingRegistration?: SessionMutationAuthorization["followRegistration"];
   /** Synchronous caller-authority guard checked by each durable owner boundary. */
   commitGuard?: SessionSourceAssertion;
 };

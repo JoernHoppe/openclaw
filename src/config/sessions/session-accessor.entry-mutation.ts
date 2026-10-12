@@ -326,6 +326,7 @@ export function prepareSessionEntryMutationDatabases(
     assertCurrent: () => void;
     relatedScopes?: readonly SessionAccessScope[];
     expectedSource?: SessionEntryDatabasePreparationSource;
+    followRegistration?: SessionEntryCreateWithTranscriptOptions["followRegistration"];
   }[],
   ready: Promise<void>,
 ) {
@@ -418,7 +419,16 @@ export function prepareSessionEntryMutationDatabases(
           for (const member of members) {
             member.capture.begin(member.target.options.path, execution);
           }
-          await prepareSessionEntryReplacementDatabase(target.options, assertCurrent, execution);
+          await prepareSessionEntryReplacementDatabase(
+            target.options,
+            assertCurrent,
+            execution,
+            (change) => {
+              for (const { index } of members) {
+                targets[index]!.followRegistration?.(change);
+              }
+            },
+          );
           for (const member of members) {
             member.capture.finish(member.target.options.path, member.target.identity);
           }

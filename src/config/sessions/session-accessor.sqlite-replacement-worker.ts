@@ -321,12 +321,13 @@ export function prepareSessionEntryReplacementDatabase(
   options: ReplacementDatabaseOptions,
   assertCurrent: () => void,
   retainedExecution?: OpenClawAgentDatabaseExecution,
+  followRegistration?: AgentDatabaseRequestExecutionSource["onRegistryChange"],
 ): Promise<void> {
   return withSessionEntryWorker(
     options,
     undefined,
     assertCurrent,
-    (execution, source) => execution.prepare(source),
+    (execution, source) => execution.prepare({ ...source, onRegistryChange: followRegistration }),
     undefined,
     retainedExecution,
   );
