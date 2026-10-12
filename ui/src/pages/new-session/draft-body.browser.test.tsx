@@ -8,8 +8,10 @@ import baseStyles from "../../styles/base.css?inline";
 
 const container = document.createElement("div");
 const styles = document.createElement("style");
+let unmount: (() => void) | undefined;
 
 afterEach(() => {
+  unmount?.();
   container.remove();
   styles.remove();
   releaseChatAttachmentPayload("startup-notes");
@@ -24,7 +26,7 @@ it.each([
   document.head.append(styles);
   container.className = "new-session-page chat";
   document.body.append(container);
-  mountSolid(
+  ({ unmount } = mountSolid(
     () => (
       <NewSessionBody
         error={null}
@@ -46,7 +48,7 @@ it.each([
       />
     ),
     { container },
-  );
+  ));
   await expect.element(page.getByText("notes.md", { exact: true })).toBeVisible();
   const bubble = container.querySelector<HTMLElement>(".chat-group.user .chat-bubble")!;
   const card = bubble.querySelector<HTMLElement>(".chat-assistant-attachment-card")!;
