@@ -9,6 +9,7 @@ import { errorShapeFromError } from "./error-shape.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
 import {
+  prepareSessionMutationAuthorizationRequest,
   sessionMutationTargetChanged,
   type SessionMutationAuthorizationParams,
 } from "./session-sharing-authorization.js";
@@ -18,7 +19,6 @@ import {
 } from "./session-sharing-preparation.js";
 import { prepareSessionSharingProfiles } from "./session-sharing-read.js";
 import {
-  resolveChatSendAuthorizationParams,
   resolveDirectSessionTargets,
   resolveSessionMutationTargets,
   resolveTalkSessionTargetInput,
@@ -32,18 +32,15 @@ export async function resolveSessionMutationAuthorizationAsync(
     assertInvocationCurrent?: () => void;
   },
 ): Promise<ReturnType<typeof resolveSessionMutationAuthorization>> {
-  let params = request;
-  params.assertInvocationCurrent?.();
-  if (params.method === "chat.send") {
-    const normalized = resolveChatSendAuthorizationParams(
-      params.context.getRuntimeConfig(),
-      params.requestParams,
-    );
-    if (!normalized.ok) {
-      return { error: normalized.error };
-    }
-    params = { ...params, requestParams: normalized.value };
+  request.assertInvocationCurrent?.();
+  const requestPreparation = prepareSessionMutationAuthorizationRequest(request);
+  if (!requestPreparation.ok) {
+    return { error: requestPreparation.error };
   }
+  if (!requestPreparation.requiresSessionFacts) {
+    return { error: null };
+  }
+  let params = { ...request, ...requestPreparation.params };
   const talk = resolveTalkSessionTargetInput(
     params.method,
     params.requestParams,

@@ -368,7 +368,7 @@ it.each([
           replaceSessionEntrySync(scope, {
             ...readExactSessionEntryRow(database, scope.sessionKey)!.entry,
             label: "newer commit",
-            sandboxMode: authorityChanged ? "all" : "off",
+            sandboxMode: authorityChanged ? undefined : "off",
           });
         }
       };
@@ -384,7 +384,7 @@ it.each([
                 entry: {
                   ...row!.entry,
                   label: "older commit",
-                  sandboxMode: successor === "member" ? "all" : "off",
+                  sandboxMode: successor === "member" ? undefined : "off",
                 },
               },
             ],

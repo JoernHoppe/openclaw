@@ -24,7 +24,6 @@ import {
 import type { SessionMutationAuthorization } from "./server-methods/types.js";
 import { isSessionCreatorProfile } from "./session-creator.js";
 import {
-  isAgentRunStartMethod,
   isRequiredSessionTargetMethod,
   isSessionProfileDependentMethod,
   mayCreateSessionTarget,
@@ -55,7 +54,6 @@ import {
   authorizeSessionAgentRun,
   authorizeSessionSharingTarget,
   hiddenSessionNotFound,
-  isGatewayAdmin,
   resolveSessionSharingTarget,
   sharingIdentity,
   type SessionSharingTarget,
@@ -123,24 +121,14 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
   if (!requestPreparation.ok) {
     return { error: requestPreparation.error };
   }
-  const { params, requiresCommunicationAuthority, targetOwnership } = requestPreparation;
+  const { params, authorizesAgentRun, bindsProgressLifecycle, adminBypass, targetOwnership } =
+    requestPreparation;
   const memoryBinding = getSessionActorStorageBinding({});
   const withSelectedStorage = <T>(run: () => T): T =>
     memoryBinding ? runWithSessionActorStorage(memoryBinding, run) : run();
-  const authorizesAgentRun = isAgentRunStartMethod(params.method, params.requestParams);
   const authorizesRead =
     resolveSessionMethodScope(params.method, params.requestParams) === "operator.sessions.read";
-  // Progress belongs to the current conversation, not merely its stable session ID.
-  // Capture this boundary for admins too so delayed writes cannot revive a reset card.
-  const bindsProgressLifecycle =
-    params.method === "progressCard.put" || params.method === "progressCard.refresh";
-  const adminBypass = isGatewayAdmin(params.client) && !authorizesAgentRun;
-  if (
-    adminBypass &&
-    !requiresCommunicationAuthority &&
-    !bindsProgressLifecycle &&
-    !params.expectedTarget
-  ) {
+  if (!requestPreparation.requiresSessionFacts) {
     return { error: null };
   }
   if (

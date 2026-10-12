@@ -16,12 +16,13 @@ import type {
   GatewayRequestContext,
   SessionMutationAuthorization,
 } from "./server-methods/types.js";
-import { isSessionArchiveMutation } from "./session-method-policy.js";
+import { isAgentRunStartMethod, isSessionArchiveMutation } from "./session-method-policy.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 import type { SessionRowReadView } from "./session-row-prepared-read.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
 import {
   authorizeOwnSessionMutation,
+  isGatewayAdmin,
   withSessionSharingTarget,
   type SessionSharingTarget,
 } from "./session-sharing-policy.js";
@@ -104,10 +105,22 @@ export function prepareSessionMutationAuthorizationRequest(
       ),
     };
   }
+  const authorizesAgentRun = isAgentRunStartMethod(params.method, params.requestParams);
+  // Progress remains bound to its captured conversation even for administrators.
+  const bindsProgressLifecycle =
+    params.method === "progressCard.put" || params.method === "progressCard.refresh";
+  const adminBypass = isGatewayAdmin(params.client) && !authorizesAgentRun;
   return {
     ok: true as const,
     params,
-    requiresCommunicationAuthority,
+    authorizesAgentRun,
+    bindsProgressLifecycle,
+    adminBypass,
+    requiresSessionFacts:
+      !adminBypass ||
+      requiresCommunicationAuthority ||
+      bindsProgressLifecycle ||
+      params.expectedTarget !== undefined,
     targetOwnership: {
       requireOwner:
         requiresCommunicationAuthority ||
