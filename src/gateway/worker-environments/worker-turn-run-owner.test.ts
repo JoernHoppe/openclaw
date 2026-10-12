@@ -125,7 +125,8 @@ describe("cloud worker run ownership", () => {
           input,
           vi.fn(),
         )
-        .catch((error: unknown) => error);
+        .catch((error: unknown) => error)
+        .finally(() => operation.complete());
       await launched.promise;
       const active = placements.get(SESSION_ID);
       if (!active) {
