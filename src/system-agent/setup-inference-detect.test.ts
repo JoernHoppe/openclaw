@@ -9,6 +9,7 @@ import type { DetectSetupInferenceDeps, SetupInferenceDetection } from "./setup-
 import { detectSetupInference } from "./setup-inference-detect.js";
 
 const fixture = vi.hoisted(() => ({
+  config: {} as OpenClawConfig,
   loadAuthProfileStore: vi.fn<() => AuthProfileStore | Promise<AuthProfileStore>>(),
   withSetupProviderAuthMethod: vi.fn(),
 }));
@@ -19,12 +20,7 @@ vi.mock("../config/config.js", async (importOriginal) => ({
     snapshot: {
       exists: true,
       valid: true,
-      config: {
-        agents: {
-          entries: { main: {} },
-          defaults: { workspace: "/fixture/workspace" },
-        },
-      },
+      config: fixture.config,
     },
   }),
 }));
@@ -100,6 +96,9 @@ function detectWithProvider(
 
 beforeEach(() => {
   vi.useFakeTimers();
+  fixture.config = {
+    agents: { entries: { main: {} }, defaults: { workspace: "/fixture/workspace" } },
+  };
   fixture.loadAuthProfileStore.mockReturnValue({
     version: 1,
     profiles: {
@@ -209,6 +208,40 @@ describe("setup inference discovery concurrency", () => {
 });
 
 describe("setup inference discovery deadline", () => {
+  it.each([false, true])(
+    "offers registered saved credentials with retry metadata: %s",
+    async (retry) => {
+      fixture.config.auth = {
+        profiles: { "fixture:saved": { provider: "fixture", mode: "api_key" } },
+      };
+      fixture.loadAuthProfileStore.mockReturnValue({
+        version: 1,
+        profiles: {
+          "fixture:saved": {
+            type: "api_key",
+            provider: "fixture",
+            key: "fixture-key",
+            ...(retry
+              ? { setup: { replacement: true, modelRef: "fixture/saved-model", configJson: "{}" } }
+              : {}),
+          },
+        },
+      });
+      fixture.withSetupProviderAuthMethod.mockImplementation(async (_params, consume) =>
+        consume({ method: { starterModel: "fixture/saved-model" } }),
+      );
+      const result = await detectWithProvider(async () => null);
+      expect(result.candidates).toMatchObject([
+        {
+          kind: "saved-auth:fixture%3Asaved",
+          modelRef: "fixture/saved-model",
+          credentials: true,
+          recommended: true,
+        },
+      ]);
+    },
+  );
+
   it("recomputes the recommendation for partial and final detection without changing older results", async () => {
     const partials: SetupInferenceDetection[] = [];
     const result = await detectWithProvider(

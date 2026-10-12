@@ -1,10 +1,7 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveAuthProfileOrder } from "../agents/auth-profiles/order.js";
 import { loadAuthProfileStoreWithoutExternalProfilesAsync } from "../agents/auth-profiles/store-runtime.js";
-import {
-  readCodexCliActiveApiKey,
-  readCodexCliCredentialsCached,
-} from "../agents/cli-credentials.js";
+import { readCodexCliActiveApiKey } from "../agents/cli-credentials.js";
 import { isProviderAuthError } from "../agents/model-auth-runtime-shared.js";
 import { resolveApiKeyForProviderCore } from "../agents/model-auth.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -69,6 +66,30 @@ type PrepareCodexRuntimeParams = {
   markRetained?: StageContext["deps"]["markRetainedManagedNpmInstall"];
   resolveMetadata?: StageContext["deps"]["resolvePluginMetadataSnapshot"];
 };
+
+function withCodexHomeScope(config: OpenClawConfig, homeScope: "agent" | "user"): OpenClawConfig {
+  const entry = config.plugins?.entries?.codex;
+  const pluginConfig = entry?.config ?? {};
+  return {
+    ...config,
+    plugins: {
+      ...config.plugins,
+      entries: {
+        ...config.plugins?.entries,
+        codex: {
+          ...entry,
+          config: {
+            ...pluginConfig,
+            appServer: {
+              ...(isRecord(pluginConfig.appServer) ? pluginConfig.appServer : {}),
+              homeScope,
+            },
+          },
+        },
+      },
+    },
+  };
+}
 
 async function prepareCodexRuntimePlugin(
   params: PrepareCodexRuntimeParams,
@@ -159,32 +180,7 @@ async function prepareCodexRuntimePlugin(
       );
     }
   }
-  let config = normalizePluginTargetConfig(ensured.cfg, "codex");
-  if (params.automaticSetup) {
-    const entry = config.plugins?.entries?.codex;
-    const pluginConfig = entry?.config ?? {};
-    // Imported credentials belong to an OpenClaw-owned home, never the source CLI home.
-    config = {
-      ...config,
-      plugins: {
-        ...config.plugins,
-        entries: {
-          ...config.plugins?.entries,
-          codex: {
-            ...entry,
-            config: {
-              ...pluginConfig,
-              appServer: {
-                ...(isRecord(pluginConfig.appServer) ? pluginConfig.appServer : {}),
-                homeScope: "agent",
-              },
-            },
-          },
-        },
-      },
-    };
-  }
-  return { config };
+  return { config: normalizePluginTargetConfig(ensured.cfg, "codex") };
 }
 
 /** Prepare the official runtime without starting an interactive provider login. */
@@ -204,7 +200,10 @@ export async function prepareAutomaticSetupCodex(params: {
       automaticSetup: true,
       ensureCodex: ensureCodexRuntimePluginForSupervision,
     });
-    return "error" in prepared ? prepared : { ok: true, config: prepared.config };
+    // A new ChatGPT sign-in stays isolated from the native Codex login.
+    return "error" in prepared
+      ? prepared
+      : { ok: true, config: withCodexHomeScope(prepared.config, "agent") };
   });
 }
 
@@ -234,7 +233,10 @@ export async function stageCodexCandidate(
     if ("error" in prepared) {
       return prepared;
     }
-    const { config } = prepared;
+    // Codex alone owns rotation of the native login; never import its OAuth tokens.
+    const config = ctx.params.automaticSetup
+      ? withCodexHomeScope(prepared.config, "user")
+      : prepared.config;
     const entry = config.plugins?.entries?.codex;
     const pluginConfig = entry?.config ?? {};
     const appServer = isRecord(pluginConfig.appServer) ? pluginConfig.appServer : {};
@@ -263,44 +265,32 @@ export async function stageCodexCandidate(
     if (existingProfileId) {
       return { ...candidate, authProfileId: existingProfileId };
     }
-    const nativeCredential = ctx.params.automaticSetup
-      ? (ctx.deps.readCodexCliCredentialsCached ?? readCodexCliCredentialsCached)({
-          allowKeychainPrompt: false,
-        })
-      : null;
     // The normal auth owner checks configured/env keys without native discovery or refresh.
-    if (!nativeCredential) {
-      try {
-        const auth = await (ctx.deps.resolveApiKeyForProvider ?? resolveApiKeyForProviderCore)({
-          cfg: config,
-          store,
-          provider: "openai",
-          agentDir: ctx.agentDir,
-          workspaceDir: ctx.workspace,
-          allowAuthProfileFallback: false,
-          skipSetupProviderFallback: true,
-          secretSentinels: true,
-        });
-        throwIfSetupInferenceCancelled(ctx.params);
-        if (auth.apiKey) {
-          return { ...candidate, authProfileId: auth.profileId };
-        }
-      } catch (error) {
-        if (!isProviderAuthError(error, "missing-provider-auth")) {
-          throw error;
-        }
+    try {
+      const auth = await (ctx.deps.resolveApiKeyForProvider ?? resolveApiKeyForProviderCore)({
+        cfg: config,
+        store,
+        provider: "openai",
+        agentDir: ctx.agentDir,
+        workspaceDir: ctx.workspace,
+        allowAuthProfileFallback: false,
+        skipSetupProviderFallback: true,
+        secretSentinels: true,
+      });
+      throwIfSetupInferenceCancelled(ctx.params);
+      if (auth.apiKey) {
+        return { ...candidate, authProfileId: auth.profileId };
+      }
+    } catch (error) {
+      if (!isProviderAuthError(error, "missing-provider-auth")) {
+        throw error;
       }
     }
     throwIfSetupInferenceCancelled(ctx.params);
-    const credential = ctx.params.automaticSetup
-      ? nativeCredential
-      : (ctx.deps.readCodexCliActiveApiKey ?? readCodexCliActiveApiKey)({
-          allowKeychainPrompt: true,
-        });
+    const credential = (ctx.deps.readCodexCliActiveApiKey ?? readCodexCliActiveApiKey)({
+      allowKeychainPrompt: true,
+    });
     if (!credential) {
-      if (ctx.params.automaticSetup) {
-        return { error: "Codex needs ChatGPT sign-in before it can be activated." };
-      }
       const choices = (
         ctx.deps.resolveManifestProviderAuthChoices ?? resolveManifestProviderAuthChoices
       )({
@@ -326,15 +316,7 @@ export async function stageCodexCandidate(
         "codex",
       );
     }
-    if (credential.type === "api_key") {
-      registerSecretValueForRedaction(credential.key);
-    } else {
-      registerSecretValueForRedaction(credential.access);
-      registerSecretValueForRedaction(credential.refresh);
-      if (credential.idToken) {
-        registerSecretValueForRedaction(credential.idToken);
-      }
-    }
+    registerSecretValueForRedaction(credential.key);
     const saved = await saveSetupCredential({
       profile: { profileId: "openai:codex-cli-api-key", credential },
       config,

@@ -267,7 +267,6 @@ export type ActivateSetupInferenceDeps = {
   resolveApiKeyForProvider?: typeof import("../agents/model-auth.js").resolveApiKeyForProviderCore;
   resolvePluginMetadataSnapshot?: typeof import("../plugins/plugin-metadata-snapshot.js").resolvePluginMetadataSnapshot;
   readCodexCliActiveApiKey?: typeof readCodexCliActiveApiKey;
-  readCodexCliCredentialsCached?: typeof import("../agents/cli-credentials.js").readCodexCliCredentialsCached;
   loadPluginRegistrySnapshot?: SystemAgentVerifiedInferenceDeps["loadPluginRegistrySnapshot"];
   fingerprintPluginRuntimeArtifact?: SystemAgentVerifiedInferenceDeps["fingerprintPluginRuntimeArtifact"];
   captureSystemAgentOwnerPluginArtifacts?: typeof captureSystemAgentOwnerPluginArtifacts;

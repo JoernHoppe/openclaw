@@ -71,9 +71,6 @@ async function listSavedSetupInferenceCandidates(params: {
   for (const [profileId, credential] of Object.entries(store.profiles)) {
     params.signal.throwIfAborted();
     const saved = credential.setup;
-    if (!saved && params.cfg.auth?.profiles?.[profileId]) {
-      continue;
-    }
     const choice = findSetupCredentialChoice(params.choices, credential);
     let modelRef = saved?.modelRef;
     if (!modelRef && choice) {

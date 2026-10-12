@@ -94,7 +94,7 @@ describe("detectInferenceBackends", () => {
             calls.push({ command, args });
             return { command, found: command === "codex" || command === "claude" };
           },
-          readCodexCliCredentials: () => (stored ? { type: "oauth" } : null),
+          hasCodexCliAuthFile: () => stored,
         },
       });
       expect(facadeRuntime.tryLoadActivatedBundledPluginPublicSurfaceModule).not.toHaveBeenCalled();
@@ -113,9 +113,13 @@ describe("detectInferenceBackends", () => {
     },
   );
 
-  it.each(["home", "codex-home"] as const)(
-    "reads passive credentials only from selected %s",
-    async (selection) => {
+  it.each([
+    ["home", "chatgpt"],
+    ["codex-home", "chatgpt"],
+    ["codex-home", "apikey"],
+  ] as const)(
+    "detects the %s login file for %s without reading credential values",
+    async (selection, authMode) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-passive-login-"));
       try {
         const processHome = path.join(root, "process");
@@ -126,7 +130,8 @@ describe("detectInferenceBackends", () => {
         await fs.mkdir(codexHome, { recursive: true });
         const authPath = path.join(codexHome, "auth.json");
         const raw = JSON.stringify({
-          auth_mode: "chatgpt",
+          auth_mode: authMode,
+          ...(authMode === "apikey" ? { OPENAI_API_KEY: "synthetic-api-key" } : {}),
           tokens: {
             access_token: "synthetic-access",
             refresh_token: "synthetic-refresh",
@@ -172,7 +177,7 @@ describe("detectInferenceBackends", () => {
           timedOut: true,
           error: "timed out after 1500ms",
         }),
-        readCodexCliCredentials: () => null,
+        hasCodexCliAuthFile: () => false,
         readGeminiCliCredentials: () => ({ type: "oauth" }),
       },
     });
@@ -192,7 +197,7 @@ describe("detectInferenceBackends", () => {
       platform: "linux",
       deps: {
         probeLocalCommand: probeDeps({ claude: true, codex: true, gemini: true }),
-        readCodexCliCredentials: () => ({ type: "oauth" }),
+        hasCodexCliAuthFile: () => true,
         readGeminiCliCredentials: () => ({ type: "oauth" }),
       },
     });
@@ -245,7 +250,7 @@ describe("detectInferenceBackends", () => {
       platform: "linux",
       deps: {
         probeLocalCommand: probeDeps({}),
-        readCodexCliCredentials: () => null,
+        hasCodexCliAuthFile: () => false,
       },
     });
 
@@ -269,7 +274,7 @@ describe("detectInferenceBackends", () => {
       platform: "linux",
       deps: {
         probeLocalCommand: probeDeps({}),
-        readCodexCliCredentials: () => null,
+        hasCodexCliAuthFile: () => false,
       },
     });
 
@@ -284,7 +289,7 @@ describe("detectInferenceBackends", () => {
       platform: "linux",
       deps: {
         probeLocalCommand: probeDeps({ claude: true, codex: true, gemini: true }),
-        readCodexCliCredentials: () => null,
+        hasCodexCliAuthFile: () => false,
         readGeminiCliCredentials: () => null,
       },
     });
@@ -305,7 +310,7 @@ describe("detectInferenceBackends", () => {
       platform: "linux",
       deps: {
         probeLocalCommand: probeDeps({ claude: true }),
-        readCodexCliCredentials: () => ({ type: "oauth" }),
+        hasCodexCliAuthFile: () => true,
       },
     });
 

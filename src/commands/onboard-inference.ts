@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { resolveAgentConfig } from "../agents/agent-scope-config.js";
 import {
-  readCodexCliCredentialsCached,
+  hasCodexCliAuthFile,
   readGeminiCliCredentialsCached,
   resolveCodexCliHomePath,
 } from "../agents/cli-credentials.js";
@@ -38,7 +38,7 @@ export {
 
 type DetectInferenceBackendsDeps = {
   probeLocalCommand?: typeof probeLocalCommand;
-  readCodexCliCredentials?: () => { type: string } | null;
+  hasCodexCliAuthFile?: () => boolean;
   readGeminiCliCredentials?: () => { type: string } | null;
 };
 
@@ -94,19 +94,14 @@ export async function detectInferenceBackends(
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const probe = options.deps?.probeLocalCommand ?? probeLocalCommand;
-  const readCodex =
-    options.deps?.readCodexCliCredentials ??
+  const hasCodexLogin =
+    options.deps?.hasCodexCliAuthFile ??
     (() => {
       const home = resolveOsHomeDir(env, env === process.env ? os.homedir : () => "");
       if (!home && !env.CODEX_HOME?.trim()) {
-        return null;
+        return false;
       }
-      return readCodexCliCredentialsCached({
-        codexHome: resolveCodexCliHomePath(undefined, env),
-        platform,
-        allowKeychainPrompt: false,
-        ttlMs: 60_000,
-      });
+      return hasCodexCliAuthFile(resolveCodexCliHomePath(undefined, env));
     });
   const readGemini =
     options.deps?.readGeminiCliCredentials ??
@@ -155,7 +150,7 @@ export async function detectInferenceBackends(
       detail: "installed; login status unverified",
     });
   }
-  const storedCodexCredentials = readCodex() !== null;
+  const storedCodexCredentials = hasCodexLogin();
   if ((codexProbe.found && !codexProbe.timedOut) || storedCodexCredentials) {
     // Native status starts provider initialization (including migrations and
     // token refresh). A saved record proves neither the active store nor login.

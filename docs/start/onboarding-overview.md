@@ -91,6 +91,13 @@ If none works, OpenClaw installs or enables the official Codex plugin and uses
 its existing login, or asks you to sign in with ChatGPT. Apple Foundation Models
 is a utility option and is never chosen as the primary model.
 
+When automatic setup reuses Codex, it shares the Gateway user's `CODEX_HOME`
+(or `~/.codex`), including the login, threads, and `config.toml`. Codex owns
+authentication and token refresh; OpenClaw does not copy the OAuth tokens into
+its auth store. A new ChatGPT sign-in uses an isolated OpenClaw agent home.
+See [Codex login and isolation](/start/onboarding#codex-login-and-isolation)
+to switch between these modes.
+
 For a fresh or incomplete Gateway, native setup handles the Gateway connection,
 any needed local CLI/runtime install, and AI access. The dashboard tells you what
 was picked and offers alternatives. You can switch providers or models there,

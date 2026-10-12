@@ -10,6 +10,7 @@ import { resolveAuthProfileOrder } from "../agents/auth-profiles/order.js";
 import { resolveAuthProfilePortability } from "../agents/auth-profiles/portability.js";
 import { loadAuthProfileStoreWithoutExternalProfiles } from "../agents/auth-profiles/store-runtime.js";
 import { upsertAuthProfileWithLock } from "../agents/auth-profiles/upsert-with-lock.js";
+import * as cliCredentials from "../agents/cli-credentials.js";
 import { fingerprintResolvedProviderAuth } from "../agents/execution-auth-binding.js";
 import { resolveModelRuntimePolicy } from "../agents/model-runtime-policy.js";
 import { buildAllowedModelSet } from "../agents/model-selection.js";
@@ -122,94 +123,76 @@ describe("setup activation credentials and configuration", () => {
       expect(setup.readProfile()?.[1].setup).toBeUndefined();
     },
   );
-  it("preserves explicit native user-home setup without importing or starting host sign-in", async () => {
-    const setup = await fixture({ codex: true, homeScope: "user" });
-    const nativeAuth = {
-      apiKey: "fixture-native-key",
-      source: "Codex native login",
-      mode: "api-key" as const,
-    };
-    setup.deps.resolveApiKeyForProvider = async () => nativeAuth;
-    const readNativeKey = vi.fn(() => credential);
-    setup.deps.readCodexCliActiveApiKey = readNativeKey;
-    setup.run.mockImplementation(async (params) => {
-      expect(params.authProfileId).toBeUndefined();
-      expect(params.config?.plugins?.entries?.codex?.config?.appServer).toMatchObject({
-        homeScope: "user",
+  it.each([false, true])(
+    "reuses the native Codex home without importing credentials (automatic: %s)",
+    async (automatic) => {
+      const setup = await fixture({
+        codex: true,
+        homeScope: automatic ? "agent" : "user",
+        nativeCatalogEnabled: true,
       });
-      params.onSuccessfulAuthBinding?.({
-        agentHarnessId: "codex",
-        authFingerprint: fingerprintResolvedProviderAuth(nativeAuth),
-        modelId: "gpt-5.4-mini",
-        modelApi: "openai-responses",
-        runtimeOwnerKind: "plugin-harness",
-        runtimeOwnerId: "codex",
-        ...codexRuntimeArtifactAuth,
+      vi.spyOn(cliCredentials, "readCodexCliCredentialsCached").mockImplementation(() => {
+        throw new Error("Setup must not read native Codex OAuth tokens");
       });
-      return {
-        payloads: [{ text: "OK" }],
-        meta: {
-          durationMs: 1,
-          executionTrace: { winnerProvider: "openai", winnerModel: "gpt-5.4-mini" },
-        },
+      const nativeAuth = {
+        apiKey: "fixture-native-key",
+        source: "Codex native login",
+        mode: "api-key" as const,
       };
-    });
-    const result = await setup.activate("codex-cli");
-    expect(result).toMatchObject({ ok: true });
-    expect(setup.login).not.toHaveBeenCalled();
-    expect(readNativeKey).not.toHaveBeenCalled();
-    expect(setup.readProfile()).toBeUndefined();
-    expect(
-      (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.appServer,
-    ).toMatchObject({ homeScope: "user" });
-  });
-
-  it("automatically imports stored Codex OAuth into an OpenClaw-owned home without login", async () => {
-    const setup = await fixture({
-      codex: true,
-      subscription: true,
-      homeScope: "user",
-      nativeCatalogEnabled: true,
-    });
-    const stored = {
-      type: "oauth" as const,
-      provider: "openai" as const,
-      access: "fixture-subscription-access",
-      refresh: "fixture-subscription-refresh",
-      expires: Date.now() + 3_600_000,
-      accountId: "fixture-chatgpt-account",
-    };
-    const readCredentials = vi.fn(() => stored);
-    setup.deps.readCodexCliCredentialsCached = readCredentials;
-
-    expect(await setup.activate("codex-cli", true, { automaticSetup: true })).toMatchObject({
-      ok: true,
-    });
-    expect(readCredentials).toHaveBeenCalledWith({ allowKeychainPrompt: false });
-    expect(setup.login).not.toHaveBeenCalled();
-    expect(setup.run).toHaveBeenCalledOnce();
-    expect(setup.readProfile()?.[1]).toMatchObject(stored);
-    expect(
-      (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.appServer,
-    ).toMatchObject({ homeScope: "agent" });
-    expect(setup.config.plugins?.entries?.codex?.config?.appServer).toMatchObject({
-      homeScope: "user",
-    });
-    expect(
-      (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.sessionCatalog,
-    ).toEqual({ enabled: true });
-  });
+      setup.deps.resolveApiKeyForProvider = async () => nativeAuth;
+      const readNativeKey = vi.fn(() => credential);
+      setup.deps.readCodexCliActiveApiKey = readNativeKey;
+      setup.run.mockImplementation(async (params) => {
+        expect(params.authProfileId).toBeUndefined();
+        expect(params.config?.plugins?.entries?.codex?.config?.appServer).toMatchObject({
+          homeScope: "user",
+        });
+        params.onSuccessfulAuthBinding?.({
+          agentHarnessId: "codex",
+          authFingerprint: fingerprintResolvedProviderAuth(nativeAuth),
+          modelId: "gpt-5.4-mini",
+          modelApi: "openai-responses",
+          runtimeOwnerKind: "plugin-harness",
+          runtimeOwnerId: "codex",
+          ...codexRuntimeArtifactAuth,
+        });
+        return {
+          payloads: [{ text: "OK" }],
+          meta: {
+            durationMs: 1,
+            executionTrace: { winnerProvider: "openai", winnerModel: "gpt-5.4-mini" },
+          },
+        };
+      });
+      const result = await setup.activate("codex-cli", automatic ? true : undefined, {
+        automaticSetup: automatic ? true : undefined,
+      });
+      expect(result).toMatchObject({ ok: true });
+      expect(setup.login).not.toHaveBeenCalled();
+      expect(readNativeKey).not.toHaveBeenCalled();
+      expect(setup.readProfile()).toBeUndefined();
+      expect(
+        (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.appServer,
+      ).toMatchObject({ homeScope: "user" });
+      expect(
+        (await readConfigFileSnapshot()).config.plugins?.entries?.codex?.config?.sessionCatalog,
+      ).toEqual({ enabled: true });
+    },
+  );
 
   it("returns from automatic Codex setup without opening login when stored credentials disappear", async () => {
     const setup = await fixture({ codex: true });
-    setup.deps.readCodexCliCredentialsCached = () => null;
+    vi.spyOn(cliCredentials, "readCodexCliCredentialsCached").mockImplementation(() => {
+      throw new Error("Setup must not read native Codex OAuth tokens");
+    });
+    setup.run.mockRejectedValueOnce(new Error("Codex needs ChatGPT sign-in"));
 
     expect(await setup.activate("codex-cli", true, { automaticSetup: true })).toMatchObject({
       ok: false,
       error: expect.stringContaining("ChatGPT sign-in"),
     });
     expect(setup.login).not.toHaveBeenCalled();
-    expect(setup.run).not.toHaveBeenCalled();
+    expect(setup.run).toHaveBeenCalledOnce();
     expect(setup.readProfile()).toBeUndefined();
     expect(await fs.readFile(setup.configPath, "utf8")).toBe(setup.before);
   });

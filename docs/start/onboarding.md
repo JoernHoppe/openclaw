@@ -108,6 +108,23 @@ sign-in. This first-party Codex installation is the only plugin capability
 approval granted by automatic setup. If installation or activation fails, the
 dashboard shows the reason and lets you choose another connection.
 
+<a id="codex-login-and-isolation" />
+
+When automatic setup selects an existing Codex ChatGPT or API-key login, it sets
+`plugins.entries.codex.config.appServer.homeScope: "user"`. Codex's app-server
+then uses `CODEX_HOME`, or `~/.codex` when unset, on the Gateway host. This shares
+your native Codex login, threads, and `config.toml`. Codex owns authentication
+and token refresh; OpenClaw does not copy or register the OAuth tokens in its
+auth store.
+
+If there is no Codex login, the offered ChatGPT sign-in stays isolated in an
+OpenClaw-owned agent home. To switch an automatically reused login to that
+mode, set `plugins.entries.codex.config.appServer.homeScope: "agent"` in the
+Gateway configuration, then open **Model Setup** and sign in with ChatGPT.
+See [Native Codex state](/plugins/codex-harness/native-features#share-threads-with-codex-desktop-and-cli)
+for the home-scope settings. Manual setup retains its existing API-key import
+behavior.
+
 The dashboard explains what OpenClaw picked and lists alternatives. Use its
 provider and model settings to switch, or **Connection… → Gateways** to connect
 to another Gateway. The manual picker still only detects and presents choices;
