@@ -214,6 +214,7 @@ export const gatewayDatabaseWorkerTestFiles = [
   "src/gateway/session-activity-summaries.freshness.test.ts",
   "src/gateway/session-activity-summaries.retry.test.ts",
   "src/gateway/session-activity-summaries.test.ts",
+  "src/gateway/session-companion-ask.persistence.test.ts",
   "src/gateway/session-companion-rpc.test.ts",
   "src/gateway/session-companion-runtime.test.ts",
   "src/gateway/session-control-preflights.incognito.test.ts",
