@@ -54,6 +54,44 @@ describe("cloud attachment transfer confinement", () => {
     };
   }
 
+  it("transfers attachments with signed exact remote directory identities", async () => {
+    const { remote, execute, input, bytes } = await fixture();
+    const identityShim = `{
+      const fs = require('node:fs');
+      for (const method of ['lstatSync', 'statSync', 'fstatSync']) {
+        const original = fs[method];
+        fs[method] = (...args) => {
+          const stat = original(...args);
+          if (typeof stat.ino === 'bigint') {
+            stat.dev = -1n;
+            stat.ino = BigInt.asIntN(64, stat.ino + (1n << 63n));
+          }
+          return stat;
+        };
+      }
+    }`;
+    const note = await prepareWorkerTurnAttachments({
+      turn: input,
+      remoteWorkspaceDir: remote,
+      tunnel: {
+        runWorkspaceCommand: (command) =>
+          execute({
+            ...command,
+            argv: [
+              ...command.argv.slice(0, 2),
+              identityShim + command.argv[2],
+              ...command.argv.slice(3),
+            ],
+          }),
+      },
+      assertCurrent: () => {},
+    });
+    const [directory] = await readdir(remote);
+    expect(note).toContain(directory);
+    const [file] = await readdir(path.join(remote, directory!));
+    expect(await readFile(path.join(remote, directory!, file!))).toEqual(bytes);
+  });
+
   it("removes incomplete files after a checksum failure without changing other workspace files", async () => {
     const { remote, execute, input } = await fixture();
     await writeFile(path.join(remote, "keep.txt"), "remote edits");

@@ -141,6 +141,17 @@ async function command(syncRoot: string, args: string[]) {
   return { result, report };
 }
 
+posixIt("recovers a mirror with persisted signed exact device identities", async () => {
+  injected.dev = -(1n << 63n);
+  const f = stage();
+  expect(f.receipt.rootIdentity.dev).toMatch(/^-\d+$/u);
+  const inspection = await command(f.syncRoot, ["inspect"]);
+  expect(inspection.report.entries).toEqual([expect.objectContaining({ id: f.receipt.id })]);
+  const recovery = await command(f.syncRoot, ["recover", f.receipt.id]);
+  expect(recovery.report, recovery.report.reason).toMatchObject({ recovered: true });
+  expect(existsSync(f.owner.staging.root)).toBe(false);
+});
+
 posixIt("persists a newly available UUID during ordinary capsule preparation", async () => {
   const syncRoot = temporary.make("openclaw-staging-identity-capsule-");
   injected.volume = undefined;

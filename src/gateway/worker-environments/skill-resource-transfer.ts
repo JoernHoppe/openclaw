@@ -76,7 +76,7 @@ try {
  if(op==='discover')process.stdout.write(discover());
  else if(op==='init'){fs.mkdirSync(directory,{mode:0o700});enter(directory);fs.chmodSync('.',0o700);fs.writeFileSync('.gitignore','*\n',{mode:0o400,flag:'wx'});process.stdout.write(identity(fs.statSync('.',{bigint:true})));}
  else {
-  if(typeof request.identity!=='string'||request.identity.match(/^\d+:\d+$/)?.[0]!==request.identity)throw Error('invalid resource identity');
+  if(typeof request.identity!=='string'||request.identity.match(/^-?\d+:-?\d+$/)?.[0]!==request.identity)throw Error('invalid resource identity');
   if(op==='cleanup')cleanup(directory,request.identity);
   else {
    if(!Array.isArray(request.files)||!request.files.length)throw Error('invalid resource batch');
@@ -151,7 +151,7 @@ export async function transferSkillResources(params: {
   };
   // Recheck the claim after read-only discovery, then delete only that captured identity.
   // A delayed old request cannot enumerate and delete a newer turn's private inputs.
-  const locationPattern = new RegExp(`^(${WORKER_ATTACHMENT_DIRECTORY_PATTERN}) (\\d+:\\d+)$`);
+  const locationPattern = new RegExp(`^(${WORKER_ATTACHMENT_DIRECTORY_PATTERN}) (-?\\d+:-?\\d+)$`);
   for (;;) {
     const candidate = await execute({ op: "discover" });
     if (!candidate) {
@@ -169,7 +169,7 @@ export async function transferSkillResources(params: {
   }
   const directory = `${WORKER_ATTACHMENT_DIRECTORY_PREFIX}${randomUUID()}`;
   const identity = await execute({ op: "init", directory });
-  if (identity.match(/^\d+:\d+$/)?.[0] !== identity) {
+  if (identity.match(/^-?\d+:-?\d+$/)?.[0] !== identity) {
     throw new Error("Invalid skill resource location from execution environment.");
   }
   const location = { directory, identity };

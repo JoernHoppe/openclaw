@@ -188,8 +188,11 @@ export function usageCostCheckpointIdentityMatches(
   }
   // Released numeric checkpoints already lost precision. Accept their rounded-ID
   // blind spot until refresh writes the current exact observation as a string.
+  // Numeric stats were unsigned; bigint stat observations are signed 64-bit.
   return typeof stored === "number"
-    ? Number.isInteger(stored) && Number(observed) === stored
+    ? Number.isInteger(stored) &&
+        /^-?\d+$/u.test(observed) &&
+        Number(BigInt.asUintN(64, BigInt(observed))) === stored
     : stored === observed;
 }
 

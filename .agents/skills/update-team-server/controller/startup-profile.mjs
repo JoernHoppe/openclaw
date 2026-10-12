@@ -178,10 +178,11 @@ async function runPreload() {
         assert(identityEncoding === undefined || ["exact", "legacy-number"].includes(identityEncoding));
         const matches = (current, saved) => {
           assert((typeof saved === "number" && Number.isInteger(saved) && saved >= 0) ||
-            (typeof saved === "string" && /^(0|[1-9][0-9]*)$/.test(saved)), "invalid profiling file identity");
+            (typeof saved === "string" && /^(0|-?[1-9][0-9]*)$/.test(saved)), "invalid profiling file identity");
           const encoding = identityEncoding ?? (typeof saved === "number" ? "legacy-number" : "exact");
           assert(encoding !== "exact" || typeof saved === "string");
-          return encoding === "legacy-number" ? Number(current) === Number(saved) : current === saved;
+          // Node's bigint view is signed; released numeric stat fields were unsigned.
+          return encoding === "legacy-number" ? Number(current.startsWith("-") ? BigInt.asUintN(64, BigInt(current)) : current) === Number(saved) : current === saved;
         };
         assert(matches(actual.dev, dev) && matches(actual.ino, ino), "profiling file identity changed");
         const { dev: _dev, ino: _ino, ...metadata } = actual;

@@ -580,6 +580,45 @@ describe("remote-exec skill resources", () => {
     }
   });
 
+  it("transfers and cleans up resources with signed exact remote directory identities", async () => {
+    const { snapshot, binary } = await createSource(16);
+    const carrier = await createCarrier();
+    const identityShim = `{
+      const fs = require('node:fs');
+      for (const method of ['lstatSync', 'statSync', 'fstatSync']) {
+        const original = fs[method];
+        fs[method] = (...args) => {
+          const stat = original(...args);
+          if (typeof stat.ino === 'bigint') {
+            stat.dev = -1n;
+            stat.ino = BigInt.asIntN(64, stat.ino + (1n << 63n));
+          }
+          return stat;
+        };
+      }
+    }`;
+    const resources = await transferSkillResources({
+      snapshot,
+      remoteWorkspaceDir: carrier.workspace,
+      assertCurrent: () => {},
+      tunnel: {
+        runWorkspaceCommand: (command) =>
+          carrier.runWorkspaceCommand({
+            ...command,
+            argv: [
+              ...command.argv.slice(0, 2),
+              identityShim + command.argv[2],
+              ...command.argv.slice(3),
+            ],
+          }),
+      },
+    });
+    const remote = resources!.mounts[0]!.containerPath;
+    expect(await fs.readFile(path.join(remote, "data.bin"))).toEqual(binary);
+    await resources!.cleanup();
+    await expect(fs.stat(remote)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rejects remote directory identities that collide when rounded to numbers", async () => {
     const { snapshot } = await createSource();
     const carrier = await createCarrier();

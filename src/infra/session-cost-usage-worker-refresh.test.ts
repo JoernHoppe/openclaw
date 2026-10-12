@@ -165,7 +165,7 @@ describe("paged SQLite usage rollups", () => {
 
 const jsonlDirectories = useAutoCleanupTempDirTracker(afterEach);
 
-it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects replacement", async () => {
+it("resumes unsigned legacy JSONL checkpoints, writes signed exact IDs, and rejects replacement", async () => {
   const filePath = path.join(jsonlDirectories.make("usage-exact-identity-"), "session.jsonl");
   const unpriced = (id: string, tokens: number) => ({
     ...message(id, null, tokens),
@@ -178,13 +178,13 @@ it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects repl
   });
   fs.writeFileSync(filePath, `${JSON.stringify(unpriced("root", 7))}\n`);
   const nativeStat = fs.promises.stat;
-  const device = 9_007_199_254_740_993n;
-  let inode = 9_007_199_254_740_993n;
+  const device = -9_223_372_036_854_775_807n;
+  let inode = -9_223_372_036_854_775_805n;
   const stat = vi.spyOn(fs.promises, "stat").mockImplementation(async (...args) => {
     const result = await nativeStat(...args);
     if (result && args[0] === filePath) {
-      result.dev = typeof result.dev === "bigint" ? device : Number(device);
-      result.ino = typeof result.ino === "bigint" ? inode : Number(inode);
+      result.dev = typeof result.dev === "bigint" ? device : Number(BigInt.asUintN(64, device));
+      result.ino = typeof result.ino === "bigint" ? inode : Number(BigInt.asUintN(64, inode));
     }
     return result;
   });
@@ -208,8 +208,8 @@ it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects repl
     };
     const previous = await scanFile();
     expect(previous.checkpoint).toMatchObject({
-      device: "9007199254740993",
-      inode: "9007199254740993",
+      device: "-9223372036854775807",
+      inode: "-9223372036854775805",
     });
     if (previous.checkpoint.kind !== "jsonl") {
       throw new Error("Expected JSONL checkpoint");
@@ -217,7 +217,11 @@ it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects repl
     // Released checkpoints persisted numeric stats after JS rounded their IDs.
     const encoded = encodeUsageCostRollup({
       ...previous,
-      checkpoint: { ...previous.checkpoint, device: Number(device), inode: Number(inode) },
+      checkpoint: {
+        ...previous.checkpoint,
+        device: Number(BigInt.asUintN(64, device)),
+        inode: Number(BigInt.asUintN(64, inode)),
+      },
     });
     const legacy = decodeUsageCostRollup(
       encoded.valueJson,
@@ -231,15 +235,15 @@ it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects repl
     // Already-priced history survives; only the new record needs price resolution.
     expect(pricedModels).toEqual(["appended"]);
     expect(upgraded.checkpoint).toMatchObject({
-      device: "9007199254740993",
-      inode: "9007199254740993",
+      device: "-9223372036854775807",
+      inode: "-9223372036854775805",
     });
     expect(upgraded.countedRecords).toBe(2);
     expect(Object.values(upgraded.rollup.buckets)[0]?.totals.totalTokens).toBe(10);
 
     const oldFile = await resolveUsageCostTranscriptFile(filePath, access);
     inode -= 1n;
-    expect(Number(inode)).toBe(9_007_199_254_740_992);
+    expect(Number(BigInt.asUintN(64, inode))).toBe(9_223_372_036_854_776_000);
     await expect(
       scanUsageCostRollupInWorker({
         file: oldFile!,
@@ -260,7 +264,7 @@ it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects repl
     expect(pricedModels).toEqual(["replacement"]);
     expect(replacement.countedRecords).toBe(1);
     expect(Object.values(replacement.rollup.buckets)[0]?.totals.totalTokens).toBe(13);
-    expect(replacement.checkpoint).toMatchObject({ inode: "9007199254740992" });
+    expect(replacement.checkpoint).toMatchObject({ inode: "-9223372036854775806" });
   } finally {
     stat.mockRestore();
   }

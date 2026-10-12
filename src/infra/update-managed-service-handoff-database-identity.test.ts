@@ -28,6 +28,37 @@ function fixture() {
   return { root, directory, databasePath, binding };
 }
 
+it.each(["file", "parent directory"] as const)(
+  "upgrades unsigned legacy %s IDs to signed exact identities",
+  (target) => {
+    const { directory, databasePath, binding } = fixture();
+    const observedPath = target === "file" ? databasePath : directory;
+    const field = target === "file" ? "databaseIdentity" : "parentIdentity";
+    const lstat = fs.lstatSync;
+    let inode = -9_223_372_036_854_775_807n;
+    vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+      const stat = lstat(...args);
+      return args[0] === observedPath && args[1]?.bigint && stat
+        ? Object.assign(stat, { dev: -1n, ino: inode })
+        : stat;
+    });
+    // These are Node's numeric-stat spellings of the same unsigned 64-bit IDs.
+    const legacy = { ...binding, [field]: "18446744073709552000:9223372036854776000" };
+    const exact = captureManagedUpdateLeaseDatabaseIdentity(databasePath, legacy, true);
+    expect(exact[field]).toBe("-1:-9223372036854775807");
+    expect(captureManagedUpdateLeaseDatabaseIdentity(databasePath, exact)).toEqual(exact);
+
+    inode += 1n;
+    expect(() => captureManagedUpdateLeaseDatabaseIdentity(databasePath, exact)).toThrow(
+      "identity changed",
+    );
+    inode -= 4097n;
+    expect(() => captureManagedUpdateLeaseDatabaseIdentity(databasePath, legacy, true)).toThrow(
+      "identity changed",
+    );
+  },
+);
+
 it.each(["file", "parent directory", "path", "missing file", "missing parent"] as const)(
   "explains a changed %s without accepting or repairing it",
   (change) => {

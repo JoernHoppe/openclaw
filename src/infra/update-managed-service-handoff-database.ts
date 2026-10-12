@@ -338,7 +338,9 @@ export function captureManagedUpdateLeaseDatabaseIdentity(
   // Admit its shipped spelling once, then pin bigint identities for every later check.
   const matches = (stat: BigIntStats, expected: string) =>
     expected === databaseFileIdentityKey(stat) ||
-    (legacyNumeric && expected === `${Number(stat.dev)}:${Number(stat.ino)}`);
+    (legacyNumeric &&
+      expected ===
+        `${Number(BigInt.asUintN(64, stat.dev))}:${Number(BigInt.asUintN(64, stat.ino))}`);
   if (previous) {
     const changes: string[] = [];
     if (canonical !== previous.databasePath) {

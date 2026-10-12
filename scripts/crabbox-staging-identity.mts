@@ -3,7 +3,7 @@ import { lstatSync, realpathSync, type BigIntStats } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 
-const statIdentifierSchema = z.string().regex(/^(?:0|[1-9]\d*)$/u);
+const statIdentifierSchema = z.string().regex(/^(?:0|-?[1-9]\d*)$/u);
 export const directoryIdentitySchema = z.strictObject({
   dev: statIdentifierSchema,
   ino: statIdentifierSchema,

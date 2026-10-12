@@ -54,20 +54,33 @@ export function readImmutableLayout(root: string) {
 
 export type ImmutableIdentityEncoding = "exact" | "legacy";
 
+function isImmutableIdentity(
+  identity: string,
+  encoding: ImmutableIdentityEncoding | undefined,
+): boolean {
+  return encoding === "exact"
+    ? /^-?\d+:-?\d+$/u.test(identity)
+    : /^\d+:\d+$/u.test(identity) &&
+        identity.split(":").every((part) => Number.isFinite(Number(part)));
+}
+
 /** Released numeric-stat receipts compare in their original, rounded Number domain. */
 export function immutableIdentityMatches(
   observed: string,
   recorded: string,
   encoding: ImmutableIdentityEncoding | undefined,
 ): boolean {
-  if (!/^\d+:\d+$/u.test(observed) || !/^\d+:\d+$/u.test(recorded)) {
+  if (!/^-?\d+:-?\d+$/u.test(observed) || !isImmutableIdentity(recorded, encoding)) {
     return false;
   }
   return encoding === "exact"
     ? observed === recorded
     : observed.split(":").every((part, index) => {
-        const stored = Number(recorded.split(":")[index]);
-        return Number.isFinite(stored) && Number(part) === stored;
+        // Bigint stats expose signed int64 IDs; numeric stats used uint64 IDs.
+        // Positive legacy audit strings can already be rounded past uint64 max.
+        const value = BigInt(part);
+        const projected = value < 0n ? Number(BigInt.asUintN(64, value)) : Number(part);
+        return projected === Number(recorded.split(":")[index]);
       });
 }
 
@@ -77,7 +90,7 @@ export function assertImmutableIdentityEncoding(
 ): void {
   if (
     (encoding !== undefined && encoding !== "exact" && encoding !== "legacy") ||
-    identities.some((identity) => !immutableIdentityMatches(identity, identity, encoding))
+    identities.some((identity) => !isImmutableIdentity(identity, encoding))
   ) {
     throw new Error("Immutable receipt contains an invalid file identity or encoding.");
   }
@@ -89,9 +102,11 @@ export function assertImmutableDescriptorIdentityEncoding(
   assertImmutableIdentityEncoding(descriptor.identityEncoding, [
     descriptor.rootIdentity,
     descriptor.releasesIdentity,
-    descriptor.current.identity,
-    descriptor.current.pointerIdentity,
   ]);
+  assertImmutableIdentityEncoding(
+    descriptor.current.identityEncoding ?? descriptor.identityEncoding,
+    [descriptor.current.identity, descriptor.current.pointerIdentity],
+  );
 }
 
 export function assertImmutableDescriptorCurrent(descriptor: ImmutableInstallDescriptor): void {

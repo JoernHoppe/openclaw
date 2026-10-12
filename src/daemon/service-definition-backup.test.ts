@@ -476,12 +476,14 @@ describe("service definition backup receipts", () => {
       const exactReceipt = await f.capture.finish();
       const serialized = JSON.stringify(exactReceipt, (key, value: unknown) => {
         if ((key === "dev" || key === "ino") && typeof value === "string") {
-          return Number(BigInt(value));
+          return Number(BigInt.asUintN(64, BigInt(value)));
         }
         return value;
       });
       const receipt = GatewayServiceDefinitionBackupReceiptSchema.parse(JSON.parse(serialized));
-      expect(receipt.files[0]!.after!.ino).toBe(Number(BigInt(exactReceipt.files[0]!.after!.ino)));
+      expect(receipt.files[0]!.after!.ino).toBe(
+        Number(BigInt.asUintN(64, BigInt(exactReceipt.files[0]!.after!.ino))),
+      );
       const candidate = await fs.readFile(f.sourcePath);
       if (replaced) {
         const replacement = `${f.sourcePath}.operator`;

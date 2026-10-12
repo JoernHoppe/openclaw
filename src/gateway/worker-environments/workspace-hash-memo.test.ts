@@ -9,6 +9,7 @@ import {
   createWorkspaceReconcileMetrics,
   MAX_WORKSPACE_HASH_MEMO_BYTES,
   MAX_WORKSPACE_HASH_MEMO_ENTRIES,
+  parseRemoteWorkspaceManifestEnvelope,
   pruneWorkspaceHashMemo,
   recordRemoteWorkspaceHashMetrics,
   serializeRemoteWorkspaceHashMemo,
@@ -146,6 +147,21 @@ describe("workspace hash memo", () => {
       metrics,
     );
     expect(metrics).toMatchObject({ contentHashCount: 2, memoHitCount: 0 });
+  });
+
+  it("preserves signed exact identities across the remote memo envelope", () => {
+    const envelope = {
+      version: 1,
+      manifestRef: `sha256:${"f".repeat(64)}`,
+      memo: [["worker:-1:-9223372036854775807:1:2:3", "a".repeat(64)]],
+      metrics: { ...hashMetrics(), memoTruncatedCount: 0, totalDurationMs: 0 },
+    };
+    expect(parseRemoteWorkspaceManifestEnvelope(JSON.stringify(envelope))).toEqual(envelope);
+    expect(() =>
+      parseRemoteWorkspaceManifestEnvelope(
+        JSON.stringify({ ...envelope, memo: [["worker:-1:-2:-1:2:3", "a".repeat(64)]] }),
+      ),
+    ).toThrow();
   });
 
   it("aggregates remote metrics and bounds a maximum-entry memo envelope", () => {

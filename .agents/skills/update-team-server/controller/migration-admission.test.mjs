@@ -129,11 +129,11 @@ test("native start permit stays revoked until the selected release matches the c
   assert.equal(existsSync(f.permit), true);
 });
 
-for (const encoding of ["exact", "legacy-number"]) test(`native ${encoding} receipt rebinds high file IDs and retains its comparison domain`, t => {
+for (const base of [2n ** 53n, -(2n ** 63n)]) for (const encoding of ["exact", "legacy-number"]) test(`native ${encoding} receipt rebinds high file IDs (${base}) and retains its comparison domain`, t => {
   const f = fixture(t); f.ok(f.create());
   const original = f.read();
   mkdirSync(dirname(f.backupRoot), { recursive: true, mode: 0o700 });
-  const high = 2n ** 53n + (encoding === "legacy-number" ? 1n : 0n);
+  const high = base + (encoding === "legacy-number" ? 1n : 0n);
   assert.equal(Number(2n ** 53n), Number(2n ** 53n + 1n), "the regression must cover colliding numeric IDs");
   const files = [f.config, f.databasePath, f.agentDatabasePath];
   const kernelIds = files.map((path, index) => {
@@ -151,7 +151,7 @@ for (const encoding of ["exact", "legacy-number"]) test(`native ${encoding} rece
     configIdentity: { path: f.config, dev: kernelIds[0].dev, ino: kernelIds[0].ino } };
   if (encoding === "legacy-number") {
     for (const value of [...Object.values(receipt.databaseIdentities), receipt.configIdentity]) {
-      value.dev = Number(value.dev); value.ino = Number(value.ino);
+      value.dev = Number(BigInt.asUintN(64, BigInt(value.dev))); value.ino = Number(BigInt.asUintN(64, BigInt(value.ino)));
     }
   }
   const receiptPath = `${f.backupRoot}.receipt.json`;
@@ -161,10 +161,10 @@ for (const encoding of ["exact", "legacy-number"]) test(`native ${encoding} rece
   assert.equal(rebound.protectedPaths[1].inode, (high + 4n).toString());
   const projected = JSON.parse(f.ok(run("journal-original-witness", [f.journal, JSON.stringify(rebound)])));
   assert(projected.length > 0);
-  assert.equal(JSON.parse(projected[0])[3], encoding === "exact" ? (high + 8n).toString() : Number(high + 8n));
+  assert.equal(JSON.parse(projected[0])[3], encoding === "exact" ? (high + 8n).toString() : Number(BigInt.asUintN(64, high + 8n)));
   f.ok(run("session-preservation-verify", [f.initial, f.initial, f.databasePath], projected));
   const saved = readFileSync(f.journal);
-  kernelIds[0].ino = (high + (encoding === "exact" ? 1n : 3n)).toString();
+  kernelIds[0].ino = (high + (encoding === "exact" ? 1n : 16384n)).toString();
   assert.notEqual(run("journal-native-state", [f.journal, JSON.stringify(rebound), f.config, f.databasePath]).status, 0);
   assert.deepEqual(readFileSync(f.journal), saved);
   assert.equal(existsSync(receiptPath), true);

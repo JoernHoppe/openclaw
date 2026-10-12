@@ -97,37 +97,48 @@ describe("service backup receipt identity compatibility", () => {
     },
   );
 
-  it("keeps rounded legacy IDs explicit while exact receipts detect a same-double replacement", () => {
-    const ino = 9007199254740992n;
-    const state = {
-      sha256: "a".repeat(64),
-      mode: 0o600,
-      dev: "7",
-      ino: ino.toString(),
-      size: 10,
-      mtimeMs: 1,
-      ctimeMs: 1,
-    };
-    const legacy = GatewayServiceDefinitionBackupReceiptSchema.parse({
-      id: "00000000-0000-4000-8000-000000000000",
-      files: [
-        {
-          sourcePath: path.resolve("legacy.service"),
-          before: null,
-          after: {
-            ...state,
-            dev: Number(BigInt(state.dev)),
-            ino: Number(ino),
+  it.each([
+    { field: "ino", exactId: "9007199254740992", legacyId: 9007199254740992 },
+    { field: "ino", exactId: "-9223372036854775808", legacyId: 9223372036854775808 },
+    { field: "dev", exactId: "-9223372036854775808", legacyId: 9223372036854775808 },
+  ] as const)(
+    "keeps rounded legacy $field $exactId explicit while exact receipts detect a same-double replacement",
+    ({ field, exactId, legacyId }) => {
+      const state = {
+        sha256: "a".repeat(64),
+        mode: 0o600,
+        dev: "7",
+        ino: "42",
+        size: 10,
+        mtimeMs: 1,
+        ctimeMs: 1,
+        [field]: exactId,
+      };
+      const legacy = GatewayServiceDefinitionBackupReceiptSchema.parse({
+        id: "00000000-0000-4000-8000-000000000000",
+        files: [
+          {
+            sourcePath: path.resolve("legacy.service"),
+            before: null,
+            after: {
+              ...state,
+              dev: 7,
+              ino: 42,
+              [field]: legacyId,
+            },
           },
-        },
-      ],
-      guards: [],
-    }).files[0]!.after!;
-    expect(legacy.ino).toBe(Number(ino));
-    expect(matchesServiceFilePublication(state, legacy)).toBe(true);
-    const replaced = { ...state, ino: (ino + 1n).toString() };
-    expect(Number(ino + 1n)).toBe(Number(ino));
-    expect(matchesServiceFilePublication(replaced, legacy)).toBe(true);
-    expect(matchesServiceFilePublication(replaced, state)).toBe(false);
-  });
+        ],
+        guards: [],
+      }).files[0]!.after!;
+      expect(legacy[field]).toBe(legacyId);
+      expect(matchesServiceFilePublication(state, legacy)).toBe(true);
+      expect(matchesServiceFilePublication({ ...state, [field]: legacyId }, legacy)).toBe(true);
+      expect(matchesServiceFilePublication(state, state)).toBe(true);
+      const replacedId = BigInt(exactId) + 1n;
+      const replaced = { ...state, [field]: replacedId.toString() };
+      expect(Number(BigInt.asUintN(64, replacedId))).toBe(legacyId);
+      expect(matchesServiceFilePublication(replaced, legacy)).toBe(true);
+      expect(matchesServiceFilePublication(replaced, state)).toBe(false);
+    },
+  );
 });

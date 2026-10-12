@@ -79,15 +79,20 @@ function statLegacyAuditRawCheckpoint(sourcePath: string): LegacyAuditFileCheckp
 function auditIdentityMatches(left: number | string, right: number | string): boolean {
   if (typeof left === "number" || typeof right === "number") {
     // Released numeric receipts cannot distinguish IDs rounded to the same double.
-    // Keep that legacy limit until an observed identity is written as exact text.
+    // Their Stats IDs were unsigned; Node's BigInt Stats can expose signed int64 IDs.
     const legacy = typeof left === "number" ? left : right;
     const other = typeof left === "number" ? right : left;
-    return (
-      Number.isInteger(legacy) &&
-      (typeof other === "number"
-        ? Number.isInteger(other) && legacy === other
-        : /^(0|-?[1-9][0-9]*)$/u.test(other) && legacy === Number(other))
-    );
+    if (!Number.isInteger(legacy)) {
+      return false;
+    }
+    if (typeof other === "number") {
+      return Number.isInteger(other) && legacy === other;
+    }
+    if (!/^(0|-?[1-9][0-9]*)$/u.test(other)) {
+      return false;
+    }
+    const observed = BigInt(other);
+    return legacy === Number(observed < 0n ? BigInt.asUintN(64, observed) : observed);
   }
   return /^(0|-?[1-9][0-9]*)$/u.test(left) && left === right;
 }

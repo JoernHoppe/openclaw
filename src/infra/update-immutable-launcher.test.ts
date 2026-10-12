@@ -17,9 +17,24 @@ import type { ImmutableInstallDescriptor } from "./update-immutable-install-sche
 
 const temporary = useAutoCleanupTempDirTracker(afterEach);
 
-it.each(["legacy", "exact", "candidate"] as const)(
-  "admits only legacy rounded startup IDs (%s)",
-  (variant) => {
+it.each(
+  [9007199254740993n, -9223372036854775807n, -1n].flatMap((observed) =>
+    (
+      [
+        "legacy",
+        "exact",
+        "signed-exact",
+        "exact-current",
+        "candidate",
+        "changed",
+        "negative-legacy",
+        "malformed-legacy",
+      ] as const
+    ).map((variant) => ({ observed, variant })),
+  ),
+)(
+  "validates startup file IDs without relaxing exact receipts ($observed, $variant)",
+  ({ observed, variant }) => {
     const root = path.join(
       fs.realpathSync(temporary.make("immutable-large-launch-")),
       "installation",
@@ -34,19 +49,30 @@ it.each(["legacy", "exact", "candidate"] as const)(
     const control = resolvePackageActivationControl(resolvePackageActivationAnchor(root));
     fs.mkdirSync(control, { mode: 0o755 });
     const journal = path.join(control, "operation.sqlite");
+    const value =
+      variant === "signed-exact"
+        ? String(observed)
+        : variant === "negative-legacy"
+          ? "-1"
+          : variant === "malformed-legacy"
+            ? "1e2"
+            : String(Number(BigInt.asUintN(64, observed)));
+    const recorded = `${value}:${value}`;
+    const current = variant === "changed" ? observed + 4096n : observed;
     const selected = {
       sha,
       path: generation,
-      identity: "1:9007199254740992",
-      pointerIdentity: "1:9007199254740992",
+      identity: variant === "exact-current" ? `${observed}:${observed}` : recorded,
+      pointerIdentity: variant === "exact-current" ? `${observed}:${observed}` : recorded,
+      ...(variant === "exact-current" ? { identityEncoding: "exact" } : {}),
     };
     const descriptor = {
       version: 2,
       kind: "immutable",
       activationEnabled: true,
       root,
-      rootIdentity: "1:9007199254740992",
-      releasesIdentity: "1:9007199254740992",
+      rootIdentity: recorded,
+      releasesIdentity: recorded,
       current: selected,
       runtime: { path: fs.realpathSync(process.execPath) },
     };
@@ -69,10 +95,12 @@ it.each(["legacy", "exact", "candidate"] as const)(
               String(file),
             )
           ) {
-            Object.defineProperty(stat, "dev", { value: typeof stat.dev === "bigint" ? 1n : 1 });
-            Object.defineProperty(stat, "ino", {
-              value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
-            });
+            for (const field of ["dev", "ino"] as const) {
+              Object.defineProperty(stat, field, {
+                value:
+                  typeof stat[field] === "bigint" ? current : Number(BigInt.asUintN(64, current)),
+              });
+            }
           }
         }
         return stat;
@@ -99,7 +127,7 @@ it.each(["legacy", "exact", "candidate"] as const)(
       db.prepare("INSERT INTO immutable_installation VALUES (1, ?, ?)").run(
         JSON.stringify({
           ...descriptor,
-          ...(variant === "exact" ? { identityEncoding: "exact" } : {}),
+          ...(["exact", "signed-exact"].includes(variant) ? { identityEncoding: "exact" } : {}),
         }),
         JSON.stringify(activation),
       );
@@ -124,8 +152,10 @@ it.each(["legacy", "exact", "candidate"] as const)(
       process: runtime,
       console: { error: vi.fn() },
     });
-    expect(execve.mock.calls.length).toBe(variant === "legacy" ? 1 : 0);
-    expect(runtime.exitCode).toBe(variant === "legacy" ? 0 : 78);
+    const accepted =
+      variant === "legacy" || variant === "signed-exact" || variant === "exact-current";
+    expect(execve.mock.calls.length).toBe(accepted ? 1 : 0);
+    expect(runtime.exitCode).toBe(accepted ? 0 : 78);
   },
 );
 

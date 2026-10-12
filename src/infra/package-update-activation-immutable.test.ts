@@ -242,58 +242,84 @@ it("persists adoption and preparation without changing the selected generation",
   expect(fs.statSync(journalPath()).mode & 0o777).toBe(0o644);
 });
 
-it("admits rounded legacy layout IDs and upgrades observed identities on the next owner write", async () => {
-  createImmutableInstallRecord(descriptor, () => {});
-  const observed = 9007199254740993n;
-  const rounded = String(Number(observed));
-  const files = new Set([
-    root,
-    path.join(root, "releases"),
-    descriptor.current.path,
-    path.join(root, "current"),
-  ]);
-  const lstat = vi.mocked(fs.lstatSync).getMockImplementation()!;
-  vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
-    const stat = lstat(...args);
-    if (stat && files.has(String(args[0]))) {
-      Object.defineProperty(stat, "ino", {
-        value: typeof stat.ino === "bigint" ? observed : Number(observed),
-      });
+it.each([
+  ["large inode", "ino", 9007199254740993n],
+  ["signed high-bit inode", "ino", -9223372036854775807n],
+  ["signed high-bit device", "dev", -9223372036854775807n],
+  ["unsigned-max inode", "ino", -1n],
+] as const)(
+  "admits legacy layout IDs and upgrades observed identities on the next owner write (%s)",
+  async (_name, component, observed) => {
+    createImmutableInstallRecord(descriptor, () => {});
+    let current: bigint = observed;
+    const rounded = String(Number(BigInt.asUintN(64, observed)));
+    const files = new Set([
+      root,
+      path.join(root, "releases"),
+      descriptor.current.path,
+      path.join(root, "current"),
+    ]);
+    const lstat = vi.mocked(fs.lstatSync).getMockImplementation()!;
+    vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+      const stat = lstat(...args);
+      if (stat && files.has(String(args[0]))) {
+        Object.defineProperty(stat, component, {
+          value:
+            typeof stat[component] === "bigint" ? current : Number(BigInt.asUintN(64, current)),
+        });
+      }
+      return stat;
+    });
+    const legacy = structuredClone(descriptor);
+    delete legacy.identityEncoding;
+    delete legacy.current.identityEncoding;
+    const withComponent = (value: string, id: string) => {
+      const parts = value.split(":");
+      parts[component === "dev" ? 0 : 1] = id;
+      return parts.join(":");
+    };
+    legacy.rootIdentity = withComponent(legacy.rootIdentity, rounded);
+    legacy.releasesIdentity = withComponent(legacy.releasesIdentity, rounded);
+    legacy.current.identity = withComponent(legacy.current.identity, rounded);
+    legacy.current.pointerIdentity = withComponent(legacy.current.pointerIdentity, rounded);
+    const db = new DatabaseSync(journalPath());
+    try {
+      for (const invalid of ["-1", "--1"]) {
+        db.prepare("UPDATE immutable_installation SET descriptor_json = ?").run(
+          JSON.stringify({ ...legacy, rootIdentity: withComponent(legacy.rootIdentity, invalid) }),
+        );
+        expect(read).toThrow();
+      }
+      db.prepare("UPDATE immutable_installation SET descriptor_json = ?").run(
+        JSON.stringify(legacy),
+      );
+    } finally {
+      db.close();
     }
-    return stat;
-  });
-  const legacy = structuredClone(descriptor);
-  delete legacy.identityEncoding;
-  delete legacy.current.identityEncoding;
-  const withInode = (value: string, inode: string) => `${value.split(":")[0]}:${inode}`;
-  legacy.rootIdentity = withInode(legacy.rootIdentity, rounded);
-  legacy.releasesIdentity = withInode(legacy.releasesIdentity, rounded);
-  legacy.current.identity = withInode(legacy.current.identity, rounded);
-  legacy.current.pointerIdentity = withInode(legacy.current.pointerIdentity, rounded);
-  const db = new DatabaseSync(journalPath());
-  try {
-    db.prepare("UPDATE immutable_installation SET descriptor_json = ?").run(JSON.stringify(legacy));
-  } finally {
-    db.close();
-  }
-  const restored = read();
-  expect(restored.descriptor).toEqual(legacy);
-  expect((await readImmutableInstallRecordForRecovery(root)).record.descriptor).toEqual(legacy);
-  const upgraded = recordImmutablePreparedGeneration(restored, prepared, () => {});
-  expect(upgraded.descriptor.identityEncoding).toBe("exact");
-  expect(upgraded.descriptor.rootIdentity).toBe(withInode(legacy.rootIdentity, String(observed)));
-  expect(upgraded.descriptor.current).toMatchObject({
-    identityEncoding: "exact",
-    identity: withInode(legacy.current.identity, String(observed)),
-    pointerIdentity: withInode(legacy.current.pointerIdentity, String(observed)),
-  });
-  const changed = structuredClone(upgraded.descriptor);
-  changed.rootIdentity = withInode(changed.rootIdentity, rounded);
-  expect(() =>
-    updateImmutableInstallRecord(upgraded, { ...upgraded, descriptor: changed }, () => {}),
-  ).toThrow("cannot transfer");
-  expect(read()).toEqual(upgraded);
-});
+    const restored = read();
+    expect(restored.descriptor).toEqual(legacy);
+    expect((await readImmutableInstallRecordForRecovery(root)).record.descriptor).toEqual(legacy);
+    current = observed + 4096n;
+    expect(read).toThrow("does not match the installation");
+    current = observed;
+    const upgraded = recordImmutablePreparedGeneration(restored, prepared, () => {});
+    expect(upgraded.descriptor.identityEncoding).toBe("exact");
+    expect(upgraded.descriptor.rootIdentity).toBe(
+      withComponent(legacy.rootIdentity, String(observed)),
+    );
+    expect(upgraded.descriptor.current).toMatchObject({
+      identityEncoding: "exact",
+      identity: withComponent(legacy.current.identity, String(observed)),
+      pointerIdentity: withComponent(legacy.current.pointerIdentity, String(observed)),
+    });
+    const changed = structuredClone(upgraded.descriptor);
+    changed.rootIdentity = withComponent(changed.rootIdentity, String(observed + 1n));
+    expect(() =>
+      updateImmutableInstallRecord(upgraded, { ...upgraded, descriptor: changed }, () => {}),
+    ).toThrow("cannot transfer");
+    expect(read()).toEqual(upgraded);
+  },
+);
 
 it.each(["candidate-verification-pending", "private error: token=fixture-secret /private/state"])(
   "projects retained recovery after a fresh record read without disclosing private state (%s)",

@@ -41,6 +41,12 @@ describe("memory host event export recovery", () => {
       writable: true,
     },
     {
+      name: "unsigned high-bit v3 IDs",
+      version: 3,
+      identity: { dev: -9_223_372_036_854_775_807n, ino: -9_223_372_036_854_775_805n },
+      writable: true,
+    },
+    {
       name: "non-numeric-origin v3 spelling",
       version: 3,
       identity: { dev: 7n, ino: 9_007_199_254_740_993n },
@@ -122,7 +128,10 @@ describe("memory host event export recovery", () => {
           ...marker,
           schemaVersion: version,
           ...(version === 3 && !exactLegacySpelling
-            ? { fileDev: String(Number(identity.dev)), fileIno: String(Number(identity.ino)) }
+            ? {
+                fileDev: String(Number(BigInt.asUintN(64, identity.dev))),
+                fileIno: String(Number(BigInt.asUintN(64, identity.ino))),
+              }
             : {}),
         })}\n`;
         await fs.writeFile(ownerPath, ownerContent);

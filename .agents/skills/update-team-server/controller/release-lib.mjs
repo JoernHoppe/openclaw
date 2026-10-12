@@ -74,7 +74,7 @@ const fstatSync = fd => fileMetadata(nativeFstatSync(fd, { bigint: true }));
 
 function isFileId(value) {
   return (typeof value === "number" && Number.isInteger(value) && value >= 0) ||
-    (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value));
+    (typeof value === "string" && /^(0|-?[1-9][0-9]*)$/.test(value));
 }
 
 function storedFileId(value, encoding) {
@@ -83,7 +83,7 @@ function storedFileId(value, encoding) {
   const identity = encoding === "legacy-number" || typeof value === "number"
     ? { encoding: "legacy-number", value: Number(value) }
     : { encoding: "exact", value };
-  if (identity.encoding === "legacy-number" && !Number.isInteger(identity.value)) reject("legacy file identity is invalid");
+  if (identity.encoding === "legacy-number" && (!Number.isInteger(identity.value) || identity.value < 0)) reject("legacy file identity is invalid");
   return identity;
 }
 
@@ -95,8 +95,11 @@ function exactFileId(value) {
 function fileIdMatches(actual, expected, encoding) {
   if (!isFileId(actual) || !isFileId(expected)) return false;
   const stored = storedFileId(expected, encoding);
+  // Bigint stat fields are signed; keep already-rounded positive legacy text unchanged.
+  const legacyActual = typeof actual === "string" && actual.startsWith("-")
+    ? BigInt.asUintN(64, BigInt(actual)) : actual;
   return stored.encoding === "legacy-number"
-    ? Number(actual) === stored.value
+    ? Number(legacyActual) === stored.value
     : typeof actual === "string" && actual === stored.value;
 }
 

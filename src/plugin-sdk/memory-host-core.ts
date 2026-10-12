@@ -170,11 +170,12 @@ async function readMemoryHostEventExportOwnership(
   }
   let exportContent: string | undefined;
   const exportIdentity = openedExport.exactIdentity;
+  // Numeric stats exposed unsigned IDs; bigint stats expose signed 64-bit IDs.
   const identityOwned =
     storedIdentity !== undefined &&
     (legacyIdentity
-      ? Number(exportIdentity.dev) === Number(storedIdentity.dev) &&
-        Number(exportIdentity.ino) === Number(storedIdentity.ino)
+      ? Number(BigInt.asUintN(64, exportIdentity.dev)) === Number(storedIdentity.dev) &&
+        Number(BigInt.asUintN(64, exportIdentity.ino)) === Number(storedIdentity.ino)
       : sameFileIdentity(storedIdentity, exportIdentity));
   {
     await using exportOwner = openedExport;

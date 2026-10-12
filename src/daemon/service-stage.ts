@@ -65,11 +65,15 @@ export function matchesServiceFilePublication(
     current !== null &&
     (["dev", "ino"] as const).every((key) => {
       const retained = prepared[key];
+      const observed = current[key];
+      // Numeric stats exposed unsigned IDs; Node's bigint stats can be signed.
       // Legacy writers lost these bits: a same-double replacement is undetectable
       // until a successful observation/publication upgrades the receipt.
       return typeof retained === "number"
-        ? Number(current[key]) === retained
-        : current[key] === retained;
+        ? (typeof observed === "number"
+            ? observed
+            : Number(BigInt.asUintN(64, BigInt(observed)))) === retained
+        : observed === retained;
     }) &&
     (["sha256", "mode", "size", "mtimeMs"] as const).every((key) => current[key] === prepared[key])
   );

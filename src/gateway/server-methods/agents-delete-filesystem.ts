@@ -31,10 +31,16 @@ function cleanupPathIdentity(stat: { dev: bigint; ino: bigint } | undefined) {
 }
 
 function cleanupPathIdentityMatches(observed: string, persisted: string | number): boolean {
-  // Legacy numeric journals retain their same-double replacement limit until rewritten.
-  return typeof persisted === "number"
-    ? Number.isInteger(persisted) && Number(observed) === persisted
-    : observed === persisted;
+  if (typeof persisted !== "number") {
+    return observed === persisted;
+  }
+  // Legacy numeric Stats were unsigned and retain their same-double replacement limit.
+  // Node's BigInt Stats can expose those IDs as signed int64 values.
+  const exact = BigInt(observed);
+  return (
+    Number.isInteger(persisted) &&
+    Number(exact < 0n ? BigInt.asUintN(64, exact) : exact) === persisted
+  );
 }
 
 export async function statAgentCleanupPath(cleanupPath: AgentDeleteCleanupPath) {

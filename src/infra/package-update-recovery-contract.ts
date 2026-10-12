@@ -8,7 +8,7 @@ const launcherName = text.refine(
 );
 const fingerprint = z.strictObject({
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
-  identity: z.string().regex(/^\d+:\d+$/u),
+  identity: z.string().regex(/^-?\d+:-?\d+$/u),
   version: text,
 });
 const selection = z.strictObject({

@@ -12,21 +12,28 @@ const identity = (file) => {
   const stat = fs.lstatSync(file, { bigint: true });
   return `${stat.dev}:${stat.ino}`;
 };
-const matchesIdentity = (observed, recorded, encoding) => {
+const validIdentity = (value, encoding) => {
   if (
-    ![observed, recorded].every((value) => typeof value === "string" && /^\d+:\d+$/u.test(value))
+    typeof value !== "string" ||
+    (encoding !== undefined && !["exact", "legacy"].includes(encoding))
   ) {
     return false;
   }
   return encoding === "exact"
+    ? /^-?\d+:-?\d+$/u.test(value)
+    : /^\d+:\d+$/u.test(value) && value.split(":").every((part) => Number.isFinite(Number(part)));
+};
+const matchesIdentity = (observed, recorded, encoding) => {
+  if (!validIdentity(observed, "exact") || !validIdentity(recorded, encoding)) {
+    return false;
+  }
+  return encoding === "exact"
     ? observed === recorded
-    : observed
-        .split(":")
-        .every(
-          (part, index) =>
-            Number.isFinite(Number(recorded.split(":")[index])) &&
-            Number(part) === Number(recorded.split(":")[index]),
-        );
+    : observed.split(":").every((part, index) => {
+        const value = BigInt(part);
+        const projected = value < 0n ? Number(BigInt.asUintN(64, value)) : Number(part);
+        return projected === Number(recorded.split(":")[index]);
+      });
 };
 
 function admitActivation(root, generation) {
@@ -88,18 +95,18 @@ function admitActivation(root, generation) {
       throw new Error("immutable activation descriptor has an unsupported identity encoding");
     }
     {
-      const identities = [descriptor.rootIdentity, descriptor.releasesIdentity];
+      const identities = [
+        [descriptor.rootIdentity, descriptor.identityEncoding],
+        [descriptor.releasesIdentity, descriptor.identityEncoding],
+      ];
       if (recordObject(descriptor.current)) {
-        identities.push(descriptor.current.identity, descriptor.current.pointerIdentity);
+        const encoding = descriptor.current.identityEncoding ?? descriptor.identityEncoding;
+        identities.push(
+          [descriptor.current.identity, encoding],
+          [descriptor.current.pointerIdentity, encoding],
+        );
       }
-      if (
-        identities.some(
-          (value) =>
-            typeof value !== "string" ||
-            !/^\d+:\d+$/u.test(value) ||
-            !matchesIdentity(value, value, descriptor.identityEncoding),
-        )
-      ) {
+      if (identities.some(([value, encoding]) => !validIdentity(value, encoding))) {
         throw new Error("immutable activation descriptor contains an invalid file identity");
       }
     }

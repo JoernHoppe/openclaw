@@ -39,6 +39,13 @@ describe("legacy audit recovery identity persistence", () => {
         { replaced: true },
         { replaced: false, observedIno: "9007199254740993", upgrade: true },
         { replaced: true, observedIno: "9007199254740993", exact: true },
+        {
+          replaced: false,
+          observedIno: "-1",
+          storedIno: 18_446_744_073_709_552_000,
+          upgrade: true,
+        },
+        { replaced: true, observedIno: "-1", storedIno: "-2", exact: true },
       ]) {
         const { replaced } = scenario;
         const directory = fixture.createTempDir("legacy-audit-restore-");
@@ -54,11 +61,13 @@ describe("legacy audit recovery identity persistence", () => {
           scrubPatternBase64: scrubPattern.toString("base64"),
           target: {
             dev: scenario.exact ? String(identity.dev) : identity.dev,
-            ino: scenario.exact
-              ? "9007199254740992"
-              : scenario.observedIno
-                ? Number(scenario.observedIno)
-                : identity.ino,
+            ino:
+              scenario.storedIno ??
+              (scenario.exact
+                ? "9007199254740992"
+                : scenario.observedIno
+                  ? Number(scenario.observedIno)
+                  : identity.ino),
             size: sourceRaw.length,
           },
         })}\n`;
@@ -126,6 +135,23 @@ describe("legacy audit recovery identity persistence", () => {
           restored: false,
           warnings: [expect.stringContaining("no longer matches its restore journal target")],
         },
+        {
+          restored: true,
+          warnings: [],
+          restoredRaw: sourceRaw.toString("utf8"),
+          nextJournal: expect.objectContaining({
+            schemaVersion: 7,
+            target: {
+              dev: expect.any(String),
+              ino: "-1",
+              size: sourceRaw.length,
+            },
+          }),
+        },
+        {
+          restored: false,
+          warnings: [expect.stringContaining("no longer matches its restore journal target")],
+        },
       ]);
       for (const {
         file,
@@ -181,5 +207,25 @@ describe("legacy audit recovery identity persistence", () => {
         target: journal.target,
       }),
     ).toThrow("invalid legacy audit recovery restore identity");
+  });
+
+  it("projects high-bit observations as released unsigned stats without changing retained numbers", () => {
+    const observed = { dev: "-9223372036854775808", ino: "-1" };
+    const legacy = { dev: 9_223_372_036_854_775_808, ino: 18_446_744_073_709_552_000 };
+    expect(legacyAuditFileIdentitiesMatch(legacy, observed)).toBe(true);
+    expect(legacyAuditFileIdentitiesMatch(observed, legacy)).toBe(true);
+    expect(legacyAuditFileIdentitiesMatch(observed, { ...observed, ino: "-2" })).toBe(false);
+    expect(legacyAuditFileIdentitiesMatch({ dev: 1, ino: -1 }, { dev: "1", ino: "-1" })).toBe(
+      false,
+    );
+    expect(legacyAuditFileIdentitiesMatch({ dev: 1, ino: -1 }, { dev: 1, ino: legacy.ino })).toBe(
+      false,
+    );
+    expect(
+      legacyAuditFileIdentitiesMatch(
+        { dev: 1, ino: legacy.ino },
+        { dev: "1", ino: "18446744073709552000" },
+      ),
+    ).toBe(true);
   });
 });

@@ -26,7 +26,7 @@ export const MAX_WORKSPACE_HASH_MEMO_BYTES = 8 * 1024 * 1024;
 export const MAX_WORKSPACE_HASH_MEMO_ENTRIES = 25_000;
 
 const MANIFEST_REF_PATTERN = /^sha256:[a-f0-9]{64}$/u;
-const WORKER_HASH_IDENTITY_PATTERN = /^worker:\d+:\d+:\d+:\d+:\d+$/u;
+const WORKER_HASH_IDENTITY_PATTERN = /^worker:-?\d+:-?\d+:\d+:\d+:\d+$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const remoteWorkspaceManifestEnvelopeSchema = z
   .object({

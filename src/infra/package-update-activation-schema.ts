@@ -6,7 +6,7 @@ const absolutePath = z
   .min(1)
   .max(4096)
   .refine((value) => path.resolve(value) === value);
-export const packageActivationIdentitySchema = z.string().regex(/^\d+:\d+$/u);
+export const packageActivationIdentitySchema = z.string().regex(/^-?\d+:-?\d+$/u);
 const fingerprint = z.strictObject({
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
   identity: packageActivationIdentitySchema,

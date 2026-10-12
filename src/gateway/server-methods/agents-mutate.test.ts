@@ -1444,22 +1444,39 @@ describe("agents.delete", () => {
     { encoding: "released rounded numeric", savedIno: 9_007_199_254_740_992, replaced: true },
     { encoding: "exact full-width", savedIno: "9007199254740992", replaced: false },
     { encoding: "exact full-width", savedIno: "9007199254740992", replaced: true },
+    {
+      encoding: "released unsigned high-bit",
+      savedDev: 9_223_372_036_854_775_808,
+      observedDev: -9_223_372_036_854_775_808n,
+      savedIno: 9_223_372_036_854_775_808,
+      observedIno: -9_223_372_036_854_775_807n,
+      replaced: false,
+    },
+    {
+      encoding: "released unsigned high-bit",
+      savedIno: 9_223_372_036_854_775_808,
+      observedIno: -9_223_372_036_854_771_712n,
+      replaced: true,
+    },
+    { encoding: "exact signed high-bit", savedIno: "-9223372036854775808", replaced: false },
+    { encoding: "exact signed high-bit", savedIno: "-9223372036854775808", replaced: true },
   ])(
     "resumes $encoding cleanup through the deletion handler (replaced=$replaced)",
-    async ({ savedIno, replaced }) => {
+    async ({ savedDev = 42, observedDev = 42n, savedIno, observedIno: suppliedIno, replaced }) => {
       const workspaceDir = path.resolve("/journal/workspace");
       // v2026.10.2 persisted the prepared numeric identity in cleanup_paths_json.
       const journal = deletionJournal({
         workspaceDir,
-        cleanupPaths: [cleanupPath(workspaceDir, { dev: 42, ino: savedIno })],
+        cleanupPaths: [cleanupPath(workspaceDir, { dev: savedDev, ino: savedIno })],
       });
       mocks.loadConfigReturn = { agents: { entries: { main: {} } } };
       mocks.readAgentDeletionJournal.mockReturnValue(journal);
       const observedIno =
-        typeof savedIno === "number" && !Number.isSafeInteger(savedIno)
+        suppliedIno ??
+        (typeof savedIno === "number" && !Number.isSafeInteger(savedIno)
           ? BigInt(savedIno) + (replaced ? 3n : 1n)
-          : BigInt(savedIno) + (replaced ? 1n : 0n);
-      mocks.fsLstat.mockResolvedValue(makeCleanupStat({ dev: 42n, ino: observedIno }));
+          : BigInt(savedIno) + (replaced ? 1n : 0n));
+      mocks.fsLstat.mockResolvedValue(makeCleanupStat({ dev: observedDev, ino: observedIno }));
       if (typeof savedIno === "string") {
         // Adjacent large native IDs are indistinguishable as JS numbers.
         expect(Number(BigInt(savedIno) + 1n)).toBe(Number(BigInt(savedIno)));
@@ -1481,7 +1498,7 @@ describe("agents.delete", () => {
       } else {
         expectTrashedWithinParent(workspaceDir);
         expect(retainedPath).not.toHaveProperty("note");
-        expect(retainedPath).toMatchObject({ dev: "42", ino: String(observedIno) });
+        expect(retainedPath).toMatchObject({ dev: String(observedDev), ino: String(observedIno) });
       }
       expect(mocks.beginAgentDeletionFinish).toHaveBeenCalledOnce();
     },

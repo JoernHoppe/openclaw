@@ -201,7 +201,7 @@ export async function prepareWorkerTurnAttachments(params: {
       );
     }
     const identity = result.stdout.trim();
-    if (!cleanup && !/^\d+:\d+$/.test(identity)) {
+    if (!cleanup && !/^-?\d+:-?\d+$/.test(identity)) {
       const kind = operation === "init" ? "directory" : "file";
       throw new Error(`Cloud attachment transfer returned an invalid ${kind} identity.`);
     }
