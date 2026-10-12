@@ -146,7 +146,12 @@ suite.define(() => {
         for (const request of before) {
           const params = requireRecord(request.params);
           expect(params).toMatchObject({
-            rowMode: params.hasBoard === true ? "dashboard" : "compact",
+            rowMode:
+              params.hasBoard === true
+                ? "dashboard"
+                : params.source === "sidebar" && params.spawnedBy === undefined
+                  ? "sidebar"
+                  : "compact",
             source: expect.any(String),
           });
         }
