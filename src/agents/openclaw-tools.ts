@@ -22,7 +22,10 @@ import {
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import { ensureAuthProfileStoreWithoutExternalProfiles } from "./auth-profiles/store-runtime.js";
-import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
+import {
+  resolveOpenClawPluginToolsForOptions,
+  resolveOpenClawPluginToolsForOptionsAsync,
+} from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import {
@@ -137,10 +140,13 @@ export async function createOpenClawToolsWithPreparation(
   );
   let next = steps.next();
   while (!next.done) {
-    const messageTool = await createMessageToolAsync(next.value);
+    const tools =
+      "message" in next.value
+        ? [await createMessageToolAsync(next.value.message)]
+        : await resolveOpenClawPluginToolsForOptionsAsync(next.value.plugins);
     shared.assertCurrent();
     captured.assertInvocationCurrent?.();
-    next = steps.next(messageTool);
+    next = steps.next(tools);
   }
   return next.value;
 }
@@ -168,7 +174,11 @@ export function createOpenClawTools(
   );
   let next = steps.next();
   while (!next.done) {
-    next = steps.next(createMessageTool(next.value));
+    next = steps.next(
+      "message" in next.value
+        ? [createMessageTool(next.value.message)]
+        : resolveOpenClawPluginToolsForOptions(next.value.plugins),
+    );
   }
   return next.value;
 }
@@ -179,7 +189,12 @@ function* createOpenClawToolsSteps(
   preparedWebSearchConfigured?: boolean,
   preparedMediaTools?: Readonly<ReturnType<typeof resolveOptionalMediaToolFactoryPlan>>,
   preparedProgressCardAvailable?: boolean,
-): Generator<Parameters<typeof createMessageTool>[0], AnyAgentTool[], AnyAgentTool> {
+): Generator<
+  | { message: Parameters<typeof createMessageTool>[0] }
+  | { plugins: Parameters<typeof resolveOpenClawPluginToolsForOptions>[0] },
+  AnyAgentTool[],
+  AnyAgentTool[]
+> {
   const resolvedConfig = options?.config;
   const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
   const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
@@ -336,25 +351,28 @@ function* createOpenClawToolsSteps(
   options?.recordToolPrepStage?.("openclaw-tools:web-fetch-tool");
   const messageTool = options?.disableMessageTool
     ? null
-    : yield {
-        ...options,
-        agentSessionKey: options?.messageToolTurnCapability?.sessionKey ?? options?.agentSessionKey,
-        runSessionKey:
-          options?.runSessionKey ??
-          (options?.messageToolTurnCapability ? options.agentSessionKey : undefined),
-        agentId: sessionAgentId,
-        messageActionTurnCapability:
-          options?.messageToolTurnCapability?.token ?? options?.messageActionTurnCapability,
-        admitScheduledInvocation: options?.admitScheduledMessageInvocation,
-        preparedMessageToolCatalog: options?.preparedModelRuntime?.messageToolCatalog,
-        currentMessagingTarget:
-          options?.currentMessagingTarget ??
-          (options?.sourceReplyOnly ? options.agentTo : undefined),
-        currentChannelProvider: options?.agentChannel,
-        requireExplicitTarget: options?.requireExplicitMessageTarget,
-        requesterSenderId: options?.requesterSenderId ?? undefined,
-        workspaceDir,
-      };
+    : ((yield {
+        message: {
+          ...options,
+          agentSessionKey:
+            options?.messageToolTurnCapability?.sessionKey ?? options?.agentSessionKey,
+          runSessionKey:
+            options?.runSessionKey ??
+            (options?.messageToolTurnCapability ? options.agentSessionKey : undefined),
+          agentId: sessionAgentId,
+          messageActionTurnCapability:
+            options?.messageToolTurnCapability?.token ?? options?.messageActionTurnCapability,
+          admitScheduledInvocation: options?.admitScheduledMessageInvocation,
+          preparedMessageToolCatalog: options?.preparedModelRuntime?.messageToolCatalog,
+          currentMessagingTarget:
+            options?.currentMessagingTarget ??
+            (options?.sourceReplyOnly ? options.agentTo : undefined),
+          currentChannelProvider: options?.agentChannel,
+          requireExplicitTarget: options?.requireExplicitMessageTarget,
+          requesterSenderId: options?.requesterSenderId ?? undefined,
+          workspaceDir,
+        },
+      })[0] ?? null);
   const heartbeatTool = options?.enableHeartbeatTool ? createHeartbeatResponseTool() : null;
   options?.recordToolPrepStage?.("openclaw-tools:message-tool");
   const nodesToolBase = createNodesTool({
@@ -653,10 +671,12 @@ function* createOpenClawToolsSteps(
   if (!options?.disablePluginTools) {
     allTools = [
       ...tools,
-      ...resolveOpenClawPluginToolsForOptions({
-        options: { ...options, activeProjectKeys },
-        resolvedConfig,
-        existingToolNames: new Set(tools.map((tool) => tool.name)),
+      ...(yield {
+        plugins: {
+          options: { ...options, activeProjectKeys },
+          resolvedConfig,
+          existingToolNames: new Set(tools.map((tool) => tool.name)),
+        },
       }),
     ];
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");

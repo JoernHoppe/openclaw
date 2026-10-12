@@ -52,7 +52,10 @@ import { prepareGitHubToolEnvironment } from "./github-tool-identity.js";
 import { resolveExecToolConfig } from "./lazy-exec-tool.js";
 import { resolveLocalModelLeanPreserveToolNames } from "./local-model-lean.js";
 import { createMemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
-import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
+import {
+  resolveOpenClawPluginToolsForOptions,
+  resolveOpenClawPluginToolsForOptionsAsync,
+} from "./openclaw-plugin-tools.js";
 import {
   createOpenClawTools,
   createOpenClawToolsWithPreparation,
@@ -105,7 +108,12 @@ function* assembleOpenClawCodingTools(
   skillReadResources?: SkillSnapshot["resolvedSkills"],
   onPolicyFilter?: (event: ToolPolicyFilterEvent) => void,
   preparedSurface?: { tools: AnyAgentTool[]; policy: ReturnType<typeof prepareCoreToolPolicy> },
-): Generator<OpenClawToolsOptions, AnyAgentTool[], AnyAgentTool[]> {
+): Generator<
+  | OpenClawToolsOptions
+  | { pluginTools: Parameters<typeof resolveOpenClawPluginToolsForOptions>[0] },
+  AnyAgentTool[],
+  AnyAgentTool[]
+> {
   const preparedTools = preparedSurface?.tools;
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
   const { isMemoryFlushRun, memoryFlush, memoryFlushWritePath } =
@@ -389,10 +397,12 @@ function* assembleOpenClawCodingTools(
   const pluginToolsOnly = filterToolsByClientCaps(
     includeOpenClawTools || !includePluginTools
       ? []
-      : resolveOpenClawPluginToolsForOptions({
-          options: pluginToolOptions,
-          resolvedConfig: options?.config,
-        }),
+      : yield {
+          pluginTools: {
+            options: pluginToolOptions,
+            resolvedConfig: options?.config,
+          },
+        },
     options?.clientCaps,
   );
   // Neither flush arm may regain execution tools outside its persistence projection.
@@ -653,7 +663,11 @@ export function createOpenClawCodingToolsInternal(
     const assembly = assembleOpenClawCodingTools(...args);
     let step = assembly.next();
     while (!step.done) {
-      step = assembly.next(createOpenClawTools(step.value));
+      step = assembly.next(
+        "pluginTools" in step.value
+          ? resolveOpenClawPluginToolsForOptions(step.value.pluginTools)
+          : createOpenClawTools(step.value),
+      );
     }
     return step.value;
   });
@@ -694,7 +708,10 @@ export async function createOpenClawCodingToolsInternalAsync(
       );
       let step = assembly.next();
       while (!step.done) {
-        const tools = await createOpenClawToolsWithPreparation(step.value, shared);
+        const tools =
+          "pluginTools" in step.value
+            ? await resolveOpenClawPluginToolsForOptionsAsync(step.value.pluginTools)
+            : await createOpenClawToolsWithPreparation(step.value, shared);
         shared.assertCurrent();
         step = assembly.next(tools);
       }
