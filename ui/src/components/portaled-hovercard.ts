@@ -1,3 +1,4 @@
+import { onSettled } from "solid-js";
 import { composedParent } from "../lib/navigation-click.ts";
 import { promoteToPopoverTopLayer } from "./menu-surface.ts";
 
@@ -102,7 +103,14 @@ export class PortaledHovercardController {
   renderContents(card: HTMLDivElement, update: () => void): void {
     const focused = card.contains(document.activeElement) ? document.activeElement : null;
     update();
-    if (focused && !card.contains(document.activeElement)) {
+    if (!focused) {
+      return;
+    }
+    // Solid commits roster updates after the caller returns.
+    onSettled(() => {
+      if (this.card !== card || document.activeElement !== document.body) {
+        return;
+      }
       // Live session links can move between sections or disappear after a roster update.
       const replacement =
         focused instanceof HTMLAnchorElement
@@ -116,7 +124,7 @@ export class PortaledHovercardController {
         this.returnFocus(this.trigger);
         this.focusInside = document.activeElement === this.trigger;
       }
-    }
+    });
   }
 
   returnFocus(trigger: HTMLElement | null): void {

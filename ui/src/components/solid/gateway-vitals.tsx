@@ -1,6 +1,4 @@
 import { createMemo } from "solid-js";
-import "../tooltip.ts";
-import "../sparkline-tile.tsx";
 import { registerDebugEnglish } from "../../i18n/locales/en-debug.ts";
 import { formatDurationCompact } from "../../lib/format-duration.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
