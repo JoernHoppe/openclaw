@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { buildUpdateRestartSentinelPayload } from "../infra/update-restart-sentinel-payload.js";
 import {
   createUpdateRun,
@@ -21,11 +25,16 @@ vi.mock("../version.js", async (importOriginal) => ({
 }));
 
 const directories = createTempDirTracker();
+beforeEach(() => {
+  setRuntimeConfigSnapshot({});
+});
+
 afterEach(() => {
   closeOpenClawStateDatabaseForTest();
   vi.unstubAllEnvs();
   runtimeBuildId = null;
   directories.cleanup();
+  clearRuntimeConfigSnapshot();
 });
 
 describe("update restart verification ownership", () => {
