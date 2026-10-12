@@ -20,7 +20,7 @@ import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-
 import { captureSessionMutationRouting } from "./session-sharing-preparation.js";
 import { resolveGatewaySessionStoreTargetWithStore } from "./session-utils-store-lookup.js";
 import { findCanonicalStoreMatch } from "./session-utils-store-selection.js";
-import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
+import type { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import type * as sessionUtils from "./session-utils.js";
 import type { WithPreparedWorkerWorkspaceRecovery } from "./worker-environments/placement-reclaim-contract.js";
 import type {
@@ -558,7 +558,7 @@ export const loadWorkerPlacementSessionRuntimeModule = createLazyRuntimeModule(a
       placementSessionRuntime.resolveWorkerPlacementSessionRuntimeAsync,
     resolveCanonicalSessionEntryFromStoreKeys:
       sessionUtils.resolveCanonicalSessionEntryFromStoreKeys,
-    resolveGatewaySessionStoreTargetInWorker,
+    resolveGatewaySessionStoreTargetInWorker: sessionUtils.resolveGatewaySessionStoreTargetInWorker,
   };
 });
 
