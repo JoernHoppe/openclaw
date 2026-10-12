@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 import { connectGatewayClient, disconnectGatewayClient } from "../src/gateway/test-helpers.e2e.js";
+import { redactSensitiveText } from "../src/logging/redact.js";
 import { upsertSessionEntry } from "../src/plugin-sdk/session-store-runtime.js";
 import { closeOpenClawAgentDatabasesForTest } from "../src/plugin-sdk/sqlite-runtime-testing.js";
 import { seedInstalledPluginIndex } from "../src/plugins/test-helpers/installed-plugin-index.js";
@@ -249,7 +250,16 @@ describe("Gateway copied Codex session resume", () => {
                 const history = await client.request<{
                   entries: Array<{ status: string; summary?: string; error?: string }>;
                 }>("cron.runs", { id: job.id, limit: 1 });
-                expect(history.entries).toMatchObject([{ status: "ok", summary: VISIBLE_REPLY }]);
+                const failureDiagnostic =
+                  history.entries[0]?.status === "error"
+                    ? redactSensitiveText(JSON.stringify(history.entries), { mode: "tools" }).slice(
+                        0,
+                        4_000,
+                      )
+                    : undefined;
+                expect(history.entries, failureDiagnostic).toMatchObject([
+                  { status: "ok", summary: VISIBLE_REPLY },
+                ]);
               },
               { timeout: 30_000, interval: 100 },
             );

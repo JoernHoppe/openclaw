@@ -217,15 +217,8 @@ export async function handleChatAbortRequestWithLifecycle(
     });
     return;
   }
-  const activeCandidate = context.chatAbortControllers.get(runId);
+  const active = context.chatAbortControllers.get(runId);
   const queuedCandidate = context.chatQueuedTurns.get(runId);
-  // Deferred input keeps this controller after its temporary active registration retires.
-  const active =
-    activeCandidate?.kind === "chat-send" &&
-    queuedCandidate?.controller === activeCandidate.controller &&
-    !activeCandidate.resolveTerminalProducer?.()
-      ? undefined
-      : activeCandidate;
   let abortSessionRead: ReturnType<typeof prepareAbortSession> | undefined;
   const readAbortSession = () => (abortSessionRead ??= prepareAbortSession());
   const abortSession = !active || discardPendingInput ? await readAbortSession() : undefined;

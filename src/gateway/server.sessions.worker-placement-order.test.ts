@@ -172,6 +172,9 @@ test.each(["delete", "archive", "recover"] as const)(
       releaseMove.resolve();
       await moving;
       acquiredBeforeCleanup = moveAcquired;
+      if (moveAcquired) {
+        await serializedReclaim;
+      }
     } finally {
       // Unwind the baseline's real queues before asserting the ordering failure.
       releaseMove.resolve();
