@@ -88,7 +88,17 @@ async function expectHoverTooltip(button: Locator, text: string): Promise<void> 
   await expect
     .poll(() =>
       button.evaluate((element) => {
-        const host = element.closest<HTMLElement & { anchor?: Element | null }>("openclaw-tooltip");
+        const host = [
+          ...document.querySelectorAll<HTMLElement & { anchor?: Element | null }>(
+            "openclaw-tooltip",
+          ),
+        ].find(
+          (candidate) =>
+            candidate.anchor === element ||
+            candidate.shadowRoot
+              ?.querySelector<HTMLSlotElement>("slot:not([name])")
+              ?.assignedElements({ flatten: true })[0] === element,
+        );
         const tooltip = host?.shadowRoot?.querySelector<HTMLElement>(".tooltip-surface[popover]");
         const anchor =
           host?.anchor ??
@@ -125,9 +135,16 @@ async function expectHoverTooltip(button: Locator, text: string): Promise<void> 
       text,
     });
   const bounds = await button.evaluate((element) => {
-    const body = element
-      .closest("openclaw-tooltip")
-      ?.shadowRoot?.querySelector<HTMLElement>(".tooltip-surface[popover]");
+    const host = [
+      ...document.querySelectorAll<HTMLElement & { anchor?: Element | null }>("openclaw-tooltip"),
+    ].find(
+      (candidate) =>
+        candidate.anchor === element ||
+        candidate.shadowRoot
+          ?.querySelector<HTMLSlotElement>("slot:not([name])")
+          ?.assignedElements({ flatten: true })[0] === element,
+    );
+    const body = host?.shadowRoot?.querySelector<HTMLElement>(".tooltip-surface[popover]");
     const slot = body?.querySelector<HTMLSlotElement>('slot[name="content"]');
     const textNode =
       slot?.assignedNodes({ flatten: true }).find((node) => node.textContent?.trim()) ??

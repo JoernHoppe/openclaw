@@ -10,6 +10,7 @@ import {
   mountSidebar,
   TWO_AGENTS,
 } from "../app-sidebar.ts";
+import { settleLitElement } from "../lit-settle.ts";
 import { waitForFast } from "../wait-for.ts";
 import { mountRoster, settleRoster } from "./roster.test-support.ts";
 import "../../components/app-sidebar.ts";
@@ -108,7 +109,7 @@ describe("AppSidebar session attention", () => {
       expiresAtMs: Date.now() + 60_000,
       status: "pending",
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(
       row.querySelector('[data-session-attention="question"]')?.getAttribute("aria-label"),
     ).toBe("Waiting for your answer\nContinue?");
@@ -118,7 +119,7 @@ describe("AppSidebar session attention", () => {
       id: "question-active",
       status: "cancelled",
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(row.querySelector('[data-session-attention="question"]')).toBeNull();
     expect(row.querySelector(".session-glyph__ring")).not.toBeNull();
   });
@@ -183,11 +184,11 @@ describe("AppSidebar session attention", () => {
       expiresAtMs: Date.now() + 60_000,
       status: "pending",
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(home?.querySelector('[data-session-attention="question"]')).not.toBeNull();
 
     await publishRows([]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(home?.querySelector('[data-session-attention="question"]')).not.toBeNull();
 
     gatewayHarness.publishEvent("question.resolved", {
@@ -199,7 +200,7 @@ describe("AppSidebar session attention", () => {
         lastRunError: "⚠️ ✉️ Message failed:  delivery unavailable",
       }),
     ]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(home?.querySelector('[data-session-attention="error"]')).not.toBeNull();
     expect(
       home?.querySelector('[data-session-attention="error"]')?.getAttribute("aria-label"),
@@ -211,7 +212,7 @@ describe("AppSidebar session attention", () => {
     await publishRows([
       { key: mainKey, kind: "direct", label: "Home", updatedAt: 3, status: "done" },
     ]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(home?.querySelector("[data-session-attention]")).toBeNull();
   });
 
@@ -240,7 +241,7 @@ describe("AppSidebar session attention", () => {
       expiresAtMs: Date.now() + 60_000,
       status: "pending",
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
 
     const questionAttention = sidebar.querySelector('[data-session-attention="question"]');
     expect(questionAttention).not.toBeNull();
@@ -262,7 +263,7 @@ describe("AppSidebar session attention", () => {
       id: "question-1",
       status: "cancelled",
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(sidebar.querySelector('[data-session-attention="question"]')).toBeNull();
     expect(sidebar.querySelector('[data-session-attention="agent"]')).not.toBeNull();
     expect(sidebar.textContent).toContain("Blocked: need the staging password");
@@ -308,7 +309,7 @@ describe("AppSidebar session attention", () => {
     );
 
     sidebar.sessionOrganizer.setSessionsShowPreview(true);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(sidebar.textContent).toContain("Deploying to staging");
     expect(sidebar.querySelector('[data-session-attention="agent"]')).toBeNull();
   });
@@ -334,7 +335,7 @@ describe("AppSidebar session attention", () => {
     expect(previewRow?.classList.contains("sidebar-recent-session--single-line")).toBe(true);
 
     setRows(sessionsHarness, [failedRow()]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
 
     const attentionRow = sidebar.querySelector(`[data-session-key="${sessionKey}"]`);
     expect(attentionRow?.classList.contains("sidebar-recent-session--single-line")).toBe(true);
@@ -361,17 +362,17 @@ describe("AppSidebar session attention", () => {
 
     sidebar.requestUpdate();
     provider.remove();
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     const requestUpdate = vi.spyOn(sidebar, "requestUpdate");
     await vi.advanceTimersByTimeAsync(60_001);
     expect(requestUpdate).not.toHaveBeenCalled();
 
     document.body.append(provider);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(sidebar.querySelector('[data-session-attention="agent"]')).toBeNull();
 
     setRows(sessionsHarness, [agentAttentionRow()]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(sidebar.querySelector('[data-session-attention="agent"]')).not.toBeNull();
     await vi.advanceTimersByTimeAsync(60_001);
     expect(sidebar.querySelector('[data-session-attention="agent"]')).toBeNull();
@@ -455,7 +456,7 @@ describe("AppSidebar session attention", () => {
 
     expect(sidebar.querySelector('[data-session-attention="error"]')).not.toBeNull();
     setRows(sessionsHarness, [failedRow(sessionKey, { lastReadAt: 2 })]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
 
     expect(sidebar.querySelector('[data-session-attention="error"]')).toBeNull();
     expect(sidebar.textContent).not.toContain("Run failed:");
@@ -534,7 +535,7 @@ describe("AppSidebar session attention", () => {
 
     expect(sidebar.querySelector('[data-session-attention="error"]')).toBeNull();
     setRows(sessionsHarness, [failedRow(sessionKey, { endedAt: 3, updatedAt: 3, lastReadAt: 2 })]);
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
 
     expect(await errorDescription(sidebar)).toContain("Run failed: Provider credits exhausted");
   });
@@ -612,7 +613,7 @@ describe("AppSidebar session attention", () => {
           expiresAtMs: Date.now() + 60_000,
           status: "pending",
         });
-        await sidebar.updateComplete;
+        await settleLitElement(sidebar);
       }
       expect(
         sidebar.querySelector(
@@ -631,7 +632,7 @@ describe("AppSidebar session attention", () => {
       expect(sidebar.querySelector(`[data-session-key="${childKey}"]`)).toBeNull();
       expect(sidebar.querySelector('[data-session-section="work"]')).not.toBeNull();
       sidebar.querySelector<HTMLButtonElement>(".sidebar-session-group-toggle")?.click();
-      await sidebar.updateComplete;
+      await settleLitElement(sidebar);
       expect(
         sidebar
           .querySelector('[data-session-section="ungrouped"]')

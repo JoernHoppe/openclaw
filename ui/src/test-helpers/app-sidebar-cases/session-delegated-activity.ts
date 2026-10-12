@@ -10,6 +10,7 @@ import {
   type TestSessionMenu,
 } from "../app-sidebar.ts";
 import { createTestGatewayClient } from "../gateway-client.ts";
+import { settleLitElement } from "../lit-settle.ts";
 import { waitForFast } from "../wait-for.ts";
 import { mountRoster, roster, session } from "./roster.test-support.ts";
 
@@ -115,7 +116,7 @@ describe("AppSidebar delegated activity", () => {
         sessions: [parentRow, failedRun],
       },
     });
-    await sidebar.updateComplete;
+    await settleLitElement(sidebar);
     expect(parent().querySelector(".session-glyph__ring")).toBeNull();
     const parentAttention = parent().querySelector('[data-session-attention="error"]')!;
     expect(parentAttention).not.toBeNull();
@@ -344,7 +345,7 @@ describe("AppSidebar delegated activity", () => {
           hasActiveSubagentRun: false,
         }).result,
       });
-      await sidebar.updateComplete;
+      await settleLitElement(sidebar);
       const finished = sidebar.querySelector(`[data-session-key="${parentKey}"]`)!;
       expect(finished.querySelector(".session-glyph__ring")).toBeNull();
       expect(finished.classList.contains("session-row-host--running")).toBe(false);
