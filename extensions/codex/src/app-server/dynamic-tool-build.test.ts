@@ -529,6 +529,7 @@ describe("Codex app-server dynamic tool build", () => {
   });
 
   beforeEach(async () => {
+    setRuntimeConfigSnapshot({});
     hoisted.loadNodeExecAvailability.mockResolvedValue({
       cacheKey: "eligible",
       isAvailable: () => true,
@@ -540,6 +541,7 @@ describe("Codex app-server dynamic tool build", () => {
 
   afterEach(async () => {
     await cleanupDynamicToolBuildFixture(tempDir, hostCapabilityClosers);
+    clearRuntimeConfigSnapshot();
   });
 
   const sandboxEnvironment = { environmentId: "sandbox-1", cwd: "/workspace" };

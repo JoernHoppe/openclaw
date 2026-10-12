@@ -6,7 +6,11 @@ import type {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
-import { describe, expect, it, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assistantMessage,
   createParams,
@@ -80,6 +84,7 @@ async function completeTurn(harness: ReturnType<typeof createStartedThreadHarnes
 }
 
 setupRunAttemptTestHooks();
+afterEach(() => clearRuntimeConfigSnapshot());
 
 describe("native Codex provenance", () => {
   it("sends stable sender provenance through an active context-engine projection", async () => {
@@ -107,9 +112,10 @@ describe("native Codex provenance", () => {
     const harness = createStartedThreadHarness();
     const params = createParams(sessionFile, workspaceDir);
     params.contextEngine = contextEngine;
+    setRuntimeConfigSnapshot(params.config ?? {});
 
     const run = runCodexAppServerAttempt(params);
-    await harness.waitForMethod("turn/start");
+    await run.waitForTurnAccepted();
 
     const inputText = getRequestInputText(harness);
     expect(inputText).toContain(
@@ -159,9 +165,10 @@ describe("native Codex provenance", () => {
     params.prompt = "current prompt survives";
     params.senderId = "profile-ada";
     params.senderName = "$metadata-skill";
+    setRuntimeConfigSnapshot(params.config ?? {});
 
     const run = runCodexAppServerAttempt(params);
-    await harness.waitForMethod("turn/start");
+    await run.waitForTurnAccepted();
 
     const inputText = getRequestInputText(harness);
     expect(inputText.length).toBe(CODEX_TURN_START_TEXT_INPUT_MAX_CHARS);
