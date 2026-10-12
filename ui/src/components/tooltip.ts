@@ -102,7 +102,6 @@ const attributes = new Map([
   ["open-on-click", "openOnClick"],
 ]);
 type MountTooltipView = typeof import("./solid/tooltip.tsx").mountTooltipView;
-let mountTooltipView: MountTooltipView | undefined;
 let viewImport: Promise<MountTooltipView> | undefined;
 
 /** Policy and descriptions are eager; presentation loads only for actual reveal intent. */
@@ -257,9 +256,6 @@ export class TooltipElement extends HTMLElement implements TooltipProps {
 
   #requestOpen(open: boolean): boolean {
     this.#wanted = open;
-    if (!this.#runtime && open && mountTooltipView) {
-      this.#runtime = mountTooltipView(this, this.#surface, this.#rich, this.#controller);
-    }
     if (this.#runtime) {
       return this.#runtime.request(open);
     }
@@ -268,8 +264,9 @@ export class TooltipElement extends HTMLElement implements TooltipProps {
       return true;
     }
     this.#controller.pendingOpen();
+    // Even a cached view mounts after the caller's Solid focus effect has finished.
     viewImport ??= import("./solid/tooltip.tsx")
-      .then((module) => (mountTooltipView = module.mountTooltipView))
+      .then((module) => module.mountTooltipView)
       .catch((error: unknown) => {
         viewImport = undefined;
         throw error;

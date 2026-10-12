@@ -762,8 +762,8 @@ describe("title tooltips", () => {
 
     hoverTrigger(explicit.trigger);
     vi.advanceTimersByTime(0);
-    expect(tooltipIsOpen(delegated!)).toBe(false);
     await settleTooltip(explicit.tooltip);
+    expect(tooltipIsOpen(delegated!)).toBe(false);
     expect(tooltipIsOpen(explicit.tooltip)).toBe(true);
   });
 
