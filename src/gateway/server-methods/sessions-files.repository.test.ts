@@ -783,7 +783,7 @@ it("keeps a timed-out remote save owned until its physical write drains before S
   let stopEntered = false;
   let contentAtStop: string | undefined;
   const stopping = runExclusiveSessionLifecycleMutation("drain", {
-    scope: path.join(gatewayRoot, "sessions.sqlite"),
+    scope: resolveOpenClawAgentSqlitePath({ agentId: "main" }),
     identities: [sessionKey, identity.sessionId],
     run: async () => {
       stopEntered = true;

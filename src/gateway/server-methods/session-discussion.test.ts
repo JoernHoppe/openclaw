@@ -164,9 +164,8 @@ describe("session discussion gateway methods", () => {
     expect(
       await invoke("session.discussion.open", { sessionKey: "global" }, ownedConfig),
     ).toMatchObject({ ok: true, payload: { state: "available" } });
-    expect(mocks.loadSessionTarget).toHaveBeenCalledWith({
-      cfg: ownedConfig,
-      key: "global",
+    expect(registered.open).toHaveBeenCalledWith({
+      sessionKey: "global",
       agentId: "ops",
     });
 

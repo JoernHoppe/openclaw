@@ -23,6 +23,7 @@ import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { boardStore } from "../board-store.js";
 import { progressCardStore } from "../progress-card-store.js";
 import { handleGatewayRequest } from "../server-methods.js";
+import { SessionMutationFactsUnavailableError } from "../session-sharing-preparation.js";
 import { roleClient, rolePolicyConfig } from "../session-sharing.test-utils.js";
 import { createBoardHarness } from "./board.test-support.js";
 import { createProgressCardHandlers } from "./progress-card.js";
@@ -154,6 +155,8 @@ describe("board and progress-card database write admission", () => {
         const entered = createDeferredCore();
         const release = createDeferredCore();
         const controller = new AbortController();
+        const retiredError = new Error("request owner retired");
+        const abortError = new Error("request closed");
         let requestCurrent = true;
         const replacementPath = path.join(path.dirname(database.path), "replacement.sqlite");
         const mutation =
@@ -168,6 +171,7 @@ describe("board and progress-card database write admission", () => {
                     : "putWidget",
               );
         let request: Promise<void> | undefined;
+        let requestFailure: { error: unknown } | undefined;
         let inGrant = false;
         const stages: string[] = [];
         const grantReads: string[] = [];
@@ -201,9 +205,11 @@ describe("board and progress-card database write admission", () => {
                 ? undefined
                 : () => {
                     if (!requestCurrent) {
-                      throw new Error("request owner retired");
+                      throw retiredError;
                     }
                   },
+          }).catch((error: unknown) => {
+            requestFailure = { error };
           });
           entered.resolve();
           await release.promise;
@@ -216,7 +222,7 @@ describe("board and progress-card database write admission", () => {
           expect(respond).not.toHaveBeenCalled();
           expect(board.broadcast).not.toHaveBeenCalled();
           if (change === "abort") {
-            controller.abort(new Error("request closed"));
+            controller.abort(abortError);
           } else if (change === "guard") {
             requestCurrent = false;
           } else if (change === "route") {
@@ -230,11 +236,25 @@ describe("board and progress-card database write admission", () => {
           }
         } finally {
           release.resolve();
-          await reservation;
-          await request;
-          mutation.mockRestore();
-          grants.mockRestore();
-          reads.restore();
+          try {
+            await reservation;
+            await request;
+          } finally {
+            mutation.mockRestore();
+            grants.mockRestore();
+            reads.restore();
+          }
+        }
+        if (requestFailure) {
+          if (change === "guard") {
+            expect(requestFailure.error).toBe(retiredError);
+          } else if (change === "abort") {
+            expect(requestFailure.error).toBe(abortError);
+          } else if (change === "lifecycle") {
+            expect(requestFailure.error).toBeInstanceOf(SessionMutationFactsUnavailableError);
+          } else {
+            throw requestFailure.error;
+          }
         }
         if (change === "allow-worker") {
           expect(stages).toContain("transaction");

@@ -223,8 +223,11 @@ export async function handleChatAbortRequestWithLifecycle(
     });
     return;
   }
-  const abortSession = await prepareAbortSession();
-  const abortSessionEntry = abortSession.ok ? abortSession.value.entry : undefined;
+  const active = context.chatAbortControllers.get(runId);
+  let abortSessionRead: ReturnType<typeof prepareAbortSession> | undefined;
+  const readAbortSession = () => (abortSessionRead ??= prepareAbortSession());
+  const abortSession = !active || discardPendingInput ? await readAbortSession() : undefined;
+  const abortSessionEntry = abortSession?.ok ? abortSession.value.entry : undefined;
   const normalizedAgentIdOverride = normalizeAgentId(abortAgentId);
   const authorizeRunTarget = (target: ChatAbortTarget): boolean => {
     let error: string | undefined;
@@ -262,7 +265,6 @@ export async function handleChatAbortRequestWithLifecycle(
     return error === undefined;
   };
 
-  const active = context.chatAbortControllers.get(runId);
   const withdrawalQueue = discardPendingInput ? context.chatQueuedTurns.get(runId) : undefined;
   const withdrawalScope = withdrawalQueue && {
     sessionKey: withdrawalQueue.sessionKey,
@@ -334,14 +336,15 @@ export async function handleChatAbortRequestWithLifecycle(
     };
   };
   const discardBeforeAbort = async (target: ChatAbortTarget, ownsTarget: () => boolean) => {
-    if (!abortSession.ok) {
-      throw abortSession.error;
+    const preparedSession = await readAbortSession();
+    if (!preparedSession.ok) {
+      throw preparedSession.error;
     }
     const captured = {
       agentId: target.agentId ?? abortAgentId,
       sessionKey: target.sessionKey,
       sessionId: target.sessionId,
-      storePath: abortSession.value.storePath,
+      storePath: preparedSession.value.storePath,
     };
     inputWithdrawn = await discardSessionPendingInput(captured, runId, () => {
       assertCurrent();
@@ -375,8 +378,9 @@ export async function handleChatAbortRequestWithLifecycle(
       assertCurrent();
       await workerCancellation?.cancel({ assertCurrent, onCancelled: (id) => runIds.add(id) });
     }
-    if (!abortSession.ok) {
-      throw abortSession.error;
+    const preparedSession = await readAbortSession();
+    if (!preparedSession.ok) {
+      throw preparedSession.error;
     }
     respond(true, {
       ok: true,
@@ -553,8 +557,9 @@ export async function handleChatAbortRequestWithLifecycle(
       return;
     }
     if (!workerCancellation?.runIds.length) {
-      if (!abortSession.ok) {
-        throw abortSession.error;
+      const preparedSession = await readAbortSession();
+      if (!preparedSession.ok) {
+        throw preparedSession.error;
       }
       respond(true, { ok: true, aborted: false, runIds: [] });
       return;
@@ -591,25 +596,8 @@ export async function handleChatAbortRequestWithLifecycle(
       return;
     }
     const partialText = context.chatRunState.resolveBuffer(runId, { final: true }).text;
-    const snapshot =
-      controlUiVisible !== false && partialText?.trim()
-        ? captureAbortedPartial({
-            runId,
-            sessionKey,
-            sessionId,
-            text: partialText,
-            abortOrigin: "rpc",
-            resolveTerminalProducer: active.resolveTerminalProducer,
-            session:
-              sessionKey === rawSessionKey || sessionKey === canonicalAbortSessionKey
-                ? abortSession
-                : await prepareChatAbortSessionSnapshot({
-                    cfg: abortCfg,
-                    key: sessionKey,
-                    agentId: agentId ?? abortAgentId,
-                  }),
-          })
-        : undefined;
+    let snapshot: ReturnType<typeof captureAbortedPartial> | undefined;
+    const commands = captureExecRequestCancellation({ runId, sessionKey, sessionId, agentId });
     let descendants: Awaited<ReturnType<typeof abortControlledSubagents>>;
     let failure: { error: unknown } | undefined;
     let warning: string | undefined;
@@ -619,6 +607,32 @@ export async function handleChatAbortRequestWithLifecycle(
         sessionKey,
         agentId,
         requesterTurnRunId: runId,
+        execCancellation: commands,
+        prepareSelection: {
+          acceptsRequest: (identity) => identity.runId === runId,
+          prepare: async () => {
+            const preparedSession = await readAbortSession();
+            if (controlUiVisible !== false && partialText?.trim()) {
+              snapshot = captureAbortedPartial({
+                runId,
+                sessionKey,
+                sessionId,
+                text: partialText,
+                abortOrigin: "rpc",
+                resolveTerminalProducer: active.resolveTerminalProducer,
+                session:
+                  sessionKey === rawSessionKey || sessionKey === canonicalAbortSessionKey
+                    ? preparedSession
+                    : await prepareChatAbortSessionSnapshot({
+                        cfg: abortCfg,
+                        key: sessionKey,
+                        agentId: agentId ?? abortAgentId,
+                      }),
+              });
+            }
+            return { execCancellation: commands };
+          },
+        },
         assertCurrent,
         beforeKill: () => {
           // The descendant owner can await a reservation even when no child survives.
@@ -662,8 +676,9 @@ export async function handleChatAbortRequestWithLifecycle(
     if (failure) {
       throw abortedPartialPersistenceError(failure.error, warning);
     }
-    if (!abortSession.ok) {
-      throw abortedPartialPersistenceError(abortSession.error, warning);
+    const preparedSession = await readAbortSession();
+    if (!preparedSession.ok) {
+      throw abortedPartialPersistenceError(preparedSession.error, warning);
     }
     const descendantError = descendantAbortError(descendants, "Parent run");
     if (descendantError) {
