@@ -1099,112 +1099,117 @@ describe("gateway server cron", () => {
     ]);
   });
 
-  test("keeps owner-topic repair pending through retries until the agent turn settles", async ({
-    signal,
-  }) => {
-    const { dir } = await setupCronTestRun({ cronEnabled: true });
-    const group = "-100155462274";
-    const ownerSessionKey = `agent:main:telegram:group:${group}:topic:42`;
-    const hour = new Date().getUTCHours();
-    // Our production heartbeat shape: none of it may apply to the repair turn.
-    testState.agentConfig = {
-      timeoutSeconds: 91,
-      heartbeat: {
-        every: "1h",
-        target: "none",
-        isolatedSession: true,
-        lightContext: true,
-        activeHours: {
-          start: `${String((hour + 2) % 24).padStart(2, "0")}:00`,
-          end: `${String((hour + 3) % 24).padStart(2, "0")}:00`,
-          timezone: "UTC",
+  test.for(["success", "error"] as const)(
+    "keeps owner-topic repair pending through retries until the agent turn settles with %s",
+    async (outcome, { signal }) => {
+      const { dir } = await setupCronTestRun({ cronEnabled: true });
+      const group = "-100155462274";
+      const ownerSessionKey = `agent:main:telegram:group:${group}:topic:42`;
+      const hour = new Date().getUTCHours();
+      // Our production heartbeat shape: none of it may apply to the repair turn.
+      testState.agentConfig = {
+        timeoutSeconds: 91,
+        heartbeat: {
+          every: "1h",
+          target: "none",
+          isolatedSession: true,
+          lightContext: true,
+          activeHours: {
+            start: `${String((hour + 2) % 24).padStart(2, "0")}:00`,
+            end: `${String((hour + 3) % 24).padStart(2, "0")}:00`,
+            timezone: "UTC",
+          },
         },
-      },
-    };
-    testState.sessionStorePath = path.join(dir, "sessions.json");
-    await writeSessionStore({
-      agentId: "main",
-      entries: {
-        [ownerSessionKey]: {
-          sessionId: "owner-topic-session",
-          updatedAt: Date.now(),
-          chatType: "group",
-          deliveryContext: { channel: "telegram", to: group, threadId: 42 },
-          lastChannel: "telegram",
-          lastTo: group,
-          lastThreadId: 42,
+      };
+      testState.sessionStorePath = path.join(dir, "sessions.json");
+      await writeSessionStore({
+        agentId: "main",
+        entries: {
+          [ownerSessionKey]: {
+            sessionId: "owner-topic-session",
+            updatedAt: Date.now(),
+            chatType: "group",
+            deliveryContext: { channel: "telegram", to: group, threadId: 42 },
+            lastChannel: "telegram",
+            lastTo: group,
+            lastThreadId: 42,
+          },
         },
-      },
-    });
-    const ws = await startCronClient();
-    await prepareGatewayReplyRuntimeForTest({ force: true });
-    const repairTurnStarted = createDeferred();
-    const finishRepairTurn = createDeferred();
-    agentCommandMock.mockImplementationOnce(async () => {
-      repairTurnStarted.resolve();
-      await finishRepairTurn.promise;
-    });
-    cronIsolatedRun.mockResolvedValue({ status: "error", error: "scripts/sync.md is missing" });
-    const added = await rpcReq(ws, "cron.add", {
-      name: "meeting sync",
-      enabled: true,
-      schedule: { kind: "every", everyMs: 60_000 },
-      sessionTarget: "isolated",
-      wakeMode: "now",
-      payload: { kind: "agentTurn", message: "Follow scripts/sync.md." },
-      delivery: { mode: "announce", channel: "telegram", to: group, threadId: 42 },
-      owner: { agentId: "main", sessionKey: ownerSessionKey },
-    });
-    expect(added.ok, JSON.stringify(added.error ?? null)).toBe(true);
-    const jobPayload = added.payload;
-    const jobId =
-      jobPayload && typeof jobPayload === "object" && "id" in jobPayload
-        ? String(jobPayload.id)
-        : "";
-    expect(jobId).not.toBe("");
-
-    try {
-      await runCronJobAndWaitForFinished(ws, jobId);
-      await runCronJobAndWaitForFinished(ws, jobId);
-
-      await withinTest(repairTurnStarted.promise, signal);
-      expect(agentCommandMock).toHaveBeenCalledOnce();
-      // The owner topic's own session and route: no heartbeat side session or runtime warnings.
-      expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({
-        sessionKey: ownerSessionKey,
-        deliver: true,
-        channel: "telegram",
-        to: group,
-        threadId: 42,
-        message: expect.stringContaining("Automation repair request from the scheduler"),
-        internalDeliverySuppressErrors: true,
       });
-
-      // Dispatch acceptance is not repair completion: a retry while the turn is held
-      // cannot verify its changes or consume the incident's one escalation.
-      await runCronJobAndWaitForFinished(ws, jobId);
-      const pending = await rpcReq(ws, "cron.get", { id: jobId });
-      expect(pending.ok).toBe(true);
-      expect(pending.payload).toMatchObject({
-        state: { lastFailureNotificationDeliveryStatus: "not-requested" },
+      const ws = await startCronClient();
+      await prepareGatewayReplyRuntimeForTest({ force: true });
+      const repairTurnStarted = createDeferred();
+      const finishRepairTurn = createDeferred();
+      agentCommandMock.mockImplementationOnce(async () => {
+        repairTurnStarted.resolve();
+        await finishRepairTurn.promise;
+        if (outcome === "error") {
+          throw new Error("repair command failed");
+        }
       });
-      expect(sendCronAnnouncePayloadStrictMock).not.toHaveBeenCalled();
-      expect(agentCommandMock).toHaveBeenCalledOnce();
-      expect(cronIsolatedRun).toHaveBeenCalledTimes(3);
-      expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({ timeout: "91" });
-    } finally {
-      finishRepairTurn.resolve();
-    }
-    await vi.waitFor(async () => {
-      const stored = await loadCronStore(path.join(dir, "cron", "jobs.json"));
-      const repair = stored.jobs.find((job) => job.id === jobId)?.state.failureAlertIncident
-        ?.repair;
-      expect(repair?.settledAtMs).toEqual(expect.any(Number));
-    });
-    await runCronJobAndWaitForFinished(ws, jobId);
-    await vi.waitFor(() => expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce());
-    await runCronJobAndWaitForFinished(ws, jobId);
-    expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce();
-  }, 45_000);
+      cronIsolatedRun.mockResolvedValue({ status: "error", error: "scripts/sync.md is missing" });
+      const added = await rpcReq(ws, "cron.add", {
+        name: "meeting sync",
+        enabled: true,
+        schedule: { kind: "every", everyMs: 60_000 },
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        payload: { kind: "agentTurn", message: "Follow scripts/sync.md." },
+        delivery: { mode: "announce", channel: "telegram", to: group, threadId: 42 },
+        owner: { agentId: "main", sessionKey: ownerSessionKey },
+      });
+      expect(added.ok, JSON.stringify(added.error ?? null)).toBe(true);
+      const jobPayload = added.payload;
+      const jobId =
+        jobPayload && typeof jobPayload === "object" && "id" in jobPayload
+          ? String(jobPayload.id)
+          : "";
+      expect(jobId).not.toBe("");
+
+      try {
+        await runCronJobAndWaitForFinished(ws, jobId);
+        await runCronJobAndWaitForFinished(ws, jobId);
+
+        await withinTest(repairTurnStarted.promise, signal);
+        expect(agentCommandMock).toHaveBeenCalledOnce();
+        // The owner topic's own session and route: no heartbeat side session or runtime warnings.
+        expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({
+          sessionKey: ownerSessionKey,
+          deliver: true,
+          channel: "telegram",
+          to: group,
+          threadId: 42,
+          message: expect.stringContaining("Automation repair request from the scheduler"),
+          internalDeliverySuppressErrors: true,
+        });
+
+        // Dispatch acceptance is not repair completion: a retry while the turn is held
+        // cannot verify its changes or consume the incident's one escalation.
+        await runCronJobAndWaitForFinished(ws, jobId);
+        const pending = await rpcReq(ws, "cron.get", { id: jobId });
+        expect(pending.ok).toBe(true);
+        expect(pending.payload).toMatchObject({
+          state: { lastFailureNotificationDeliveryStatus: "not-requested" },
+        });
+        expect(sendCronAnnouncePayloadStrictMock).not.toHaveBeenCalled();
+        expect(agentCommandMock).toHaveBeenCalledOnce();
+        expect(cronIsolatedRun).toHaveBeenCalledTimes(3);
+        expect(agentCommandMock.mock.calls[0]?.[0]).toMatchObject({ timeout: "91" });
+      } finally {
+        finishRepairTurn.resolve();
+      }
+      await vi.waitFor(async () => {
+        const stored = await loadCronStore(path.join(dir, "cron", "jobs.json"));
+        const repair = stored.jobs.find((job) => job.id === jobId)?.state.failureAlertIncident
+          ?.repair;
+        expect(repair?.settledAtMs).toEqual(expect.any(Number));
+      });
+      await runCronJobAndWaitForFinished(ws, jobId);
+      await vi.waitFor(() => expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce());
+      await runCronJobAndWaitForFinished(ws, jobId);
+      expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce();
+    },
+    45_000,
+  );
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

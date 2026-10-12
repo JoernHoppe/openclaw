@@ -30,8 +30,12 @@ import { formatZonedTimestamp } from "../infra/format-time/format-datetime.js";
 import { withTimeout } from "../infra/fs-safe.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 import { SsrFBlockedError, type SsrFPolicy } from "../infra/net/ssrf.js";
-import { runWithGatewayIndependentRootWorkContinuation } from "../process/gateway-work-admission.js";
+import {
+  runWithGatewayDetachedWorkContinuation,
+  runWithGatewayIndependentRootWorkContinuation,
+} from "../process/gateway-work-admission.js";
 import { assertSecretOwnerAvailable } from "../secrets/runtime-degraded-state.js";
+import { waitForAgentJob } from "./agent-turn/agent-job.js";
 import type { GatewayContextResolver } from "./server-methods/shared-types.js";
 import { dispatchGatewayLifecycleMethod } from "./server-recovery-runtime-context.js";
 
@@ -78,7 +82,9 @@ async function runGatewayCronFailureRepair(
   resolveGatewayContext: GatewayContextResolver | undefined,
 ): Promise<void> {
   const runId = `cron-failure-repair:${request.repairId}`;
-  await runWithGatewayIndependentRootWorkContinuation(async () => {
+  const deadlineAtMs = Date.now() + request.timeoutMs;
+  // The cron run may retire its async scope before this independent repair settles.
+  await runWithGatewayDetachedWorkContinuation(async () => {
     await dispatchGatewayLifecycleMethod(
       "agent",
       {
@@ -96,12 +102,19 @@ async function runGatewayCronFailureRepair(
         idempotencyKey: runId,
       },
       {
-        expectFinal: true,
         internalDeliverySuppressErrors: true,
         timeoutMs: request.timeoutMs,
         ...(resolveGatewayContext ? { resolveGatewayContext } : {}),
       },
     );
+    const settled = await waitForAgentJob({
+      runId,
+      source: "agent",
+      timeoutMs: Math.max(0, deadlineAtMs - Date.now()),
+    });
+    if (!settled || settled.timeoutPhase === "gateway_draining") {
+      throw new Error("Cron failure repair did not settle before its agent timeout or shutdown.");
+    }
   }, "cron:failure-repair");
 }
 
