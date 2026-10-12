@@ -26,7 +26,6 @@ import { resolveContextTokens } from "../auto-reply/reply/model-selection-contex
 import { refreshQueuedFollowupSession } from "../auto-reply/reply/queue.js";
 import { hasPendingFollowupQueueWork } from "../auto-reply/reply/queue/state.js";
 import { persistReplySessionEntry } from "../auto-reply/reply/session-entry-persistence.js";
-import { resolveSupportedThinkingLevel } from "../auto-reply/thinking.js";
 import type { ThinkLevel } from "../auto-reply/thinking.shared.js";
 import { resolveCollapsedSessionAuthPinSource } from "../config/sessions/auth-profile-override-provenance.js";
 import {
@@ -103,6 +102,7 @@ export type ApplySessionModelSelectionResult =
       contextTokens: number;
       configuredDefaultUpdate?: StickyModelSelectionDispatchOutcome;
       runtimeChange?: { kind: "clear" } | { kind: "set"; runtime: string };
+      /** @deprecated No longer emitted; retained for source compatibility until the next SDK major. */
       thinkingRemap?: {
         from: ThinkLevel;
         to: ThinkLevel;
@@ -241,8 +241,7 @@ export async function applySessionModelSelectionInternal(
     provider: request.provider,
     model: request.model,
     catalog: params.thinkingCatalog ?? params.modelCatalog,
-    thinkingPolicyRequired:
-      startingEntry.thinkingLevel !== undefined || hasPendingFollowupQueueWork([params.sessionKey]),
+    thinkingPolicyRequired: hasPendingFollowupQueueWork([params.sessionKey]),
     rawRuntime:
       request.runtime.kind === "set"
         ? request.runtime.runtime
@@ -277,39 +276,6 @@ export async function applySessionModelSelectionInternal(
   });
   const runtimeChange = applyModelRuntimeDirective(nextEntry, runtime);
   const selectionChanged = modelChange.updated || runtimeChange.updated;
-  const thinkingRuntime = resolveEffectiveAgentRuntime({
-    cfg: params.cfg,
-    provider: request.provider,
-    modelId: request.model,
-    modelApi: selectedCatalogEntry?.api,
-    modelBaseUrl: selectedCatalogEntry?.baseUrl,
-    agentId: params.agentId,
-    sessionKey: params.sessionKey,
-    sessionEntry: nextEntry,
-  });
-  const currentThinkingLevel = nextEntry.thinkingLevel as ThinkLevel | undefined;
-  let thinkingRemap: Extract<
-    ApplySessionModelSelectionResult,
-    { status: "applied" }
-  >["thinkingRemap"];
-  if (currentThinkingLevel) {
-    const remapped = resolveSupportedThinkingLevel({
-      provider: request.provider,
-      model: request.model,
-      level: currentThinkingLevel,
-      catalog: [...thinkingCatalog],
-      agentRuntime: thinkingRuntime,
-    });
-    if (remapped !== currentThinkingLevel) {
-      nextEntry.thinkingLevel = remapped;
-      thinkingRemap = {
-        from: currentThinkingLevel,
-        to: remapped,
-        provider: request.provider,
-        model: request.model,
-      };
-    }
-  }
   using placementRuntime = await prepareWorkerPlacementSessionRuntime({
     cfg: params.cfg,
     agentId: params.agentId,
@@ -429,7 +395,6 @@ export async function applySessionModelSelectionInternal(
   const provider = request.provider;
   const model = request.model;
   const effectiveModelRef = `${provider}/${model}`;
-  const changed = selectionChanged || thinkingRemap !== undefined;
   operatorScope?.assertCurrent();
   assertOperatorModelAllowed(operatorAuthority, request);
   const configuredDefaultUpdate =
@@ -443,7 +408,7 @@ export async function applySessionModelSelectionInternal(
           target: params.stickyModelSelectionTarget ?? "effective",
         })
       : undefined;
-  if (changed) {
+  if (selectionChanged) {
     emitSessionLifecycleEvent({
       sessionKey: params.sessionKey,
       agentId: params.agentId,
@@ -490,7 +455,7 @@ export async function applySessionModelSelectionInternal(
     model,
     effectiveModelRef,
     agentRuntime,
-    changed,
+    changed: selectionChanged,
     contextTokens: resolveContextTokens({
       cfg: params.cfg,
       provider: contextProvider,
@@ -500,6 +465,5 @@ export async function applySessionModelSelectionInternal(
     }),
     ...(configuredDefaultUpdate ? { configuredDefaultUpdate } : {}),
     ...(runtime.kind === "clear" || runtime.kind === "set" ? { runtimeChange: runtime } : {}),
-    ...(thinkingRemap ? { thinkingRemap } : {}),
   };
 }
