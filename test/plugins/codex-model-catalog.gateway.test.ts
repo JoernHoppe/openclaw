@@ -35,6 +35,7 @@ describe("models.list native account catalog", () => {
   it("models.list selects a native user-home API-key catalog through the prepared Gateway owner", async (ctx) => {
     let stage = "isolated state setup";
     const startedAt = performance.now();
+    const stages = [{ stage, startedAtMs: 0 }];
     const requests: string[] = [];
     let lastCatalog:
       | (Pick<ModelsListResult, "pendingProviders"> & {
@@ -44,11 +45,13 @@ describe("models.list native account catalog", () => {
     const reportStage = () =>
       console.error(`[native-catalog-test] aborted while awaiting ${stage}`, {
         elapsedMs: Math.round(performance.now() - startedAt),
+        stages: stages.slice(-16),
         requests: requests.slice(-32),
         lastCatalog,
       });
     const markStage = (next: string) => {
       stage = next;
+      stages.push({ stage, startedAtMs: Math.round(performance.now() - startedAt) });
       if (ctx.signal.aborted) {
         reportStage();
       }

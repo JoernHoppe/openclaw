@@ -1,6 +1,7 @@
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
 import { afterEach, describe, expect, it, onTestFailed, vi } from "vitest";
 import { createQaGatewayChild, type QaGatewayChild } from "../../../../extensions/qa-lab/api.js";
+import { createQaGatewayCliError } from "../../../../extensions/qa-lab/src/gateway-log-redaction.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
@@ -132,30 +133,38 @@ describe("agent session deduplication across reconnect", () => {
       const gatewayOwner = createQaGatewayChild();
       cleanups.push(() => stopQaGatewayFixture(gatewayOwner));
       stage = "start-gateway";
-      const gateway = await gatewayOwner.start({
-        repoRoot: process.cwd(),
-        command: {
-          executablePath: process.execPath,
-          argsPrefix: ["dist/entry.js"],
-          cwd: process.cwd(),
-          usePackagedPlugins: true,
-        },
-        providerBaseUrl: `${provider.baseUrl}/v1`,
-        providerMode: "mock-openai",
-        primaryModel: MODEL_REF,
-        alternateModel: MODEL_REF,
-        transportBaseUrl: "http://127.0.0.1",
-        controlUiEnabled: false,
-        fastMode: true,
-        runtimeEnvPatch: {
-          OPENCLAW_SKIP_CHANNELS: "1",
-          OPENCLAW_TEST_MINIMAL_GATEWAY: "1",
-        },
-        mutateConfig: (config) => ({ ...config, plugins: { enabled: false } }),
-        onListening: () => {
-          stage = "gateway-ready";
-        },
-      });
+      const gateway = await gatewayOwner
+        .start({
+          repoRoot: process.cwd(),
+          command: {
+            executablePath: process.execPath,
+            argsPrefix: ["dist/entry.js"],
+            cwd: process.cwd(),
+            usePackagedPlugins: true,
+          },
+          providerBaseUrl: `${provider.baseUrl}/v1`,
+          providerMode: "mock-openai",
+          primaryModel: MODEL_REF,
+          alternateModel: MODEL_REF,
+          transportBaseUrl: "http://127.0.0.1",
+          controlUiEnabled: false,
+          fastMode: true,
+          runtimeEnvPatch: {
+            OPENCLAW_SKIP_CHANNELS: "1",
+            OPENCLAW_TEST_MINIMAL_GATEWAY: "1",
+          },
+          mutateConfig: (config) => ({ ...config, plugins: { enabled: false } }),
+          onListening: () => {
+            stage = "gateway-ready";
+          },
+        })
+        .catch((error: unknown) => {
+          // Cleanup can reveal a CLI failure after the outer test deadline.
+          process.stderr.write(
+            `Session dedup startup failed: ${createQaGatewayCliError(error).message}\n`,
+          );
+          throw error;
+        });
       cleanups.push(async () => provider.release());
 
       stage = "connect-client-a";
