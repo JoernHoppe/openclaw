@@ -34,6 +34,8 @@ it("uses prepared verbose policy and committed receipts without querying", async
         }
       },
     });
+    using resources = new DisposableStack();
+    resources.defer(progress.release);
     expect(await progress.shouldEmitAsync()).toBe(false);
     for (const level of ["full", "off"] as const) {
       await upsertSessionEntryCore(scope, {

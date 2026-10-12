@@ -77,6 +77,7 @@ export async function gatherDispatchRequest(
   messageAuditTerminal: InboundMessageAuditTerminalRecorder | undefined,
   allowActiveQueueResolution = false,
   onRuntimeLease?: (lease: PreparedModelRuntimeLease) => void,
+  onDispose?: (dispose: () => void) => void,
 ) {
   const lifecycleGeneration = getAgentEventLifecycleGeneration();
   const ctx = isFinalizedInboundContext(params.ctx)
@@ -480,6 +481,7 @@ export async function gatherDispatchRequest(
           "",
       ) ?? "off",
   });
+  onDispose?.(verboseProgress.release);
   const pluginRegistry =
     preparedReplyDispatchRuntime?.inboundPluginRegistry ??
     (await traceReplyPhase("reply.load_runtime_plugin_registry_handle", async () => {

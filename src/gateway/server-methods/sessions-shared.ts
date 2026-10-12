@@ -53,34 +53,46 @@ export async function prepareSessionWorkerPlacementPatchError(
   return resolveSessionWorkerPlacementPatchError(params, { placement, runtime });
 }
 
-/** Prepare inherited model facts once; the commit guard still reads current placement and runtime ownership. */
+/** Prepare placement and inherited model facts; commit validation consumes their current owners. */
 export async function prepareSessionWorkerPlacementPatchValidation(
   params: Parameters<typeof resolveSessionWorkerPlacementPatchError>[0],
 ) {
   const entry = params.entry;
-  const runtime =
-    entry?.sessionId &&
-    params.validateModelRuntime &&
-    (params.patch.model !== undefined ||
-      params.patch.agentRuntime !== undefined ||
-      params.patch.nativeRuntimeConsent !== undefined)
-      ? await prepareWorkerPlacementSessionRuntime({
-          cfg: params.cfg,
-          entry,
-          agentId: params.agentId,
-          sessionKey: params.sessionKey,
-        })
-      : undefined;
-  return {
-    validate: () =>
-      resolveSessionWorkerPlacementPatchError(params, {
-        readRuntime:
-          runtime && entry
-            ? () => resolveWorkerPlacementCapabilities(runtime.read(params.cfg, entry))
-            : undefined,
-      }),
-    release: () => runtime?.[Symbol.dispose](),
-  };
+  const placement = entry?.sessionId
+    ? await params.context.workerSessionPlacementService?.prepareSessionPlacement?.(entry.sessionId)
+    : undefined;
+  try {
+    const runtime =
+      entry?.sessionId &&
+      params.validateModelRuntime &&
+      (params.patch.model !== undefined ||
+        params.patch.agentRuntime !== undefined ||
+        params.patch.nativeRuntimeConsent !== undefined)
+        ? await prepareWorkerPlacementSessionRuntime({
+            cfg: params.cfg,
+            entry,
+            agentId: params.agentId,
+            sessionKey: params.sessionKey,
+          })
+        : undefined;
+    return {
+      validate: () =>
+        resolveSessionWorkerPlacementPatchError(params, {
+          ...(placement ? { placement: placement.current() } : {}),
+          readRuntime:
+            runtime && entry
+              ? () => resolveWorkerPlacementCapabilities(runtime.read(params.cfg, entry))
+              : undefined,
+        }),
+      release: () => {
+        runtime?.[Symbol.dispose]();
+        placement?.release();
+      },
+    };
+  } catch (error) {
+    placement?.release();
+    throw error;
+  }
 }
 
 export function resolveSessionWorkerPlacementPatchError(

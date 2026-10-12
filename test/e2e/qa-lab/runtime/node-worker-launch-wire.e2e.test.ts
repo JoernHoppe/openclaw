@@ -275,8 +275,11 @@ describe("node worker launch wire", () => {
               wireMessageText(message).includes(BASELINE_REPLY),
           ),
         ).toHaveLength(1);
+        const currentGateway = gateway;
         const described = await waitFor("reconciled worker workspace", async () => {
-          const current = (await gateway.call("sessions.describe", { key: SESSION_KEY })) as {
+          const current = (await currentGateway.call("sessions.describe", {
+            key: SESSION_KEY,
+          })) as {
             session?: {
               execCwd?: string;
               spawnedCwd?: string;

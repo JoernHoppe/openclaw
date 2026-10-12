@@ -63,6 +63,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/runtime-recovery.incognito.test.ts",
   "src/agents/cli-runner/history-boundary.incognito.test.ts",
   "src/agents/sandbox/runtime-status.incognito.test.ts",
+  "src/agents/harness/execution-environment.worker.test.ts",
   "src/agents/harness/host-capability.node-authority.test.ts",
   "src/state/openclaw-state-db-current-reader.test.ts",
   "src/state/openclaw-state-db-existing-write.test.ts",
@@ -1223,6 +1224,7 @@ const databaseWorkerCoreTestFileSet = new Set(databaseWorkerCoreTestFiles);
 
 // Preserve watch admission for consumers previously inferred into fast lanes.
 export const databaseWorkerCoreFormerFastKinds = new Map([
+  ["src/agents/harness/execution-environment.worker.test.ts", "unitFastIsolated"],
   ["src/acp/event-ledger.prepared.test.ts", "unitFastIsolated"],
   ["src/acp/event-ledger.test.ts", "unitFastIsolated"],
   ["src/acp/translator.error-kind.test.ts", "unitFastIsolated"],

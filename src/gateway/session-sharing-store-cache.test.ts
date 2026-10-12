@@ -7,7 +7,10 @@ import {
   removeSessionMember,
 } from "../config/sessions/session-sharing-store.native.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
+import {
+  closeOpenClawAgentDatabasesAsync,
+  closeOpenClawAgentDatabasesForTest,
+} from "../state/openclaw-agent-db.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
   initializeSessionReadContext,
@@ -55,7 +58,7 @@ function identifiedClient(userId: string): GatewayClient {
 
 describe("session event authorization store work", () => {
   it("does not capture a replacement for an already prepared mutation target", async () => {
-    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const cfg: OpenClawConfig = {};
       const scope = { agentId: "main", sessionKey: "agent:main:prepared-target" };
       const entry = {
@@ -64,6 +67,8 @@ describe("session event authorization store work", () => {
         createdActor: { type: "human", source: "profile", id: "owner" } as const,
       };
       await sessionAccessor.upsertSessionEntryCore(scope, entry);
+      // Drain setup's deferred maintenance before observing the worker-backed target read.
+      await closeOpenClawAgentDatabasesAsync(state.env.OPENCLAW_STATE_DIR);
       const reads = observeHostDataSql();
       let target;
       try {
