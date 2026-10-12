@@ -44,7 +44,7 @@ function makeConfig(fallbacks = ["capped", "fit-first", "fit-second"]): OpenClaw
             Object.assign(model, {
               name: model.id,
               reasoning: false,
-              input: ["text"],
+              input: ["text"] satisfies ModelDefinitionConfig["input"],
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
               maxTokens: 1024,
             }),
