@@ -1,5 +1,6 @@
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/io.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js";
@@ -23,7 +24,13 @@ describe("subagents scope isolation", () => {
     resetSubagentsConfigOverride();
     callGatewayMock.mockReset();
     storePath = path.join(sessionDirs.make(), "sessions.sqlite");
-    setSubagentsConfigOverride({ session: createPerSenderSessionConfig({ store: storePath }) });
+    const config = { session: createPerSenderSessionConfig({ store: storePath }) };
+    setSubagentsConfigOverride(config);
+    setRuntimeConfigSnapshot(config);
+  });
+
+  afterEach(() => {
+    clearRuntimeConfigSnapshot();
   });
 
   it.each([

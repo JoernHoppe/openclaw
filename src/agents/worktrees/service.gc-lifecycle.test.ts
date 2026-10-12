@@ -8,6 +8,10 @@ import {
   withinTest,
 } from "../../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry.js";
 import { deleteSessionEntryLifecycle } from "../../config/sessions/session-accessor.sqlite-lifecycle.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -58,6 +62,7 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) => {
     await closeOpenClawAgentDatabasesAsync();
     await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
+    clearRuntimeConfigSnapshot();
     cleanup();
   });
 });
@@ -72,6 +77,8 @@ it("releases session mutation admission during Git while the registry claim fenc
   const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
   const sessionKey = "agent:main:archived-worktree";
   const storePath = path.join(root, "sessions.json");
+  const cfg = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   const record = await materializeManagedWorktreeFixture({
     env,
     stateDir,
@@ -107,7 +114,7 @@ it("releases session mutation admission during Git while the registry claim fenc
     await publishRemoval.promise;
   });
   const cleanup = service.gc({
-    ...createManagedWorktreeOwnerPolicy({ session: { store: storePath } }),
+    ...createManagedWorktreeOwnerPolicy(cfg),
     signal,
   });
   void cleanup.catch(() => {});
@@ -187,6 +194,8 @@ it("refuses unarchive after an interrupted removal releases its process claim", 
   const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
   const sessionKey = "agent:main:partial-worktree";
   const storePath = path.join(root, "sessions.json");
+  const cfg = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   const record = await materializeManagedWorktreeFixture({
     env,
     stateDir,

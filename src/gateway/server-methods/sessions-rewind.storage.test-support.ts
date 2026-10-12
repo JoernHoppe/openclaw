@@ -1,5 +1,6 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, expect, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { createSessionEntryWithTranscript } from "../../config/sessions/session-accessor.entry-mutation.js";
 import {
   listSessionEntriesCore,
@@ -44,6 +45,7 @@ export async function seedMessageCutSource(
   incognito = false,
   identity?: { sessionKey: string; sessionId: string },
 ) {
+  setRuntimeConfigSnapshot(cfg);
   const sessionKey = `agent:main:dashboard:${incognito ? "incognito-" : ""}source`;
   const scope = { agentId: "main", sessionKey, sessionId: "message-fork-source", ...identity };
   const created = await createSessionEntryWithTranscript(scope, () => ({
@@ -137,7 +139,10 @@ export function invokeMessageCut(
 }
 
 export async function readMutationStorage(scope: SourceScope) {
-  const database = openOpenClawAgentDatabase(toDatabaseOptions(resolveSqliteScope(scope)));
+  const options = toDatabaseOptions(resolveSqliteScope(scope));
+  // Settle fixture-owned projection work before the native handle claims a shared-state lease.
+  await waitForSessionTranscriptIndexReconcile(options);
+  const database = openOpenClawAgentDatabase(options);
   const db = getSessionKysely(database.db);
   return {
     source: loadSessionEntry(scope),

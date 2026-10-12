@@ -61,7 +61,7 @@ vi.mock("../status/summary.runtime.js", async (importOriginal) => {
         provider: "openai",
         model: "gpt-5.5",
       })),
-      resolveSessionRuntime: vi.fn(() => ({ id: "openclaw", label: "OpenClaw Default" })),
+      resolveSessionRuntime: vi.fn(async () => ({ id: "openclaw", label: "OpenClaw Default" })),
       resolveStatusModelLookupRef: vi.fn(({ provider, model }) =>
         typeof model === "string" && model.length > 0
           ? {
@@ -100,12 +100,17 @@ vi.mock("../agents/embedded-agent-runner/model.static-catalog.js", () => ({
   ),
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../config/io.js")>()),
   loadConfig: vi.fn(() => ({})),
 }));
 
-vi.mock("../config/config.js", () => ({
+vi.mock("../config/config.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../config/config.js")>()),
   getRuntimeConfig: vi.fn(() => ({})),
+  captureRuntimeConfigAsyncReader: vi.fn(() =>
+    Object.assign(async () => ({}), { assertCurrent() {} }),
+  ),
   projectConfigOntoRuntimeSourceSnapshot: vi.fn((config) => config),
 }));
 
@@ -246,7 +251,7 @@ describe("getStatusSummary", () => {
     });
     statusSummaryMocks.getPreparedModelCatalogSnapshot.mockReturnValue(undefined);
     vi.mocked(statusSummaryRuntime.resolveContextTokensForModel).mockReturnValue(200_000);
-    vi.mocked(statusSummaryRuntime.resolveSessionRuntime).mockReturnValue({
+    vi.mocked(statusSummaryRuntime.resolveSessionRuntime).mockResolvedValue({
       id: "openclaw",
       label: "OpenClaw Default",
     });

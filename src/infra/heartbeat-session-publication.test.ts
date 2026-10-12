@@ -6,6 +6,7 @@ import { createDeferred } from "../../test/helpers/promise.js";
 import { buildEmbeddedRunPayloads } from "../agents/embedded-agent-runner/run/payloads.js";
 import { createHeartbeatToolResponsePayload } from "../auto-reply/heartbeat-tool-response.js";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
+import { setRuntimeConfigSnapshot } from "../config/io.js";
 import {
   appendTranscriptMessage,
   loadTranscriptEvents,
@@ -54,6 +55,8 @@ async function withTarget(
         sessionId: "original-session",
         storePath: path.join(state.sessionsDir("main"), "sessions.json"),
       };
+      const cfg = { session: { store: scope.storePath } };
+      setRuntimeConfigSnapshot(cfg);
       const lifecycleRevision = "original-generation";
       const entry = {
         sessionId: scope.sessionId,
@@ -64,7 +67,7 @@ async function withTarget(
       await replaceSessionEntry(scope, entry);
       const params: PublicationParams = {
         ...scope,
-        cfg: { session: { store: scope.storePath } },
+        cfg,
         expectedGeneration: { sessionId: scope.sessionId, lifecycleRevision },
         occurrenceIds: ["occurrence-b", "occurrence-a"],
         payload: createHeartbeatToolResponsePayload({

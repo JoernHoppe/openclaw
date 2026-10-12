@@ -96,6 +96,7 @@ test("guards a durable workspace with committed facts and no host session SQL", 
 
 test("prepares an actor workspace and guards exact placement metadata without host session SQL", async () => {
   await withStateDirEnv("actor-placement-source-", async () => {
+    setRuntimeConfigSnapshot({});
     const identity = {
       agentId: "main",
       sessionKey: "agent:main:dashboard:incognito-placement-source",

@@ -20,7 +20,6 @@ import {
   getActiveSessionLifecycleMutationCount,
 } from "../../sessions/session-lifecycle-admission.js";
 import { readAssistantDisplayContent } from "../../shared/assistant-display-content.js";
-import { createDeferredCore } from "../../shared/deferred.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
@@ -31,6 +30,7 @@ import { requestActiveCronJobCancellation } from "../active-jobs.js";
 import { resolveCronDeliveryPlan } from "../delivery-plan.js";
 import { CronService } from "../service.js";
 import { createNoopLogger } from "../service.test-harness.js";
+import type { CronServiceDeps } from "../service/state.js";
 import { createCompletionFixture, PNG } from "./current-session-completion.test-fixtures.js";
 import * as deliveryPolicy from "./delivery-dispatch-policy.js";
 import { dispatchCronDelivery } from "./delivery-dispatch.js";
@@ -163,7 +163,44 @@ describe("current-session completion media", () => {
             }
             return payloads;
           });
-        const isolatedRunSettled = createDeferredCore();
+        const runIsolatedAgentJob = vi.fn<CronServiceDeps["runIsolatedAgentJob"]>(
+          async ({ job, abortSignal, deliveryAttemptFence }) => {
+            expect(deliveryAttemptFence).not.toBeNull();
+            fixture.params.job = job;
+            fixture.params.deliveryPlan = resolveCronDeliveryPlan(job);
+            fixture.params.deliveryAttemptFence = deliveryAttemptFence;
+            fixture.params.abortSignal = abortSignal;
+            fixture.params.isAborted = () => abortSignal?.aborted === true;
+            fixture.params.runStartedAt = Date.now();
+            fixture.params.resolvedDelivery = await resolveDeliveryTarget(
+              fixture.params.cfgWithAgentDefaults,
+              "main",
+              { ...job, ...fixture.params.deliveryPlan },
+            );
+            const result = await dispatchCronDelivery(fixture.params);
+            expect(result.delivered).toBe(stage === "commit");
+            if (stage === "commit") {
+              expect(result).toMatchObject({
+                deliveryError: undefined,
+                diagnostics: {
+                  entries: expect.arrayContaining([
+                    expect.objectContaining({
+                      source: "delivery",
+                      severity: "warn",
+                      message: expect.stringContaining(
+                        "result was delivered but was not added to the conversation:",
+                      ),
+                    }),
+                  ]),
+                },
+              });
+            }
+            return {
+              status: result.delivered ? "ok" : "error",
+              error: result.deliveryError,
+            };
+          },
+        );
         const cron = new CronService({
           scheduler: createTestGatewayScheduler(),
           storePath: state.path("cron", "jobs.json"),
@@ -173,46 +210,7 @@ describe("current-session completion media", () => {
           log: createNoopLogger(),
           enqueueSystemEvent: vi.fn(),
           requestHeartbeat: vi.fn(),
-          runIsolatedAgentJob: async ({ job, abortSignal, deliveryAttemptFence }) => {
-            try {
-              expect(deliveryAttemptFence).not.toBeNull();
-              fixture.params.job = job;
-              fixture.params.deliveryPlan = resolveCronDeliveryPlan(job);
-              fixture.params.deliveryAttemptFence = deliveryAttemptFence;
-              fixture.params.abortSignal = abortSignal;
-              fixture.params.isAborted = () => abortSignal?.aborted === true;
-              fixture.params.runStartedAt = Date.now();
-              fixture.params.resolvedDelivery = await resolveDeliveryTarget(
-                fixture.params.cfgWithAgentDefaults,
-                "main",
-                { ...job, ...fixture.params.deliveryPlan },
-              );
-              const result = await dispatchCronDelivery(fixture.params);
-              expect(result.delivered).toBe(stage === "commit");
-              if (stage === "commit") {
-                expect(result).toMatchObject({
-                  deliveryError: undefined,
-                  diagnostics: {
-                    entries: expect.arrayContaining([
-                      expect.objectContaining({
-                        source: "delivery",
-                        severity: "warn",
-                        message: expect.stringContaining(
-                          "result was delivered but was not added to the conversation:",
-                        ),
-                      }),
-                    ]),
-                  },
-                });
-              }
-              return {
-                status: result.delivered ? "ok" : "error",
-                error: result.deliveryError,
-              };
-            } finally {
-              isolatedRunSettled.resolve();
-            }
-          },
+          runIsolatedAgentJob,
         });
         try {
           await state.writeConfig(fixture.params.cfgWithAgentDefaults);
@@ -228,7 +226,9 @@ describe("current-session completion media", () => {
             delivery: { mode: "announce", channel: "telegram", to: "12345" },
           });
           await cron.run(job.id, "force");
-          await isolatedRunSettled.promise;
+          // Cancellation can finish cron.run before the callback finishes media cleanup.
+          expect(runIsolatedAgentJob).toHaveBeenCalledOnce();
+          await runIsolatedAgentJob.mock.results[0]!.value;
           expect(revoked).toBe(true);
           expect(sendMedia).toHaveBeenCalledTimes(stage === "commit" ? 1 : 0);
           expect(await fixture.messages()).toHaveLength(0);

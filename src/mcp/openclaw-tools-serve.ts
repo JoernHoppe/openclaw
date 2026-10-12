@@ -13,7 +13,7 @@ import type { AnyAgentTool } from "../agents/tools/common.js";
 import { createCronTool } from "../agents/tools/cron-tool.js";
 import { createSystemAgentTool } from "../agents/tools/system-agent-tool.js";
 import type { SystemAgentToolOptions } from "../agents/tools/system-agent-tool.js";
-import { getRuntimeConfig } from "../config/config.js";
+import { captureRuntimeConfigAsyncReader, getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
@@ -95,7 +95,10 @@ export async function resolveOpenClawToolsForMcp(
 async function serveOpenClawToolsMcp(): Promise<void> {
   const server = createToolsMcpServer({
     name: "openclaw-tools",
-    tools: await resolveOpenClawToolsForMcp({ agentId: resolveToolsMcpAgentId() }),
+    tools: await resolveOpenClawToolsForMcp({
+      agentId: resolveToolsMcpAgentId(),
+      config: await captureRuntimeConfigAsyncReader()(),
+    }),
   });
   await connectToolsMcpServerToStdio(server);
 }

@@ -493,9 +493,7 @@ export async function executePluginOwnedProcess(params: {
   };
   let watchdog: ReturnType<typeof createCliPluginWatchdog> | undefined;
   let stopAskUserDeadlineListener: (() => void) | undefined;
-  const stopCompactionWorkListener = params.onCompactionActiveChange?.(() =>
-    reportOutstandingWork(),
-  );
+  let stopCompactionWorkListener: (() => void) | undefined;
 
   const detachReplyBackend = attachCliReplyBackend(run, () => {
     termination.reason = "manual-cancel";
@@ -506,41 +504,18 @@ export async function executePluginOwnedProcess(params: {
   let liveSession: ReturnType<typeof createCliLiveSessionCapability> | undefined;
   let terminalResult: "none" | "success" | "error" = "none";
   try {
-    assertCurrent();
-    if (
-      params.liveSession &&
-      (params.forceNewSession ||
-        (Boolean(params.context.preparedBackend.backend.resumeArgs?.length) && !params.useResume))
-    ) {
-      if (params.liveSession.requiredGeneration) {
-        throw new Error("The required CLI live session cannot be replaced by a fresh process.");
-      }
-      await restartCliLiveSession(params.context, signal);
-    }
-    assertCurrent();
-    if (params.liveSession) {
-      liveSession = createCliLiveSessionCapability({
-        context: params.context,
-        argv: [command, ...executionArgs],
-        argv0: params.executionArgv0,
-        env: params.env,
-        ...params.liveSession,
-        captureKey: params.mcpCapture?.captureKey,
-        beginCapture: (captureKey) =>
-          params.mcpCapture?.beginCapture(captureKey, assertCaptureCurrent),
-        abortSignal: signal,
-        claimResources: params.context.preparedBackend.claimLiveSessionResources,
-      });
-    } else {
-      params.mcpCapture?.beginCapture(params.mcpCapture.captureKey, assertCaptureCurrent);
-    }
-    const requestToolPermission = await createPluginToolPermissionHandler({
-      context: params.context,
-      abortSignal: signal,
-      onPendingApproval: updatePendingApproval,
-      env: params.env,
-    });
-    await params.context.cliHistoryWriter?.assertReadable();
+    // Host policy preparation cannot produce CLI output; start execution clocks after it.
+    const requestToolPermission = await racePromiseWithAbortSignal(
+      () =>
+        createPluginToolPermissionHandler({
+          context: params.context,
+          abortSignal: signal,
+          onPendingApproval: updatePendingApproval,
+          env: params.env,
+        }),
+      signal,
+      createCliAbortError,
+    );
     assertCurrent();
     watchdog = createCliPluginWatchdog(
       {
@@ -569,8 +544,41 @@ export async function executePluginOwnedProcess(params: {
       },
       params.watchdogClock,
     );
-    stopAskUserDeadlineListener = params.onActiveLoopbackAskUserDeadlineChange?.(watchdog.reset);
+    stopAskUserDeadlineListener = params.onActiveLoopbackAskUserDeadlineChange?.(() =>
+      watchdog?.reset(),
+    );
+    stopCompactionWorkListener = params.onCompactionActiveChange?.(() => reportOutstandingWork());
+
     watchdog.reset();
+    if (
+      params.liveSession &&
+      (params.forceNewSession ||
+        (Boolean(params.context.preparedBackend.backend.resumeArgs?.length) && !params.useResume))
+    ) {
+      if (params.liveSession.requiredGeneration) {
+        throw new Error("The required CLI live session cannot be replaced by a fresh process.");
+      }
+      await restartCliLiveSession(params.context, signal);
+    }
+    assertCurrent();
+    if (params.liveSession) {
+      liveSession = createCliLiveSessionCapability({
+        context: params.context,
+        argv: [command, ...executionArgs],
+        argv0: params.executionArgv0,
+        env: params.env,
+        ...params.liveSession,
+        captureKey: params.mcpCapture?.captureKey,
+        beginCapture: (captureKey) =>
+          params.mcpCapture?.beginCapture(captureKey, assertCaptureCurrent),
+        abortSignal: signal,
+        claimResources: params.context.preparedBackend.claimLiveSessionResources,
+      });
+    } else {
+      params.mcpCapture?.beginCapture(params.mcpCapture.captureKey, assertCaptureCurrent);
+    }
+    await params.context.cliHistoryWriter?.assertReadable();
+    assertCurrent();
     const started = await runWithAgentToolSourceExecutionScope(assertCurrent, async () => {
       assertCurrent();
       const execution = params.execute({

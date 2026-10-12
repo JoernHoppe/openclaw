@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   appendTranscriptMessage,
   upsertSessionEntryCore,
@@ -85,6 +86,7 @@ async function exercise(
   disclosureBoundary?: "transcript" | "managed" | "url",
 ) {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    setRuntimeConfigSnapshot({});
     await upsertSessionEntryCore(
       { agentId: "main", sessionKey },
       { sessionId: "artifact-request-authority", updatedAt: 1 },
@@ -320,6 +322,7 @@ describe("registered artifact request authority after session preparation", () =
         },
       };
       await state.writeConfig(config);
+      setRuntimeConfigSnapshot(config);
       const readers = await import("../session-transcript-native.test-support.js");
       boundaries.visit.mockImplementation(readers.visitSessionMessagesAsync);
       const client: GatewayClient = {
@@ -379,6 +382,7 @@ describe("registered artifact request authority after session preparation", () =
             entries: { main: {}, work: {} },
           },
         };
+        setRuntimeConfigSnapshot(config);
         return resolve;
       });
       const response = await request(

@@ -1,6 +1,10 @@
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import {
   beginSessionWorkAdmission,
@@ -13,10 +17,12 @@ import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => closeOpenClawAgentDatabasesForTest());
+afterEach(clearRuntimeConfigSnapshot);
 
 it.each(["active", "failed"] as const)(
   "a %s reclaim whose canonical cancellation rejects still retires old pending work",
   async (state) => {
+    setRuntimeConfigSnapshot({});
     const scope = path.join(tempDirs.make(`cancel-failure-${state}-`), "sessions.sqlite");
     const sessionKey = "agent:main:cancel-failure";
     const sessionId = "cancel-failure-session";

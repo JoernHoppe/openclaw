@@ -3,6 +3,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { getRuntimeConfig } from "../config/config.js";
+import { captureRuntimeConfigAsyncReader } from "../config/io.runtime.js";
 import {
   loadTranscriptEvents,
   loadSessionEntryReadOnly,
@@ -86,6 +87,7 @@ describe("worker workspace recovery transcript reporting", () => {
     "selects conflict reports through %s navigation without adopting an inactive clear",
     async (navigation) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        await captureRuntimeConfigAsyncReader()();
         await upsertSessionEntryCore(IDENTITY, { sessionId: IDENTITY.sessionId, updatedAt: 1 });
         const conflict = {
           paths: ["edited.ts"],
@@ -157,6 +159,7 @@ describe("worker workspace recovery transcript reporting", () => {
     "reports $label as unknown instead of treating a retained conflict as absent",
     async (details) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        await captureRuntimeConfigAsyncReader()();
         await upsertSessionEntryCore(IDENTITY, { sessionId: IDENTITY.sessionId, updatedAt: 1 });
         await replaceTranscriptEvents(IDENTITY, [
           { type: "session", id: IDENTITY.sessionId, version: CURRENT_SESSION_VERSION },
@@ -187,6 +190,7 @@ describe("worker workspace recovery transcript reporting", () => {
     "reports a %s session as unavailable instead of treating its conflict as absent",
     async (sessionState) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        await captureRuntimeConfigAsyncReader()();
         if (sessionState === "rebound") {
           await upsertSessionEntryCore(IDENTITY, {
             sessionId: "replacement-workspace-session",
@@ -204,6 +208,7 @@ describe("worker workspace recovery transcript reporting", () => {
 
   it("records historical recovery failures while preserving the live pending-result owner", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      await captureRuntimeConfigAsyncReader()();
       await upsertSessionEntryCore(REQUEST, { sessionId: REQUEST.sessionId, updatedAt: 1 });
       const workspacePath = state.statePath("recovery-workspace");
       await fs.mkdir(workspacePath, { recursive: true });
@@ -276,6 +281,7 @@ describe("worker workspace recovery transcript reporting", () => {
 
   it("persists bounded recovery failures and deduplicates identical consecutive attempts", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      await captureRuntimeConfigAsyncReader()();
       await upsertSessionEntryCore(IDENTITY, { sessionId: IDENTITY.sessionId, updatedAt: 1 });
       const { reportFailure } = await createHandlers();
       const secret = [
@@ -315,6 +321,7 @@ describe("worker workspace recovery transcript reporting", () => {
 
   it("rejects a rebound session identity without touching its replacement transcript", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      await captureRuntimeConfigAsyncReader()();
       await upsertSessionEntryCore(IDENTITY, { sessionId: IDENTITY.sessionId, updatedAt: 1 });
       const { reportFailure } = await createHandlers();
       await upsertSessionEntryCore(IDENTITY, {
@@ -336,6 +343,7 @@ describe("worker workspace recovery transcript reporting", () => {
     "revalidates a rebound %s after waiting for the transcript writer",
     async (reboundKind) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        await captureRuntimeConfigAsyncReader()();
         await upsertSessionEntryCore(IDENTITY, {
           sessionId: IDENTITY.sessionId,
           updatedAt: 1,

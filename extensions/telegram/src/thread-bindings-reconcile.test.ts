@@ -59,7 +59,9 @@ describe("telegram thread binding startup reconciliation", () => {
     });
     await manager.stop();
     const error = new IncognitoSessionEndedError();
-    acpHost.read.mockRejectedValue(error);
+    acpHost.read.mockImplementation(async () => {
+      throw error;
+    });
 
     await expect(createManager(options)).rejects.toBe(error);
     expect(await storedBindings()).toContainEqual(
