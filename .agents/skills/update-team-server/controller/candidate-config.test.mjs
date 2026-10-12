@@ -12,7 +12,7 @@ const originalUmask = process.umask(0o022);
 after(() => process.umask(originalUmask));
 
 // Ordinary startup replacement uses the real journal/audit proofs without Linux services.
-function startupConfigFixture(t, { phase = "ROLLBACK_FAILED", change } = {}) {
+function startupConfigFixture(t, { phase = "ROLLBACK_FAILED", change, legacyJournal = false, legacyAudit = false } = {}) {
   const f = makeReleaseFixture(t), candidate = f.addRelease("b".repeat(40));
   const hash = bytes => createHash("sha256").update(bytes).digest("hex");
   const run = (cmd, args = []) => spawnSync(process.execPath, ["--no-warnings", library, cmd, ...args.map(String)],
@@ -30,7 +30,8 @@ function startupConfigFixture(t, { phase = "ROLLBACK_FAILED", change } = {}) {
   const before = JSON.parse(fs.readFileSync(f.config));
   before.channels["nextcloud-talk"] = { accounts: { default: { enabled: true } } };
   fs.writeFileSync(f.config, JSON.stringify(before));
-  const paths = JSON.parse(proof("fingerprint", [f.config, f.databasePath]));
+  const exactPaths = JSON.parse(proof("fingerprint", [f.config, f.databasePath]));
+  const paths = legacyJournal ? exactPaths.map(value => ({ ...value, device: Number(value.device), inode: Number(value.inode) })) : exactPaths;
   const previousBytes = fs.readFileSync(f.config), originalPolicy = JSON.parse(proof("policy", [f.config]));
   const witness = join(dirname(f.journal), `original-${randomUUID()}.json`);
   fs.writeFileSync(witness, "[]", { mode: 0o600 });
@@ -59,12 +60,14 @@ function startupConfigFixture(t, { phase = "ROLLBACK_FAILED", change } = {}) {
   change?.(next);
   fs.copyFileSync(f.config, f.config + ".bak"); fs.chmodSync(f.config + ".bak", 0o600);
   fs.writeFileSync(f.config + ".next", JSON.stringify(next), { mode: 0o600 }); fs.renameSync(f.config + ".next", f.config);
-  const entry = fs.statSync(f.config), bytes = fs.readFileSync(f.config), ts = new Date().toISOString();
+  const entry = fs.statSync(f.config, { bigint: true }), bytes = fs.readFileSync(f.config), ts = new Date().toISOString();
   const audit = { ts, event: "config.write", source: "config-io", result: "rename", configPath: f.config,
+    ...(legacyAudit ? {} : { identityEncoding: "exact" }),
     existsBefore: true, pid: binding.pid, previousHash: hash(previousBytes), nextHash: hash(bytes),
     previousBytes: previousBytes.length, nextBytes: bytes.length };
-  for (const [prefix, descriptor] of [["previous", paths[0]], ["next", { device: entry.dev, inode: entry.ino }]])
-    Object.assign(audit, { [prefix + "Dev"]: String(descriptor.device), [prefix + "Ino"]: String(descriptor.inode),
+  for (const [prefix, descriptor] of [["previous", exactPaths[0]], ["next", { device: entry.dev, inode: entry.ino }]])
+    Object.assign(audit, { [prefix + "Dev"]: legacyAudit ? Number(descriptor.device) : String(descriptor.device),
+      [prefix + "Ino"]: legacyAudit ? Number(descriptor.inode) : String(descriptor.inode),
       [prefix + "Mode"]: 0o600, [prefix + "Nlink"]: 1, [prefix + "Uid"]: process.getuid(), [prefix + "Gid"]: process.getgid() });
   const db = new DatabaseSync(f.databasePath);
   db.exec("CREATE TABLE diagnostic_events(scope TEXT,event_key TEXT,sequence INTEGER,payload_json TEXT)");
@@ -179,13 +182,16 @@ test(`ordinary selected reconciliation retains original journal after ${failure}
   assert.deepEqual(fs.readFileSync(f.journal), original);
 });
 
-test("ordinary deploy accepts only audited candidate startup additions and durably rebinds config", t => {
-  const f = startupConfigFixture(t, { phase: "D_VERIFYING" }), original = fs.readFileSync(f.journal);
+for (const legacyJournal of [false, true]) for (const legacyAudit of [false, true])
+test(`ordinary deploy accepts audited startup additions (legacy journal=${legacyJournal}, legacy audit=${legacyAudit}) and rebinds exact config`, t => {
+  const f = startupConfigFixture(t, { phase: "D_VERIFYING", legacyJournal, legacyAudit }), original = fs.readFileSync(f.journal);
   const result = runSelectedConfigRecovery(f, { deploy: true }); f.ok(result);
   assert.match(result.stdout, /CONFIG_MIGRATION_ACCEPTED keys=6 source=candidate-startup/);
   const record = JSON.parse(fs.readFileSync(f.journal));
   assert.equal(record.protectedPaths[0].inode, fs.statSync(f.config, { bigint: true }).ino.toString());
-  assert.deepEqual(record.protectedPaths[1], f.paths[1]);
+  const databaseIdentity = fs.statSync(f.databasePath, { bigint: true });
+  assert.deepEqual(record.protectedPaths[1], { path: f.databasePath,
+    device: databaseIdentity.dev.toString(), inode: databaseIdentity.ino.toString() });
   assert.deepEqual(record.originalWitness, f.record.originalWitness);
   const name = fs.readdirSync(dirname(f.journal)).find(name => name.startsWith("config-startup-"));
   const receipt = JSON.parse(fs.readFileSync(join(dirname(f.journal), name)));

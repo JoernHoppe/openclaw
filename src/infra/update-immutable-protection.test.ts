@@ -64,6 +64,7 @@ async function fixture() {
       audited?: boolean;
       brokenHash?: boolean;
       foreignOrigin?: boolean;
+      legacyAudit?: boolean;
     } = {},
   ) => {
     const previousRaw = fs.readFileSync(configPath, "utf8");
@@ -75,37 +76,47 @@ async function fixture() {
     if (options.audited === false) {
       return;
     }
+    const record = finalizeConfigWriteAuditRecord({
+      base: createConfigWriteAuditRecordBase({
+        configPath,
+        env,
+        existsBefore: true,
+        previousHash: options.brokenHash ? "f".repeat(64) : hashConfigRaw(previousRaw),
+        nextHash: hashConfigRaw(raw),
+        previousBytes: Buffer.byteLength(previousRaw),
+        nextBytes: Buffer.byteLength(raw),
+        previousMetadata,
+        changedPathCount: 1,
+        hasMetaBefore: true,
+        hasMetaAfter: true,
+        gatewayModeBefore: "local",
+        gatewayModeAfter: "local",
+        suspicious: [],
+        origin: options.foreignOrigin ? "config-rpc" : "doctor",
+        processInfo: {
+          pid: options.pid ?? candidate.pid,
+          ppid: 1,
+          cwd: options.cwd ?? candidate.generationPath,
+          argv: ["node", path.join(candidate.generationPath, "dist/index.js"), "gateway"],
+          execArgv: [],
+        },
+      }),
+      result: "rename",
+      nextMetadata: resolveConfigStatMetadata(fs.statSync(configPath, { bigint: true })),
+    });
+    if (options.legacyAudit) {
+      delete record.identityEncoding;
+      for (const key of ["previousDev", "previousIno", "nextDev", "nextIno"] as const) {
+        const value = record[key];
+        if (typeof value === "string") {
+          record[key] = String(Number(value));
+        }
+      }
+    }
     await appendConfigAuditRecord({
       env,
       homedir: () => root,
-      record: finalizeConfigWriteAuditRecord({
-        base: createConfigWriteAuditRecordBase({
-          configPath,
-          env,
-          existsBefore: true,
-          previousHash: options.brokenHash ? "f".repeat(64) : hashConfigRaw(previousRaw),
-          nextHash: hashConfigRaw(raw),
-          previousBytes: Buffer.byteLength(previousRaw),
-          nextBytes: Buffer.byteLength(raw),
-          previousMetadata,
-          changedPathCount: 1,
-          hasMetaBefore: true,
-          hasMetaAfter: true,
-          gatewayModeBefore: "local",
-          gatewayModeAfter: "local",
-          suspicious: [],
-          origin: options.foreignOrigin ? "config-rpc" : "doctor",
-          processInfo: {
-            pid: options.pid ?? candidate.pid,
-            ppid: 1,
-            cwd: options.cwd ?? candidate.generationPath,
-            argv: ["node", path.join(candidate.generationPath, "dist/index.js"), "gateway"],
-            execArgv: [],
-          },
-        }),
-        result: "rename",
-        nextMetadata: resolveConfigStatMetadata(fs.statSync(configPath, { bigint: true })),
-      }),
+      record,
     });
   };
   const additive = () => ({
@@ -202,6 +213,45 @@ describe("immutable activation protected identities", () => {
       "target changed",
     );
   });
+
+  it.each([
+    { legacySnapshot: false, legacyAudit: false, replaced: false, accepted: true },
+    { legacySnapshot: false, legacyAudit: false, replaced: true, accepted: false },
+    { legacySnapshot: false, legacyAudit: true, replaced: false, accepted: false },
+    { legacySnapshot: true, legacyAudit: true, replaced: true, accepted: true },
+  ])(
+    "preserves retained identity authority across audit records (%j)",
+    async ({ legacySnapshot, legacyAudit, replaced, accepted }) => {
+      const test = await fixture();
+      const retained = structuredClone(test.snapshot);
+      const original = fs.statSync(test.configPath, { bigint: true }).ino;
+      const large = 2n ** 53n;
+      retained.config[0]!.identity.ino = large.toString();
+      if (legacySnapshot) {
+        delete retained.identityEncoding;
+      }
+      for (const method of ["statSync", "lstatSync"] as const) {
+        const stat = fs[method];
+        vi.spyOn(fs, method).mockImplementation((...args) => {
+          const result = stat(...args);
+          if (result && String(args[0]) === test.configPath) {
+            const inode = BigInt(result.ino) === original ? large + BigInt(replaced) : large + 4n;
+            Object.defineProperty(result, "ino", {
+              value: typeof result.ino === "bigint" ? inode : Number(inode),
+            });
+          }
+          return result;
+        });
+      }
+      await test.migrate(test.additive(), { legacyAudit });
+      const verify = () => verifyImmutableProtection(retained, test.context);
+      if (accepted) {
+        expect(verify).not.toThrow();
+      } else {
+        expect(verify).toThrow(/audit|receipt/u);
+      }
+    },
+  );
 
   it.each([
     "unaudited",

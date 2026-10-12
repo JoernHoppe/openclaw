@@ -2229,9 +2229,21 @@ function migrationNativeConfigAudit(root, record, previous, config, runtimeUid, 
           !Number.isSafeInteger(value.pid) || value.pid < 1) continue;
       if (startup && (value.pid !== startup.pid || Date.parse(value.ts) < startup.startedAt ||
           Date.parse(value.ts) > startup.startedAt + 600_000 || Date.parse(value.ts) > Date.now())) continue;
+      const auditEncoding = value.identityEncoding ?? "legacy-number";
+      if (!["exact", "legacy-number"].includes(auditEncoding) ||
+          ["previousDev", "previousIno", "nextDev", "nextIno"].some(key =>
+            !isFileId(value[key]) || (auditEncoding === "exact" && typeof value[key] !== "string"))) continue;
+      const auditIdentityMatches = (observed, retained, retainedEncoding) => {
+        // Exact receipts require lossless audit facts; legacy receipts keep their original domain.
+        if (auditEncoding === "legacy-number" && storedFileId(retained, retainedEncoding).encoding === "exact") {
+          const legacy = Number(observed);
+          return Number.isSafeInteger(legacy) && fileIdMatches(String(legacy), retained, retainedEncoding);
+        }
+        return fileIdMatches(observed, retained, retainedEncoding);
+      };
       if ([["previous", previous], ["next", config]].some(([prefix, descriptor]) =>
-        !fileIdMatches(descriptor.device, value[`${prefix}Dev`], value.identityEncoding ?? "legacy-number") ||
-        !fileIdMatches(descriptor.inode, value[`${prefix}Ino`], value.identityEncoding ?? "legacy-number") ||
+        !auditIdentityMatches(value[`${prefix}Dev`], descriptor.device, descriptor.identityEncoding) ||
+        !auditIdentityMatches(value[`${prefix}Ino`], descriptor.inode, descriptor.identityEncoding) ||
         value[`${prefix}Mode`] !== 0o600 || value[`${prefix}Nlink`] !== 1 ||
         value[`${prefix}Uid`] !== runtimeUid || value[`${prefix}Gid`] !== entry.gid)) continue;
       // Retain only the exact audit binding, never the native writer's argv or config values.
@@ -2309,7 +2321,8 @@ function candidateConfigSnapshot(pathname, root, expectedPaths, binding, runtime
       !fileReceiptMatches(expectedPaths, record.protectedPaths))
     reject("startup config acceptance requires the bound ordinary candidate verification journal");
   originalWitness(pathname, record);
-  if (!fileReceiptMatches(identity(record.protectedPaths[1].path), record.protectedPaths[1]))
+  const databaseIdentity = identity(record.protectedPaths[1].path);
+  if (!fileReceiptMatches(databaseIdentity, record.protectedPaths[1]))
     reject("startup config acceptance refuses a replaced store");
   const candidateProcess = selectedConfigProcess(root, record, binding);
   const proc = process.env.OPENCLAW_TEAM_PROC_ROOT ?? "/proc";
@@ -2327,13 +2340,13 @@ function candidateConfigSnapshot(pathname, root, expectedPaths, binding, runtime
       !isDeepStrictEqual(policy(replacement.config.path), expectedPolicy)) reject("startup config policy changed");
   const journal = migrationFile(pathname, namespace.owner, { mode: 0o600, limit: migrationJournalLimit });
   if (!isDeepStrictEqual(migrationJson(journal.bytes), record)) reject("startup config journal changed");
-  if (!fileReceiptMatches(identity(record.protectedPaths[1].path), record.protectedPaths[1]) ||
+  if (!fileReceiptMatches(identity(record.protectedPaths[1].path), databaseIdentity) ||
       !isDeepStrictEqual(migrationFile(replacement.config.path, runtimeUid, { mode: 0o600, group: replacement.gid }).descriptor, replacement.current.descriptor) ||
       !isDeepStrictEqual(migrationFile(replacement.backup.descriptor.path, runtimeUid, { mode: 0o600, group: replacement.gid }).descriptor, replacement.backup.descriptor)) reject("startup config or store changed during audit verification");
   selectedConfigProcess(root, record, binding);
   return { version: 1, kind: "candidate-startup-config", original: { record, identity: journal.descriptor },
     config: replacement.config, backup: replacement.backup.descriptor, previous: replacement.previous,
-    audit: replacement.audit, process: candidateProcess, runtimeUid, runtimeGid: replacement.gid, startedAt, keys };
+    audit: replacement.audit, databaseIdentity, process: candidateProcess, runtimeUid, runtimeGid: replacement.gid, startedAt, keys };
 }
 
 function candidateConfigAccept(pathname, root, expectedPaths, binding, runtimeUid, expectedPolicy) {
@@ -2344,6 +2357,7 @@ function candidateConfigAccept(pathname, root, expectedPaths, binding, runtimeUi
   if (!isDeepStrictEqual(snapshot(), receipt)) reject("startup config acceptance changed before publication");
   const record = structuredClone(receipt.original.record);
   record.protectedPaths[0] = { path: receipt.config.path, device: receipt.config.device, inode: receipt.config.inode };
+  record.protectedPaths[1] = receipt.databaseIdentity;
   validJournal(record);
   atomicJson(pathname, record);
   if (!isDeepStrictEqual(ownedJournal(pathname), record)) reject("startup config journal publication changed");

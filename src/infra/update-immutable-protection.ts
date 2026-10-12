@@ -27,6 +27,16 @@ import {
 } from "./update-immutable-protection-schema.js";
 
 type ProtectionContext = { env: NodeJS.ProcessEnv; assertCurrent: () => void };
+function hasLosslessIdentity(
+  identity: Pick<ImmutableProtectionSnapshot["state"]["identity"], "dev" | "ino">,
+  encoding: ImmutableIdentityEncoding | undefined,
+): boolean {
+  return (
+    encoding === "exact" ||
+    [identity.dev, identity.ino].every((value) => Number.isSafeInteger(Number(value)))
+  );
+}
+
 function sameFileIdentity(
   observed: ImmutableProtectionSnapshot["state"]["identity"],
   recorded: ImmutableProtectionSnapshot["state"]["identity"],
@@ -37,11 +47,8 @@ function sameFileIdentity(
   const { dev: recordedDev, ino: recordedIno, ...recordedMetadata } = recorded;
   return (
     isDeepStrictEqual(metadata, recordedMetadata) &&
-    immutableIdentityMatches(
-      `${dev}:${ino}`,
-      `${recordedDev}:${recordedIno}`,
-      observedEncoding === "exact" && recordedEncoding === "exact" ? "exact" : "legacy",
-    )
+    (recordedEncoding !== "exact" || hasLosslessIdentity(observed, observedEncoding)) &&
+    immutableIdentityMatches(`${dev}:${ino}`, `${recordedDev}:${recordedIno}`, recordedEncoding)
   );
 }
 export type ImmutableProtectionCandidate = {
@@ -346,6 +353,7 @@ export function verifyImmutableProtection(
       const previous = identity("previous");
       const parsedPrevious = immutableProtectedFileIdentitySchema.safeParse(previous);
       const next = immutableProtectedFileIdentitySchema.safeParse(identity("next"));
+      const nextEncoding = expectedEncoding === "exact" ? "exact" : record.identityEncoding;
       assertImmutableIdentityEncoding(record.identityEncoding, [
         `${previous.dev}:${previous.ino}`,
         `${record.nextDev}:${record.nextIno}`,
@@ -367,15 +375,14 @@ export function verifyImmutableProtection(
           expectedEncoding,
         ) ||
         !next.success ||
+        (nextEncoding === "exact" && !hasLosslessIdentity(next.data, record.identityEncoding)) ||
         next.data.uid !== file.identity.uid ||
         next.data.gid !== file.identity.gid ||
         next.data.mode !== file.identity.mode ||
         !immutableIdentityMatches(
           `${next.data.dev}:0`,
           `${file.identity.dev}:0`,
-          record.identityEncoding === "exact" && snapshot.identityEncoding === "exact"
-            ? "exact"
-            : "legacy",
+          snapshot.identityEncoding,
         ) ||
         !record.nextHash
       ) {
@@ -385,7 +392,7 @@ export function verifyImmutableProtection(
       }
       expectedHash = record.nextHash;
       expectedIdentity = next.data;
-      expectedEncoding = record.identityEncoding;
+      expectedEncoding = nextEncoding;
       writes++;
     }
     if (
