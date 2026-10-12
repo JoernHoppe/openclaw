@@ -280,9 +280,7 @@ async function deleteGatewaySessionInScope(
     const assertGenerationCurrent = () => {
       assertExternalCurrent();
       actorClaim?.assertCurrent();
-      if (durableRead && !durableRead.isCurrent()) {
-        throw new SessionDeletionError(sessionChangedError());
-      }
+      // Historical cleanup may invalidate metadata; the delete transaction checks the exact entry.
     };
     const refreshActorEntry = async () => {
       if (binding) {

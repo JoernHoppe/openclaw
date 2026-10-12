@@ -506,6 +506,8 @@ export type GatewayRequestOptions = {
 export type SessionMutationAuthorization = {
   /** Release the request's retained sharing facts after its final effect. */
   release?: () => void;
+  /** Retain these facts until a detached effect settles, independently of the request. */
+  retain?: () => () => void;
   /** Transfer retained facts to admitted work; request cleanup then leaves them with that owner. */
   takeRelease?: () => () => void;
   bindCreation?: (

@@ -94,6 +94,22 @@ export async function resolveSessionMutationAuthorizationAsync(
       stop();
     }
   };
+  let references = 0;
+  const retain = () => {
+    references += 1;
+    let retained = true;
+    return () => {
+      if (!retained) {
+        return;
+      }
+      retained = false;
+      references -= 1;
+      if (references === 0) {
+        release();
+      }
+    };
+  };
+  const releaseRequest = retain();
   try {
     const uniqueTargets = targets.filter(
       (target, index) =>
@@ -176,14 +192,15 @@ export async function resolveSessionMutationAuthorizationAsync(
             )
             ?.followRegistration?.(change);
         },
+        retain,
         release: () => {
           if (!transferred) {
-            release();
+            releaseRequest();
           }
         },
         takeRelease: () => {
           transferred = true;
-          return release;
+          return releaseRequest;
         },
         recordCreatedSession: (created) => {
           authorization.recordCreatedSession?.(created);
