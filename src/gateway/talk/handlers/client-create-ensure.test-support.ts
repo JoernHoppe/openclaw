@@ -24,7 +24,7 @@ import { closeOpenClawAgentDatabasesAsync } from "../../../state/openclaw-agent-
 import { openOpenClawAgentDatabase } from "../../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
 import { prepareUserProfileCatalog } from "../../../state/user-profile-list.js";
-import { setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
+import { setDisplayName, setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../../state/user-profiles.js";
 import * as voiceWriters from "../../../talk/client-voice-session-write.js";
 import * as voiceSessions from "../../../talk/client-voice-session.js";
@@ -126,10 +126,14 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
     },
   );
 
-  it.each(["publication", "preparation"] as const)(
-    "rechecks an owner profile role commit after entry %s",
-    async (phase) => {
-      const key = `agent:main:entry-profile-role-${phase}`;
+  it.each([
+    { change: "role", phase: "publication" },
+    { change: "display", phase: "publication" },
+    { change: "role", phase: "preparation" },
+  ] as const)(
+    "preserves voice admission after a profile $change commit during entry $phase",
+    async ({ change, phase }) => {
+      const key = `agent:main:entry-profile-${change}-${phase}`;
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-profile@example.test");
       setUserProfileRole(profile.id, "write");
@@ -142,7 +146,11 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const ensure = voiceWriters.ensureClientVoiceAgentSessionEntry;
       let changed = false;
       const changeProfile = () => {
-        setUserProfileRole(profile.id, "view");
+        if (change === "role") {
+          setUserProfileRole(profile.id, "view");
+        } else {
+          setDisplayName(profile.id, "Changed display");
+        }
         changed = true;
       };
       const prepare = sharingGrants.prepareSessionSharingWorkerGrant;
@@ -184,11 +192,13 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
         if (respond.mock.lastCall?.[0]) {
           harness.ownVoice(respond.mock.lastCall[1].voiceSessionId, key);
         }
-        expect(respond.mock.lastCall?.[0], respond.mock.lastCall?.[2]?.message).toBe(false);
-        expect(
-          clientVoiceSessionTesting.readRecord("main", "profile-changed-voice"),
-        ).toBeUndefined();
-        expect(fixture.cancelBrowserSession).toHaveBeenCalledOnce();
+        expect(respond.mock.lastCall?.[0], respond.mock.lastCall?.[2]?.message).toBe(
+          change === "display",
+        );
+        expect(clientVoiceSessionTesting.readRecord("main", "profile-changed-voice")?.status).toBe(
+          change === "display" ? "open" : undefined,
+        );
+        expect(fixture.cancelBrowserSession).toHaveBeenCalledTimes(change === "role" ? 1 : 0);
       } finally {
         creation.mockRestore();
       }

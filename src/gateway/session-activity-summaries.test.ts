@@ -392,11 +392,16 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     await patchSessionEntryCore(scope, () => ({ skillsSnapshot: { prompt, skills: [] } }));
     const before = read()!;
     const completion = createDeferred<ReturnType<typeof result>>();
-    complete.mockImplementationOnce(() => completion.promise);
+    const completionStarted = createDeferred();
+    complete.mockImplementationOnce(() => {
+      completionStarted.resolve();
+      return withinTest(completion.promise, testSignal);
+    });
     residentProjection = await createSessionRowProjection({ cfg, getConfig: () => cfg });
     await residentProjection.ensureMaterialized();
     await ensureRecap(target);
-    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    await withinTest(completionStarted.promise, testSignal);
+    expect(complete).toHaveBeenCalledTimes(1);
     const queries = observeSqliteReadSql(requireNodeSqlite().StatementSync.prototype);
     const parse = vi.spyOn(JSON, "parse");
     try {
@@ -594,13 +599,13 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     expect(view()?.state).toBe("current");
     await messages(2, 2);
     const completion = createDeferred<ReturnType<typeof result>>();
-    const recapStarted = createDeferred();
+    const completionStarted = createDeferred();
     complete.mockImplementationOnce(() => {
-      recapStarted.resolve();
-      return completion.promise;
+      completionStarted.resolve();
+      return withinTest(completion.promise, testSignal);
     });
     await ensureRecap(target);
-    await withinTest(recapStarted.promise, testSignal);
+    await withinTest(completionStarted.promise, testSignal);
     expect(complete).toHaveBeenCalledTimes(2);
 
     const materializationStarted = createDeferred();

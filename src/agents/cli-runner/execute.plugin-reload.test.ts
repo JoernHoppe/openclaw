@@ -111,7 +111,7 @@ describe("plugin-owned CLI turns across a plugin hot reload", () => {
         awaitGateBeforeSettlement(
           started.promise,
           run,
-          "CLI run settled before its backend iterator started",
+          "CLI turn settled before its stream started",
         ),
         signal,
       );

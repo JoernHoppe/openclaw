@@ -464,7 +464,6 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
       wallClockMs: number;
       maxToolCalls: number;
       label: string;
-      onExecutionStarted?: () => void | Promise<void>;
     },
   ): Promise<
     | { kind: "completed"; result: Extract<CodeModeHeadlessResult, { status: "completed" }> }
@@ -637,8 +636,6 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         if (remainingWallClockMs <= 0) {
           throw new CodeModeHeadlessTimeoutError(`${params.label} timed out`);
         }
-        await params.onExecutionStarted?.();
-        assertActive();
         const result = await runHeadless({
           ctx,
           code: params.script,
@@ -730,7 +727,6 @@ export function createCronScriptRuntime(deps: CronTriggerEvaluatorDeps) {
         wallClockMs: timeoutSeconds * 1000,
         maxToolCalls: toolBudget,
         label: "cron script payload",
-        onExecutionStarted: params.executionIdentity?.onExecutionStarted,
       });
       return outcome.kind === "completed" ? parseScriptPayloadResult(outcome.result) : outcome;
     },
