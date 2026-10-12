@@ -163,14 +163,17 @@ export function prepareSessionRunTargetAbort(params: {
   return Object.assign(abort, { requestRunIds });
 }
 
+type RequesterSession = Pick<
+  SubagentRequestSessionOrigin["target"],
+  "storePath" | "sessionId" | "lifecycleRevision"
+>;
+
 export async function stopSubagentsForRequester(params: {
   cfg: OpenClawConfig;
   requesterSessionKey?: string;
   requesterAgentId?: string;
-  requesterSession?: Pick<
-    SubagentRequestSessionOrigin["target"],
-    "storePath" | "sessionId" | "lifecycleRevision"
-  >;
+  requesterSession?: RequesterSession;
+  prepareRequesterSession?: () => Promise<RequesterSession | undefined>;
   assertCurrent?: () => void;
   acceptsRequest?: (identity: ExecRequestIdentity) => boolean;
   beforeKill?: Parameters<typeof killAllControlledSubagentRuns>[0]["beforeKill"];
@@ -198,22 +201,49 @@ export async function stopSubagentsForRequester(params: {
     sessionKey: requesterKey,
     agentId: controllerAgentId,
   });
-  const requestSelection = captureExecRequestSubagentSelection({
+  const selectionParams = {
     cfg: params.cfg,
     controller,
     owners: commands.owners,
     acceptsRequest: params.acceptsRequest,
-    sessionOrigin: params.requesterSession
+  };
+  const sessionOrigin = (session: RequesterSession | undefined) =>
+    session
       ? {
-          target: {
-            ...params.requesterSession,
-            sessionKey: requesterKey,
-            agentId: controllerAgentId,
-          },
+          target: { ...session, sessionKey: requesterKey, agentId: controllerAgentId },
+          acceptsRequest: () => true,
+        }
+      : undefined;
+  const preparation = params.prepareRequesterSession;
+  let selected = captureExecRequestSubagentSelection({
+    ...selectionParams,
+    sessionOrigin: sessionOrigin(params.requesterSession),
+    candidateOrigin: preparation
+      ? {
+          target: { sessionKey: requesterKey, agentId: controllerAgentId },
           acceptsRequest: () => true,
         }
       : undefined,
   });
+  const requestSelection = {
+    runs: selected.runs,
+    ownsRoot: (entry: (typeof selected.runs)[number]) => selected.ownsRoot(entry),
+    selectPublishedRoot:
+      preparation || selected.selectPublishedRoot
+        ? (entry: (typeof selected.runs)[number]) => selected.selectPublishedRoot?.(entry) === true
+        : undefined,
+    get sessionGeneration() {
+      return selected.sessionGeneration;
+    },
+    prepare: preparation
+      ? async () => {
+          selected = captureExecRequestSubagentSelection({
+            ...selectionParams,
+            sessionOrigin: sessionOrigin(await preparation()),
+          });
+        }
+      : undefined,
+  };
   const result = await killAllControlledSubagentRuns({
     cfg: params.cfg,
     controller,
@@ -316,11 +346,20 @@ export async function executeFastAbortRequest(
         cfg,
         requesterSessionKey: targetKey,
         requesterAgentId: agentId,
+        prepareRequesterSession: async () => {
+          selection.target = await targetRead;
+          return selection.target?.sessionId
+            ? {
+                storePath,
+                sessionId: selection.target.sessionId,
+                lifecycleRevision: selection.target.entry.lifecycleRevision ?? null,
+              }
+            : undefined;
+        },
         acceptsRequest: (identity) =>
           !selection.target || identity.sessionId === selection.target.sessionId,
         assertCurrent,
         beforeKill: async (sealRootSelection) => {
-          selection.target = await targetRead;
           // Authorization still belongs at the cancellation effect.
           const auth = await resolveCommandAuthorizationAsync({
             ctx,
