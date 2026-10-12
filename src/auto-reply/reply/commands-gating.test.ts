@@ -46,7 +46,7 @@ vi.mock("../../agents/bash-tools.js", () => ({
 }));
 
 vi.mock("../../agents/sandbox.js", () => ({
-  resolveSandboxRuntimeStatus: vi.fn(() => ({ sandboxed: false })),
+  resolveSandboxRuntimeStatusAsync: vi.fn(async () => ({ sandboxed: false })),
 }));
 
 vi.mock("../../globals.js", () => ({

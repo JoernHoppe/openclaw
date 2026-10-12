@@ -182,6 +182,7 @@ export async function resolveAttemptWorkspaceSandbox(params: WorkspaceSandboxPar
         sessionPermissionRoot,
         sessionPermissionPolicy,
         sandbox,
+        ...(sandboxRuntimeStatus ? { sandboxRuntime: sandboxRuntimeStatus } : {}),
         sandboxReport: sandboxRuntimeStatus
           ? { mode: sandboxRuntimeStatus.mode, sandboxed: sandboxRuntimeStatus.sandboxed }
           : undefined,

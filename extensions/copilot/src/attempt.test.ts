@@ -264,12 +264,7 @@ function requireResumeSessionConfig(sdk: FakeSdk): Record<string, unknown> {
 }
 
 function flushAsync() {
-  // Pump enough microtasks for the attempt to settle past every
-  // pre-createSession `await` in attempt.ts (resolvePoolAcquire,
-  // BYOK proxy setup, loadCopilotWorkspaceInstructions,
-  // createSession, etc.).
-  // Each chained `then` is one tick; tests rely on this to observe
-  // `sdk.sessions[0]` being populated before they emit deltas.
+  // Drain the in-flight delta and timeout continuations after SDK startup.
   const tick = () => Promise.resolve();
   return tick().then(tick).then(tick).then(tick).then(tick);
 }
@@ -1785,13 +1780,17 @@ describe("runCopilotAttempt", () => {
     // without waiting for them. Round-5 awaits the delta chain inside
     // the timeout branch so the recorded assistantTexts reflect what
     // the model actually streamed.
+    const sendStarted = createDeferred<FakeSession>();
     const sendDeferred = createDeferred<SessionEventShape | undefined>();
     const release = createDeferred<void>();
     const onAssistantDelta = vi.fn(async (_payload: { delta: string }) => {
       await release.promise;
     });
     const sdk = makeFakeSdk((session) => {
-      session.sendAndWait.mockReturnValue(sendDeferred.promise);
+      session.sendAndWait.mockImplementationOnce(() => {
+        sendStarted.resolve(session);
+        return sendDeferred.promise;
+      });
     });
     const pool = makeFakePool(sdk);
     const createToolBridge = vi.fn(async () => createStubToolBridge());
@@ -1800,8 +1799,7 @@ describe("runCopilotAttempt", () => {
       createToolBridge,
       pool,
     });
-    await flushAsync();
-    const session = requireSession(sdk);
+    const session = await sendStarted.promise;
     session.emit("assistant.message_delta", { deltaContent: "partial-", messageId: "msg-1" });
     await flushAsync();
     // SDK timer fires before the slow delta consumer resolves.
