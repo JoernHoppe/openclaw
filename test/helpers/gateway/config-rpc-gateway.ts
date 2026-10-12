@@ -146,12 +146,31 @@ async function startConfigRpcGateway(
   recordPhase?.("port.allocate");
   const port = await getFreePort();
   recordPhase?.("server.start");
-  server = await startGatewayServer(port, {
-    auth: { mode: "token", token: GATEWAY_TOKEN },
-    prepareConfigSnapshot: prepareHostConfigSnapshot,
-    controlUiEnabled: false,
-    hotReloadRecovery,
-  });
+  const startupPlugins = await import("../../../src/gateway/server-startup-plugins.js");
+  const runMaintenance = startupPlugins.runGatewayPostReadyStartupMaintenance;
+  const maintenanceSettled = createDeferredCore();
+  const maintenanceObserver = vi
+    .spyOn(startupPlugins, "runGatewayPostReadyStartupMaintenance")
+    .mockImplementation((params) => {
+      const maintenance = runMaintenance(params);
+      maintenanceSettled.resolve(maintenance);
+      return maintenance;
+    });
+  try {
+    server = await startGatewayServer(port, {
+      auth: { mode: "token", token: GATEWAY_TOKEN },
+      prepareConfigSnapshot: prepareHostConfigSnapshot,
+      controlUiEnabled: false,
+      hotReloadRecovery,
+    });
+    recordPhase?.("server.startupSettled");
+    await server.startupSettled;
+    // Startup maintenance holds the plugin lease used by config writes and agent creation.
+    recordPhase?.("server.maintenanceSettled");
+    await maintenanceSettled.promise;
+  } finally {
+    maintenanceObserver.mockRestore();
+  }
   recordPhase?.("client.create");
   const connected = createDeferredCore();
   client = new GatewayClient({
@@ -175,8 +194,6 @@ async function startConfigRpcGateway(
   client.start();
   recordPhase?.("client.connect");
   await withTestTimeout(connected.promise, 10_000, "gateway connect timeout");
-  recordPhase?.("server.startupSettled");
-  await server.startupSettled;
   recordPhase?.("complete");
 }
 
