@@ -64,8 +64,8 @@ incognito owner during its separate migration.
 `resolvePreparedSandboxRuntimeStatus` with an already selected full session entry
 (or `null` for acknowledged absence). The synchronous adapter retains its old
 behavior and emits one bounded `sandbox-runtime-status` warning per plugin. It
-will be removed in the next Plugin SDK major. Bundled execution paths prepare
-policy through the session worker and retain its authority through the effect;
+will be removed in a later release after stable deprecation. Bundled execution
+paths prepare policy through the session worker and retain its authority through the effect;
 this migration changes no schema, retention, or update behavior.
 
 Transcript append and lock preparation now uses
@@ -276,8 +276,9 @@ metadata in the database workers. Each call observes committed in-process writes
 its returned view retains the facts captured for that call.
 
 The synchronous `loadCombinedSessionStoreForGateway` emits a deprecation warning
-and keeps its existing signature and behavior until the next Plugin SDK major and
-explicit breaking-release approval. Bundled Memory search uses the async method.
+and keeps its existing signature and behavior during its deprecation period. It
+will be removed in a later release after stable deprecation. Bundled Memory search
+uses the async method.
 No schema, retained data, or update migration is required.
 
 ### Progress card handoff

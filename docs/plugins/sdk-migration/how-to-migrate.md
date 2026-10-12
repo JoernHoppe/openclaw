@@ -359,9 +359,9 @@ need asynchronous routing.
 
 Prepared delivery facts select a route; they do not authorize an approval.
 Keep the host's current-authority check at the actual approval effect. The
-deprecated synchronous APIs emit a migration warning and remain available until
-the next Plugin SDK major and explicit breaking-release approval. This changes
-no stored format, permissions, or update behavior.
+deprecated synchronous APIs emit a migration warning and remain available during
+their deprecation period. They will be removed in a later release after stable
+deprecation. This changes no stored format, permissions, or update behavior.
 
 ## Await Gateway approval publication
 
@@ -619,9 +619,9 @@ catalog. The returned runtime keeps the same synchronous `compactTools` and
 prepares its session policy through the session worker; compaction reuses those
 facts. Other surfaces do not load session metadata for lean filtering.
 
-The synchronous `createAgentHarnessToolSurfaceRuntime` remains supported in the
-current Plugin SDK major, warns once per plugin, and will be removed in the next
-Plugin SDK major. Bundled harnesses use the asynchronous factory.
+The synchronous `createAgentHarnessToolSurfaceRuntime` remains supported during
+its deprecation period, warns once per plugin, and will be removed in a later
+release after stable deprecation. Bundled harnesses use the asynchronous factory.
 
 ## Prepare session catalog identities
 
