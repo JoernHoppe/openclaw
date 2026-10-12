@@ -74,11 +74,11 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
   });
   const {
     targets: connectedTargets,
-    prepare: prepareTargets,
     invalidate: invalidateTargets,
-    legacy: legacyTargets,
     currentTarget,
   } = sharingTargets;
+  const prepareTargets = sharingTargets.prepare.bind(sharingTargets);
+  const legacyTargets = sharingTargets.legacy.bind(sharingTargets);
   let capacityReported = false;
   let profileInvalidationPending = false;
   const applyCommittedInput = createMentionInputRecorder({

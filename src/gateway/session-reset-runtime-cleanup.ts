@@ -54,6 +54,7 @@ export async function ensureSessionRuntimeCleanup(params: {
   let cleanup: Awaited<ReturnType<typeof prepareSessionResetCleanupGuard>>;
   try {
     cleanup = await prepareSessionResetCleanupGuard({
+      agentId: params.target.agentId,
       storePath: params.target.storePath,
       sessionKey: params.target.canonicalKey,
       expectedSession: params.sessionId

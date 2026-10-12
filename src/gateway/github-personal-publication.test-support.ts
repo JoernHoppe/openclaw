@@ -262,7 +262,8 @@ export async function callPersonalPublicationRpc(
         githubOAuthService: {
           personal: {
             ...personal,
-            status: personalGitHubStatus,
+            status: async (action: Parameters<typeof personalGitHubStatus>[0]) =>
+              personalGitHubStatus(action),
           },
         } as GatewayRequestContext["githubOAuthService"],
       },
