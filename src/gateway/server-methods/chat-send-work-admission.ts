@@ -408,6 +408,7 @@ export function createChatSendWorkAdmission(params: {
             throw new Error("Chat input actor admission ended");
           }
         };
+        const followRegistration = params.followRegistration;
         inputActor = acquireSessionInputActor(
           {
             agentId: terminal.target.agentId,
@@ -419,7 +420,12 @@ export function createChatSendWorkAdmission(params: {
             },
           },
           { assertCurrent, assertReadable: assertCurrent },
-          params.followRegistration,
+          followRegistration &&
+            ((change) =>
+              followRegistration(
+                { sessionKey: terminal.target.canonicalKey, agentId: terminal.target.agentId },
+                change,
+              )),
         );
       }
       return inputActor;
