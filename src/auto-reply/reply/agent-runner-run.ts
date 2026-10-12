@@ -621,6 +621,7 @@ export async function runReplyAgent(
     beginBeforeAgentReply,
     checkpointBeforeAgentReply,
     clear: clearRestartRecoveryDeliveryClaim,
+    prepareCompletionCleanup: prepareRestartClaimCleanup,
     isArmed: isRestartRecoveryArmed,
   } = createReplyAgentRestartRecoveryController({
     activeSessionStore,
@@ -658,6 +659,7 @@ export async function runReplyAgent(
       blockReplyPipeline,
       cfg,
       checkpointBeforeAgentReply,
+      prepareRestartClaimCleanup,
       resolveVisibleReplyDelivery,
       activeIsNewSession: isNewSession,
       getActiveSessionEntry: () => activeSessionEntry,
@@ -673,9 +675,7 @@ export async function runReplyAgent(
       returnWithQueuedFollowupDrain,
       runFollowupTurn,
       sendDirectCompactionNotice,
-      onCompactionNoticePayload: (payload) => {
-        pendingCompactionNotices.push(payload);
-      },
+      onCompactionNoticePayload: (payload) => pendingCompactionNotices.push(payload),
       setActiveSessionEntry: (entry) => {
         activeSessionEntry = entry;
       },
