@@ -388,7 +388,7 @@ it.skipIf(process.platform === "win32")(
               await client.stopAndWait();
               client = undefined;
               const closed = once(original, "close");
-              process.kill(-original.pid, "SIGKILL");
+              original.kill("SIGKILL");
               await withinTest(closed, signal);
               await writeFile(
                 path.join(instance.state.workspaceDir, "checkpoint-resume"),
