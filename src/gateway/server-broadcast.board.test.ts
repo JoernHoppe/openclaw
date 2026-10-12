@@ -14,6 +14,7 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { onSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
+import { ensureUserProfileRoleSchema } from "../state/user-profiles-schema.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { boardStore } from "./board-store.js";
@@ -390,6 +391,7 @@ describe("collaboration event scope guards", () => {
   it("rechecks incognito visibility only for subscription recipients", async () => {
     const hidden = { visibility: "shared" as const, incognito: true as const };
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      ensureUserProfileRoleSchema({});
       using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       void profileCatalog;
       const cfg = rolePolicyConfig();
@@ -655,6 +657,7 @@ describe("collaboration event scope guards", () => {
 
 it("delivers committed collector updates to a parent-only cross-agent viewer", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    ensureUserProfileRoleSchema({});
     using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
     void profileCatalog;
     const cfg: OpenClawConfig = {

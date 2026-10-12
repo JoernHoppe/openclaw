@@ -20,6 +20,7 @@ import {
 } from "../../state/openclaw-agent-db.js";
 import { runOpenClawAgentWorkerWrite } from "../../state/openclaw-agent-write-admission.js";
 import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
+import { ensureUserProfileRoleSchema } from "../../state/user-profiles-schema.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { boardStore } from "../board-store.js";
 import { progressCardStore } from "../progress-card-store.js";
@@ -69,6 +70,7 @@ describe("board and progress-card database write admission", () => {
     "queues registered $method behind a native reservation ($change, cold=$cold)",
     async ({ method, change, cold }) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        ensureUserProfileRoleSchema({});
         using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         let cfg: OpenClawConfig = {
           ...rolePolicyConfig(),
