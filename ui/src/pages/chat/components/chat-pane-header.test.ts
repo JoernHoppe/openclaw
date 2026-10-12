@@ -640,8 +640,10 @@ describe("chat pane header", () => {
     );
     expect(indicator.getAttribute("aria-describedby")).toBeTruthy();
     indicator.focus();
+    await tooltip.updateComplete;
     expect(tooltip.hasAttribute("open")).toBe(true);
     indicator.blur();
+    await tooltip.updateComplete;
     expect(tooltip.hasAttribute("open")).toBe(false);
     indicator.click();
     expect(tooltip.hasAttribute("open")).toBe(true);
