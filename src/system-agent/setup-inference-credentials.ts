@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import { resolveAgentEffectiveModelPrimary } from "../agents/agent-scope.js";
 import { loadAuthProfileStoreWithoutExternalProfilesAsync } from "../agents/auth-profiles/store-runtime.js";
@@ -211,6 +212,14 @@ async function stagePreparedCandidate(
     };
   }
   const pluginId = params.pluginId ?? params.choice?.pluginId ?? params.provider?.pluginId;
+  const codex = params.config.plugins?.entries?.codex;
+  const appServer = codex?.config?.appServer;
+  const preparedCodexSignIn =
+    params.credentialState === "new" &&
+    ref.provider === "openai" &&
+    codex?.enabled === true &&
+    isRecord(appServer) &&
+    (appServer.homeScope === "user" || appServer.homeScope === "agent");
   const agentRuntimeId =
     params.agentRuntimeId ??
     resolveModelRuntimePolicy({
@@ -219,7 +228,7 @@ async function stagePreparedCandidate(
       modelId: ref.model,
       agentId: ctx.routeAgentId,
     }).policy?.id ??
-    "openclaw";
+    (preparedCodexSignIn ? "codex" : "openclaw");
   // A new sign-in belongs to OpenClaw even when the previous route shared Codex's home.
   let preparedConfig =
     params.credentialState === "new" && agentRuntimeId === "codex"

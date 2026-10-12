@@ -180,17 +180,22 @@ describe("setup activation credentials and configuration", () => {
     },
   );
 
-  it.each(["oauth", "api_key"] as const)(
-    "activates a separate %s sign-in after sharing the native Codex home",
-    async (authMethod) => {
+  it.each([
+    { authMethod: "oauth", homeScope: "user" },
+    { authMethod: "api_key", homeScope: "user" },
+    { authMethod: "oauth", homeScope: "agent" },
+  ] as const)(
+    "activates an isolated $authMethod sign-in from the $homeScope Codex home",
+    async ({ authMethod, homeScope }) => {
       const setup = await fixture({
         codex: true,
-        homeScope: "user",
+        homeScope,
         authMethod,
         subscription: authMethod === "oauth",
         primaryModel: modelRef,
       });
-      setup.config.agents!.defaults!.models![modelRef] = { agentRuntime: { id: "codex" } };
+      // Provider login can select a new model without an authored runtime override.
+      setup.config.agents!.defaults!.models![modelRef] = {};
       await fs.writeFile(setup.configPath, JSON.stringify(setup.config));
       clearConfigCache();
       const result = await setup.activate(
