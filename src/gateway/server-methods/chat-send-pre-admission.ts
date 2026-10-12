@@ -45,7 +45,10 @@ import {
   readChatSendRetryComparison,
   type ChatSendRetryComparison,
 } from "./chat-send-retry-comparison.js";
-import { SESSION_SETTINGS_CHANGED_ERROR_REASON } from "./chat-send-session-settings.js";
+import {
+  captureAdmittedChatSendSessionSettings,
+  SESSION_SETTINGS_CHANGED_ERROR_REASON,
+} from "./chat-send-session-settings.js";
 import type { LoadedChatSendSession } from "./chat-send-session.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
@@ -590,6 +593,26 @@ export async function runChatSendPreAdmission(
     try {
       const recoveryEntry = entry;
       if (recoveryEntry) {
+        const comparison = await prepareChatSendRetryComparison(params);
+        const conflict = resolveChatSendRequestConflict(params, comparison);
+        if (conflict) {
+          throw new Error(conflict.message);
+        }
+        const workStartError = resolveSessionWorkStartError(sessionKey, recoveryEntry, {
+          allowPendingWorkspace: true,
+          providerReviewAcknowledgment: request.providerReviewAcknowledgment,
+          runId: clientRunId,
+          expectedSessionId: session.requestedSessionId ?? session.backingSessionId,
+        });
+        if (workStartError) {
+          throw new Error(workStartError);
+        }
+        captureAdmittedChatSendSessionSettings({
+          commit: false,
+          entry: recoveryEntry,
+          expectedPermissionMode: request.p.expectedPermissionMode,
+          expectedToolOverrides: request.p.expectedToolOverrides,
+        });
         await reconcileOrphanedGatewaySessionRecovery({
           cfg,
           target: await resolveGatewaySessionStoreTargetInWorker({
