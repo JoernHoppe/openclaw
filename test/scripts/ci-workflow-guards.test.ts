@@ -6460,11 +6460,20 @@ it("serializes Linux manifests with stable activation and reuses completed Linux
       }),
     ).toBe(alreadyPublished !== "true");
   }
-  for (const [alreadyPublished, build, signing, expected] of [
-    ["true", "skipped", "skipped", true],
-    ["false", "success", "success", true],
-    ["false", "success", "failure", false],
-    ["false", "skipped", "skipped", false],
+  for (const [alreadyPublished, build, signing, windowsSigning, expected] of [
+    ["true", "skipped", "skipped", "success", true],
+    ["false", "success", "success", "success", true],
+    ["false", "success", "failure", "success", false],
+    ["false", "skipped", "skipped", "success", false],
+    ...["true", "false"].flatMap((published) =>
+      ["failure", "skipped", "cancelled"].map((result) => [
+        published,
+        "success",
+        "success",
+        result,
+        false,
+      ]),
+    ),
   ]) {
     expect(
       runInNewContext(linux.jobs.publish.if.replace(/^\$\{\{|\}\}$/gu, ""), {
@@ -6476,6 +6485,7 @@ it("serializes Linux manifests with stable activation and reuses completed Linux
           build_linux: { result: build },
           sign_linux: { result: signing },
           build_windows: { result: build },
+          sign_windows: { result: windowsSigning },
           sign_desktop: { result: signing },
         },
       }),
