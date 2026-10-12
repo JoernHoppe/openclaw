@@ -3,10 +3,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import { buildReplyPayloads } from "../../auto-reply/reply/agent-runner-payloads.js";
 import { mirrorDeliveredReplyToTranscript } from "../../auto-reply/reply/dispatch-from-config.transcript.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import {
   loadTranscriptEvents,
   replaceSessionEntry,
@@ -15,6 +19,7 @@ import {
   readTranscriptEventId,
   readTranscriptEventMessage,
 } from "../../config/sessions/session-accessor.sqlite-read.js";
+import * as transcriptMessageAppend from "../../config/sessions/session-accessor.sqlite-transcript-message-append.js";
 import { withOwnedSessionTranscriptWrites } from "../../config/sessions/transcript-write-context.js";
 import * as sessionTranscript from "../../config/sessions/transcript.js";
 import { persistInternalSourceReply } from "../../gateway/internal-source-reply-persistence.js";
@@ -24,12 +29,6 @@ import {
   resolveManagedOutgoingMediaArtifactDownload,
 } from "../../gateway/managed-image-attachments.js";
 import { listManagedImageRecordEntries } from "../../gateway/managed-image-record-store.js";
-import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
-import {
-  createSqliteWorkerTransferReceiver,
-  type SqliteWorkerTransferFrame,
-  type SqliteWorkerTransferHandle,
-} from "../../infra/sqlite-worker-transfer.js";
 import {
   onSessionTranscriptUpdate,
   type SessionTranscriptUpdate,
@@ -45,6 +44,8 @@ import { createSandboxTestContext } from "../sandbox/test-fixtures.js";
 import { createMessageTool } from "./message-tool-execution.js";
 import { withCronMessageRun } from "./message-tool.cron.test-support.js";
 
+afterEach(() => clearRuntimeConfigSnapshot());
+
 // Internal WebChat sends have no external channels to discover.
 const INTERNAL_SOURCE_CATALOG = {
   version: 0,
@@ -55,8 +56,10 @@ const INTERNAL_SOURCE_CATALOG = {
 function createCurrentSourceMessageTool(
   params: NonNullable<Parameters<typeof createMessageTool>[0]> = {},
 ) {
+  const cfg = params.config ?? { agents: { entries: { main: {} } } };
+  setRuntimeConfigSnapshot(cfg);
   return createMessageTool({
-    config: { agents: { entries: { main: {} } } },
+    config: cfg,
     preparedMessageToolCatalog: INTERNAL_SOURCE_CATALOG,
     currentChannelProvider: "webchat",
     sourceReplyDeliveryMode: "automatic",
@@ -87,12 +90,14 @@ describe("WebChat message tool internal source reply", () => {
         const storePath = path.join(state.stateDir, "agents", "main", "sessions", "sessions.json");
         const scope = { agentId: "main", sessionKey, sessionId, storePath };
         await replaceSessionEntry(scope, { sessionId, updatedAt: 1 });
+        const cfg = {
+          agents: { entries: { main: {} }, defaults: { workspace: state.workspaceDir } },
+          tools: { allow: ["message"] },
+        };
+        setRuntimeConfigSnapshot(cfg);
         await withCronMessageRun(
           {
-            cfg: {
-              agents: { entries: { main: {} }, defaults: { workspace: state.workspaceDir } },
-              tools: { allow: ["message"] },
-            },
+            cfg,
             storePath: state.statePath("cron", "internal-source.json"),
             sessionKey,
             sessionId,
@@ -100,65 +105,23 @@ describe("WebChat message tool internal source reply", () => {
           async (owner) => {
             const message = "must never become a committed assistant message";
             let commitRequests = 0;
-            let granted = 0;
-            const create = workerAdmission.createSqliteWorkerOperationAdmission;
+            const append = transcriptMessageAppend.appendTranscriptMessageInTransaction;
             const admission = vi
-              .spyOn(workerAdmission, "createSqliteWorkerOperationAdmission")
-              .mockImplementation((admit, attachment) => {
-                let receiver: ReturnType<typeof createSqliteWorkerTransferReceiver> | undefined;
-                let transferId: number | undefined;
-                let assistantTurn = false;
-                return create((request, grant) => {
-                  const facts =
-                    isRecord(request.facts) && request.facts.kind === "session-entry-current"
-                      ? request.facts.domainFacts
-                      : request.facts;
-                  const publication = isRecord(facts) ? facts.publication : undefined;
-                  if (isRecord(publication)) {
-                    if (publication.kind === "session-entry-patch-transfer") {
-                      // SAFETY: The real session-entry worker emits this typed transfer handle.
-                      const handle = publication.handle as SqliteWorkerTransferHandle;
-                      transferId = handle.id;
-                      assistantTurn = false;
-                      receiver = createSqliteWorkerTransferReceiver(handle, (record) => {
-                        if (
-                          record.kind === "patch" &&
-                          isRecord(record.value) &&
-                          record.value.kind === "session-turn" &&
-                          isRecord(record.value.result) &&
-                          Array.isArray(record.value.result.appendedMessages)
-                        ) {
-                          assistantTurn = record.value.result.appendedMessages.some(
-                            (appended: unknown) =>
-                              isRecord(appended) &&
-                              isRecord(appended.message) &&
-                              appended.message.role === "assistant" &&
-                              readAssistantDisplayContent(appended.message).some(
-                                (block) => block.type === "text" && block.text === message,
-                              ),
-                          );
-                        }
-                      });
-                    } else if (publication.kind === "session-entry-patch-frame") {
-                      // SAFETY: This frame belongs to the intercepted worker transfer above.
-                      receiver?.accept(publication.frame as SqliteWorkerTransferFrame);
-                    } else if (
-                      request.stage === "commit" &&
-                      publication.kind === "session-entry-patch-committed" &&
-                      publication.transferId === transferId &&
-                      assistantTurn
-                    ) {
-                      commitRequests += 1;
-                      owner.closeAdmission();
-                      return admit(request, () => {
-                        const accepted = grant();
-                        granted += Number(accepted);
-                        return accepted;
-                      });
-                    }
-                  }
-                  return admit(request, grant);
-                }, attachment);
+              .spyOn(transcriptMessageAppend, "appendTranscriptMessageInTransaction")
+              .mockImplementation((database, resolved, options, preparedMessage, projection) => {
+                if (
+                  resolved.sessionKey === sessionKey &&
+                  resolved.sessionId === sessionId &&
+                  isRecord(options.message) &&
+                  options.message.role === "assistant" &&
+                  readAssistantDisplayContent(options.message).some(
+                    (block) => block.type === "text" && block.text === message,
+                  )
+                ) {
+                  commitRequests += 1;
+                  owner.closeAdmission();
+                }
+                return append(database, resolved, options, preparedMessage, projection);
               });
             try {
               const tool = owner.createTool({
@@ -175,9 +138,8 @@ describe("WebChat message tool internal source reply", () => {
               const assistants = (await loadTranscriptEvents(scope)).filter(
                 (event) => readTranscriptEventMessage(event)?.role === "assistant",
               );
-              expect({ commitRequests, granted, assistants }).toEqual({
+              expect({ commitRequests, assistants }).toEqual({
                 commitRequests: 1,
-                granted: 0,
                 assistants: [],
               });
               expect(outcome).toHaveProperty("error");
@@ -200,12 +162,14 @@ describe("WebChat message tool internal source reply", () => {
         const scope = { agentId: "main", sessionKey, sessionId, storePath };
         await fs.mkdir(state.workspaceDir, { recursive: true });
         await replaceSessionEntry(scope, { sessionId, updatedAt: 1 });
+        const cfg = {
+          agents: { entries: { main: {} }, defaults: { workspace: state.workspaceDir } },
+          tools: { allow: ["message"] },
+        };
+        setRuntimeConfigSnapshot(cfg);
         await withCronMessageRun(
           {
-            cfg: {
-              agents: { entries: { main: {} }, defaults: { workspace: state.workspaceDir } },
-              tools: { allow: ["message"] },
-            },
+            cfg,
             storePath: state.statePath("cron", "internal-source-media.json"),
             sessionKey,
             sessionId,
@@ -686,6 +650,8 @@ describe("WebChat message tool internal source reply", () => {
           await fs.mkdir(state.workspaceDir, { recursive: true });
           await fs.writeFile(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
           await replaceSessionEntry(scope, { sessionId, updatedAt: 1 });
+          const cfg = { agents: { entries: { main: { workspace: state.workspaceDir } } } };
+          setRuntimeConfigSnapshot(cfg);
           const append = sessionTranscript.appendAssistantMessageToSessionTranscript;
           const lifecycle = createEmbeddedAttemptTranscriptLifecycle({ sessionId });
           const preparedOriginals: string[] = [];
@@ -718,9 +684,7 @@ describe("WebChat message tool internal source reply", () => {
           try {
             const persist = () =>
               persistInternalSourceReply({
-                cfg: {
-                  agents: { entries: { main: { workspace: state.workspaceDir } } },
-                },
+                cfg,
                 sessionKey,
                 expectedSessionId: sessionId,
                 agentId: "main",

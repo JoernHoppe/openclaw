@@ -171,11 +171,18 @@ async function runEmbeddedAgentEntryInternal<T extends EmbeddedAgentRunResult>(
       emitAgentEvent(event);
     }
   };
+  const awaitSessionDiffBaseline = params.modelResolve?.awaitSessionDiffBaseline;
   const contextEngineLogicalTurnLease = await createContextEngineLogicalTurnLease({
     identity: params.identity,
     config: params.selection.cfg,
     agentDir: params.selection.agentDir,
     workspaceDir: params.harness.workspaceDir,
+    awaitSessionDiffBaseline: awaitSessionDiffBaseline
+      ? async () => {
+          await awaitSessionDiffBaseline();
+          assertCurrent();
+        }
+      : undefined,
   });
   const assistantErrorTranscript = createAssistantErrorTranscript();
   let failed = true;

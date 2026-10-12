@@ -1,6 +1,10 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
+import {
   loadTranscriptEvents,
   replaceSessionEntry,
 } from "../../config/sessions/session-accessor.js";
@@ -33,7 +37,10 @@ vi.mock("../harness/selection.js", () => ({
 
 describe("run entry durable fallback notices", () => {
   const files = useTempSessionsFixture("fallback-transcript-");
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    clearRuntimeConfigSnapshot();
+    vi.restoreAllMocks();
+  });
 
   async function fixture(
     options: {
@@ -62,6 +69,7 @@ describe("run entry durable fallback notices", () => {
       await replaceSessionEntry(scope, entry);
     }
     const cfg = { session: { store: files.storePath() } };
+    setRuntimeConfigSnapshot(cfg);
     const admission = prepareSystemAgentRunAdmission(
       cfg,
       identity.runId,

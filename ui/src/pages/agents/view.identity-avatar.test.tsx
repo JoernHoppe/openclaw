@@ -174,6 +174,9 @@ it("renders the upload preview without fetching the persisted settings avatar", 
 });
 
 it("keeps a missing settings avatar on its fallback and recovers on a new revision", async () => {
+  const expectedRequests = [1, 2].map(
+    (revision) => globalThis.location.origin + "/avatar/beta?v=" + revision,
+  );
   fetchAvatar
     .mockResolvedValueOnce(avatarResponse())
     .mockResolvedValueOnce(new Response(null, { status: 404 }))
@@ -184,7 +187,11 @@ it("keeps a missing settings avatar on its fallback and recovers on a new revisi
   });
 
   changeAvatarRevision(view, 2);
-  await waitForFast(() => expect(fetchAvatar).toHaveBeenCalledTimes(2));
+  await waitForFast(() =>
+    expect(avatarRequestUrls(), "requests after selecting the missing revision").toEqual(
+      expectedRequests,
+    ),
+  );
   await waitForFast(() => expect(avatarImage(view)).toBeNull());
   updateView(view, {
     overview: {
@@ -194,13 +201,18 @@ it("keeps a missing settings avatar on its fallback and recovers on a new revisi
   });
   expect(avatarImage(view)).toBeNull();
   await expectAvatarFallback(view);
-  expect(fetchAvatar).toHaveBeenCalledTimes(2);
+  expect(avatarRequestUrls(), "requests after showing the fallback and editing the name").toEqual(
+    expectedRequests,
+  );
 
   changeAvatarRevision(view, 3);
   await waitForFast(() => {
     expect(avatarImage(view)?.getAttribute("src")).toBe("blob:settings-avatar-2");
   });
-  expect(fetchAvatar).toHaveBeenCalledTimes(3);
+  expect(avatarRequestUrls()).toEqual([
+    ...expectedRequests,
+    globalThis.location.origin + "/avatar/beta?v=3",
+  ]);
 });
 
 it("keeps a decode failure on its fallback across rerenders until the revision changes", async () => {
