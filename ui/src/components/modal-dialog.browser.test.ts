@@ -159,12 +159,39 @@ describe.runIf(browserMode)("modal native focus ownership", () => {
         animation.pause();
         animation.currentTime = 500;
       }
+      // Commit the paused entry before native close can start its reverse transition.
+      await new Promise(requestAnimationFrame);
+      expect(dialog.open).toBe(true);
       expect(dialog.dataset.phase).toBe("opening");
       let completions = 0;
       modal.addEventListener("wa-after-hide", () => {
         completions += 1;
       });
       const hidden = afterModalPhase(modal, "closed");
+      const exitStarted = new Promise<Animation[]>((resolve) => {
+        dialog.addEventListener("transitionrun", function holdExit() {
+          if (dialog.open) {
+            return;
+          }
+          const animations = dialog
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation instanceof CSSTransition &&
+                ["running", "paused"].includes(animation.playState) &&
+                Number.isFinite(animation.effect?.getComputedTiming().endTime),
+            );
+          if (animations.length === 0) {
+            return;
+          }
+          // Capture at transition start; timer polling can miss the entire finite exit.
+          for (const animation of animations) {
+            animation.pause();
+          }
+          dialog.removeEventListener("transitionrun", holdExit);
+          resolve(animations);
+        });
+      });
       modal.hide();
       expect(modal.open).toBe(false);
       expect(dialog.open).toBe(true);
@@ -173,26 +200,8 @@ describe.runIf(browserMode)("modal native focus ownership", () => {
       }
       expect(getComputedStyle(dialog).opacity).toBe("1");
 
-      let exiting: Animation[] = [];
-      await expect
-        .poll(() => {
-          if (dialog.open) {
-            return 0;
-          }
-          exiting = dialog
-            .getAnimations()
-            .filter(
-              (animation) =>
-                animation instanceof CSSTransition &&
-                ["running", "paused"].includes(animation.playState) &&
-                Number.isFinite(animation.effect?.getComputedTiming().endTime),
-            );
-          for (const animation of exiting) {
-            animation.pause();
-          }
-          return exiting.length;
-        })
-        .toBeGreaterThan(0);
+      const exiting = await Promise.race([exitStarted, hidden.then(() => [])]);
+      expect(exiting.length).toBeGreaterThan(0);
       expect(completions).toBe(0);
       expect(dialog.dataset.phase).toBe("closing");
       expect(getComputedStyle(document.body).overflow).toBe("hidden");
