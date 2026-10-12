@@ -20,10 +20,11 @@ import {
   type SessionAbortTargetIdentity,
   type SessionAbortTargetResult,
 } from "../../config/sessions/session-accessor.js";
-import { readSessionEntryInWorker } from "../../config/sessions/session-entry-read-runtime.js";
+import { normalizeStoreSessionKey } from "../../config/sessions/store-entry.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import type { ExecRequestIdentity } from "../../infra/exec-request-context.js";
 import {
   isAcpSessionKey,
   isSubagentSessionKey,
@@ -41,13 +42,14 @@ import type { FastAbortRequestParams, FastAbortResult, PreparedFastAbortRequest 
 import { resolveEffectiveResetTargetSessionKey } from "./acp-reset-target.js";
 import { prepareSessionLifecycleQueueCleanup } from "./queue/cleanup.js";
 import { resolveReplyOperationsForSession } from "./reply-run-registry.js";
+import { getAttachedBackend } from "./reply-run-registry.state.js";
 import { resolveSessionConversationBindingContext } from "./session-conversation-binding.js";
 
 export function prepareSessionRunTargetAbort(params: {
   agentId: string;
   key?: string;
   sessionId?: string;
-}): () => { active: boolean; aborted: boolean; retirement?: Promise<void> } {
+}) {
   const key = normalizeOptionalString(params.key);
   const operations = resolveReplyOperationsForSession({
     ...params,
@@ -77,14 +79,36 @@ export function prepareSessionRunTargetAbort(params: {
     }
   }
 
-  const runs = [...sessionIds].map(prepareEmbeddedAgentRunAbort);
-  return () => {
-    let active = operations.some((operation) => !operation.result);
+  const runs = [...sessionIds].map((sessionId) => ({
+    sessionId,
+    abort: prepareEmbeddedAgentRunAbort(sessionId),
+  }));
+  const requestRunIds = new Set([
+    ...(commands?.requestRunIds ?? []),
+    ...operations.flatMap((operation) => {
+      const runId = getAttachedBackend(operation)?.runId;
+      return runId ? [runId] : [];
+    }),
+  ]);
+  const abort = (selectedSessionId = explicitSessionId) => {
+    const selectedOperations = operations.filter(
+      (operation) => !selectedSessionId || operation.sessionId === selectedSessionId,
+    );
+    const selectedSessionIds = new Set(
+      [...sessionIds].filter((sessionId) => !selectedSessionId || sessionId === selectedSessionId),
+    );
+    if (selectedSessionId) {
+      selectedSessionIds.add(selectedSessionId);
+    }
+    let active = selectedOperations.some((operation) => !operation.result);
     const failures: unknown[] = [];
-    let aborted = commands?.cancel() === true;
-    for (const operation of operations) {
+    let aborted =
+      commands?.cancel(
+        (identity) => !selectedSessionId || identity.sessionId === selectedSessionId,
+      ) === true;
+    for (const operation of selectedOperations) {
       for (const sessionId of operation.captureOwnedSessionIds()) {
-        sessionIds.add(sessionId);
+        selectedSessionIds.add(sessionId);
       }
       try {
         aborted = operation.abortByUser() || aborted;
@@ -93,12 +117,15 @@ export function prepareSessionRunTargetAbort(params: {
       }
     }
     for (const run of runs) {
+      if (selectedSessionId && run.sessionId !== selectedSessionId) {
+        continue;
+      }
       try {
-        const outcome = run();
+        const outcome = run.abort();
         active ||= outcome.active;
         aborted ||= outcome.aborted;
         if (outcome.sessionId) {
-          sessionIds.add(outcome.sessionId);
+          selectedSessionIds.add(outcome.sessionId);
         }
       } catch (error) {
         failures.push(error);
@@ -109,7 +136,7 @@ export function prepareSessionRunTargetAbort(params: {
     const retirement =
       !active || aborted || failures.length > 0
         ? Promise.allSettled([
-            ...[...sessionIds].map((sessionId) =>
+            ...[...selectedSessionIds].map((sessionId) =>
               retireSessionMcpRuntime({
                 sessionId,
                 reason: "session-stop",
@@ -133,28 +160,7 @@ export function prepareSessionRunTargetAbort(params: {
         : undefined;
     return { active, aborted, retirement };
   };
-}
-
-async function resolveStoredSessionId(params: {
-  cfg: OpenClawConfig;
-  sessionKey: string;
-  agentId: string;
-}): Promise<string | undefined> {
-  const storePath = resolveSessionStorePathCore(params.cfg.session?.store, {
-    agentId: params.agentId,
-  });
-  try {
-    return (
-      await readSessionEntryInWorker({
-        agentId: params.agentId,
-        clone: false,
-        sessionKey: params.sessionKey,
-        storePath,
-      })
-    )?.sessionId;
-  } catch {
-    return undefined;
-  }
+  return Object.assign(abort, { requestRunIds });
 }
 
 export async function stopSubagentsForRequester(params: {
@@ -166,6 +172,7 @@ export async function stopSubagentsForRequester(params: {
     "storePath" | "sessionId" | "lifecycleRevision"
   >;
   assertCurrent?: () => void;
+  acceptsRequest?: (identity: ExecRequestIdentity) => boolean;
   beforeKill?: Parameters<typeof killAllControlledSubagentRuns>[0]["beforeKill"];
 }): Promise<{ stopped: number; failed: number; execAborted?: boolean }> {
   const cleaned = normalizeOptionalString(params.requesterSessionKey);
@@ -195,6 +202,7 @@ export async function stopSubagentsForRequester(params: {
     cfg: params.cfg,
     controller,
     owners: commands.owners,
+    acceptsRequest: params.acceptsRequest,
     sessionOrigin: params.requesterSession
       ? {
           target: {
@@ -246,19 +254,8 @@ export async function executeFastAbortRequest(
       })
         ? resolveAbortCutoffFromContext(ctx)
         : undefined;
-    let resolvedAbortTarget: SessionAbortTargetIdentity | null = null;
-    try {
-      resolvedAbortTarget = await resolveSessionAbortTarget({
-        agentId,
-        sessionKey: targetKey,
-        storePath,
-      });
-    } catch (error) {
-      logVerbose(
-        `abort: failed to resolve abort metadata for ${targetKey}: ${formatErrorMessage(error)}`,
-      );
-    }
-    const resolvedTargetKey = resolvedAbortTarget?.sessionKey ?? targetKey;
+    const selection: { target: SessionAbortTargetIdentity | null } = { target: null };
+    const resolvedTargetKey = normalizeStoreSessionKey(targetKey);
     const assertCurrent = () => {
       if (params.isCommandTargetCurrent?.sessionSource?.assertScopeCurrent) {
         params.isCommandTargetCurrent.sessionSource.assertScopeCurrent();
@@ -268,7 +265,7 @@ export async function executeFastAbortRequest(
         throw new Error("The selected session changed before it could be stopped.");
       }
     };
-    const prepareTarget = async (key: string) => {
+    const prepareTarget = (key: string) => {
       const targetAgentId =
         key === resolvedTargetKey
           ? agentId
@@ -277,16 +274,14 @@ export async function executeFastAbortRequest(
               sessionKey: key,
               fallbackAgentId: ctx.AgentId ?? agentId,
             });
-      const sessionId =
-        resolveReplyOperationsForSession({
-          sessionKeys: [key],
-          agentId: targetAgentId,
-        })[0]?.sessionId ??
-        (key === resolvedTargetKey
-          ? resolvedAbortTarget?.sessionId
-          : await resolveStoredSessionId({ cfg, sessionKey: key, agentId: targetAgentId }));
+      const sessionId = resolveReplyOperationsForSession({
+        sessionKeys: [key],
+        agentId: targetAgentId,
+      })[0]?.sessionId;
       const target = { key, agentId: targetAgentId, sessionId };
       return {
+        key,
+        sessionId,
         abort: prepareSessionRunTargetAbort(target),
         clearQueues: prepareSessionLifecycleQueueCleanup({
           ...target,
@@ -296,13 +291,22 @@ export async function executeFastAbortRequest(
         }),
       };
     };
+    // Capture process-owned work before metadata preparation yields to another turn.
     const preparedTargets = new Map(
-      await Promise.all(
-        [resolvedTargetKey, ...(commandSessionKey ? [commandSessionKey] : [])].map(
-          async (key) => [key, await prepareTarget(key)] as const,
-        ),
+      [resolvedTargetKey, ...(commandSessionKey ? [commandSessionKey] : [])].map(
+        (key) => [key, prepareTarget(key)] as const,
       ),
     );
+    const targetRead = resolveSessionAbortTarget({
+      agentId,
+      sessionKey: targetKey,
+      storePath,
+    }).catch((error: unknown) => {
+      logVerbose(
+        `abort: failed to resolve abort metadata for ${targetKey}: ${formatErrorMessage(error)}`,
+      );
+      return null;
+    });
     let authorized = false;
     let aborted = false;
     let activeAbortRejected = false;
@@ -312,16 +316,12 @@ export async function executeFastAbortRequest(
         cfg,
         requesterSessionKey: targetKey,
         requesterAgentId: agentId,
-        requesterSession: resolvedAbortTarget?.sessionId
-          ? {
-              storePath,
-              sessionId: resolvedAbortTarget.sessionId,
-              lifecycleRevision: resolvedAbortTarget.entry.lifecycleRevision ?? null,
-            }
-          : undefined,
+        acceptsRequest: (identity) =>
+          !selection.target || identity.sessionId === selection.target.sessionId,
         assertCurrent,
         beforeKill: async (sealRootSelection) => {
-          // Capture the selected work before authorization yields to later human turns.
+          selection.target = await targetRead;
+          // Authorization still belongs at the cancellation effect.
           const auth = await resolveCommandAuthorizationAsync({
             ctx,
             cfg,
@@ -359,10 +359,8 @@ export async function executeFastAbortRequest(
             abortTargetKeys.includes(conversationBoundAcpTargetKey)
               ? commandSessionKey
               : undefined;
-          const targets = await Promise.all(
-            [...abortTargetKeys, ...(sourceAbortKey ? [sourceAbortKey] : [])].map(
-              async (key) => preparedTargets.get(key) ?? (await prepareTarget(key)),
-            ),
+          const targets = [...abortTargetKeys, ...(sourceAbortKey ? [sourceAbortKey] : [])].map(
+            (key) => preparedTargets.get(key) ?? prepareTarget(key),
           );
           const current = params.isCommandTargetCurrent?.();
           if (
@@ -374,7 +372,11 @@ export async function executeFastAbortRequest(
           sealRootSelection();
           try {
             for (const target of targets) {
-              const cleared = target.clearQueues();
+              const selectedSessionId =
+                target.key === resolvedTargetKey
+                  ? (target.sessionId ?? selection.target?.sessionId)
+                  : target.sessionId;
+              const cleared = target.clearQueues(selectedSessionId);
               if (cleared.followupCleared > 0 || cleared.laneCleared > 0) {
                 logVerbose(
                   `abort: cleared followups=${cleared.followupCleared} lane=${cleared.laneCleared} keys=${cleared.keys.join(",")}`,
@@ -382,7 +384,11 @@ export async function executeFastAbortRequest(
               }
             }
             for (const target of targets) {
-              const outcome = target.abort();
+              const outcome = target.abort(
+                target.key === resolvedTargetKey
+                  ? (target.sessionId ?? selection.target?.sessionId)
+                  : target.sessionId,
+              );
               if (outcome.retirement) {
                 // Child settlement may yield before the final join observes this failure.
                 void outcome.retirement.catch(() => {});
@@ -428,12 +434,17 @@ export async function executeFastAbortRequest(
       }
       aborted ||= execAborted === true;
       const rejectionReason = activeAbortRejected && !aborted ? "finalizing" : undefined;
-      if (!rejectionReason) {
+      const activeWriterRunId = selection.target?.entry.activeWriterRunId;
+      const capturedTarget = preparedTargets.get(resolvedTargetKey);
+      const ownsAbortMetadata =
+        (!capturedTarget?.sessionId || capturedTarget.sessionId === selection.target?.sessionId) &&
+        (!activeWriterRunId || capturedTarget?.abort.requestRunIds.has(activeWriterRunId));
+      if (!rejectionReason && ownsAbortMetadata) {
         let persistedAbortTarget: SessionAbortTargetResult | null = null;
         try {
           persistedAbortTarget = await markSessionAbortTarget({
             isCurrent: params.isCommandTargetCurrent,
-            expectedTarget: resolvedAbortTarget?.entry ?? null,
+            expectedTarget: selection.target?.entry ?? null,
             scope: {
               agentId,
               sessionKey: targetKey,
@@ -451,6 +462,8 @@ export async function executeFastAbortRequest(
             `abort: failed to persist abort metadata for ${targetKey}: ${persistedAbortTarget.persistenceError ?? "unknown error"}`,
           );
         }
+      } else if (!ownsAbortMetadata) {
+        logVerbose(`abort: skipped metadata for a replacement writer on ${targetKey}`);
       }
       return {
         handled: true,
