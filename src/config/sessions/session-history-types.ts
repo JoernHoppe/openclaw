@@ -1,4 +1,3 @@
-import type { TranscriptRedactionSnapshot } from "../../agents/transcript-redact-text.js";
 import type {
   SessionArtifactReadQuery,
   SessionArtifactReadResult,
@@ -109,7 +108,6 @@ export type ChatHistoryPageParams = {
   pageCursor?: ChatHistoryPageCursor;
   ignoreCliSessionImports?: boolean;
   cliHistoryHomeDir?: string;
-  cliHistoryRedaction?: TranscriptRedactionSnapshot;
 };
 
 type SessionHistoryTranscriptMeta = {
