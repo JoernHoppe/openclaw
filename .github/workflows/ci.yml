@@ -6581,6 +6581,7 @@ jobs:
       - check-extension-package-boundary
       - check-docs
       - skills-python
+      - postgres-conformance
       - checks-windows
       - macos-node
       - macos-swift
