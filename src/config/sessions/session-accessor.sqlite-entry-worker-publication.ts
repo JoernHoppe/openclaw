@@ -87,8 +87,9 @@ function retireSupersededSessionFacts(
   params: { agentId: string; storePath: string; databaseIdentity: string },
   owner: PendingSessionEntryPublication,
   generationUnchanged: ReadonlySet<string>,
+  supersededKeys: Iterable<string> = owner.superseded,
 ): SessionRowChange[] {
-  return [...owner.superseded].flatMap((sessionKey) => {
+  return [...supersededKeys].flatMap((sessionKey) => {
     const membershipChanged = owner.membershipInvalidated.has(sessionKey);
     const generationChanged = !generationUnchanged.has(sessionKey);
     if (!membershipChanged && !generationChanged) {
@@ -363,7 +364,12 @@ export function retainSessionEntryWorkerPublication(params: {
       const generationUnchanged = new Set(
         replacement?.generationUnchangedKeys ?? owner.generationUnchanged,
       );
-      const superseded = retireSupersededSessionFacts(params, owner, generationUnchanged);
+      const superseded = retireSupersededSessionFacts(
+        params,
+        owner,
+        generationUnchanged,
+        [...owner.superseded].filter((sessionKey) => !changed.includes(sessionKey)),
+      );
       if (changed.length || superseded.length) {
         invalidateSessionEntryCaches(params.databaseIdentity);
       }
