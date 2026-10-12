@@ -9,6 +9,10 @@ import {
 } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
+import {
   applySessionEntryLifecycleMutation,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
@@ -56,6 +60,7 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     vi.restoreAllMocks();
     await closeOpenClawAgentDatabasesAsync();
     await closeOpenClawStateDatabaseAsync();
+    clearRuntimeConfigSnapshot();
     vi.unstubAllEnvs();
     cleanup();
   }),
@@ -64,6 +69,7 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("OPENCLAW_TEST_FAST", "0");
+  setRuntimeConfigSnapshot(config);
 });
 
 function prepare(
@@ -96,6 +102,7 @@ it.each([false, true])(
   "persists first-turn skills only while the caller is current without caller-thread session SQL (revoked: %s)",
   async (revokeAtCommit) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      setRuntimeConfigSnapshot({});
       const scope = {
         agentId: "main",
         sessionKey: "agent:main:skill-persistence",
@@ -157,6 +164,11 @@ it.each([false, true])(
 );
 
 it("prepares current sandbox and approval skill eligibility without caller-thread SQL", async () => {
+  const cfg: OpenClawConfig = {
+    agents: { defaults: { sandbox: { mode: "all" } } },
+    tools: { exec: { host: "auto", node: "build-node", mode: "full" } },
+  };
+  setRuntimeConfigSnapshot(cfg);
   const root = tempDirs.make("openclaw-skill-exec-");
   const source = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
   const approvals = vi.spyOn(approvalStore, "loadExecApprovalsReadOnlyAsync");
@@ -183,15 +195,7 @@ it("prepares current sandbox and approval skill eligibility without caller-threa
       );
       approvals.mockClear();
       const calls = observeMainThreadSql();
-      const pending = prepare(
-        root,
-        {
-          agents: { defaults: { sandbox: { mode: "all" } } },
-          tools: { exec: { host: "auto", node: "build-node", mode: "full" } },
-        },
-        undefined,
-        databaseClaim.reader,
-      );
+      const pending = prepare(root, cfg, undefined, databaseClaim.reader);
       vi.stubEnv("OPENCLAW_STATE_DIR", tempDirs.make("openclaw-foreign-skill-exec-"));
       await pending;
       expect(approvals).toHaveBeenCalledTimes(approvalReads);
@@ -210,6 +214,7 @@ it("prepares current sandbox and approval skill eligibility without caller-threa
 
 it("refreshes skills without overwriting other session fields", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    setRuntimeConfigSnapshot({});
     const scope = {
       agentId: "main",
       sessionKey: "agent:main:skill-cohort",
@@ -316,6 +321,11 @@ it("refuses policy preparation when its admitted reader closes during the approv
 it.each(["approvals", "skills"] as const)(
   "refuses prepared eligibility when sandbox policy changes during %s preparation",
   async (phase) => {
+    const cfg: OpenClawConfig = {
+      ...config,
+      agents: { defaults: { sandbox: { mode: "all" } } },
+    };
+    setRuntimeConfigSnapshot(cfg);
     const root = tempDirs.make("openclaw-skill-policy-changed-");
     vi.stubEnv("OPENCLAW_STATE_DIR", root);
     const scope = { agentId: "main", sessionKey: "agent:main:exec-preparation" };
@@ -347,12 +357,7 @@ it.each(["approvals", "skills"] as const)(
       }
       return { snapshot: { prompt: "", skills: [] }, shouldRefresh: false, snapshotVersion: 0 };
     });
-    const pending = prepare(
-      root,
-      { ...config, agents: { defaults: { sandbox: { mode: "all" } } } },
-      undefined,
-      databaseClaim.reader,
-    );
+    const pending = prepare(root, cfg, undefined, databaseClaim.reader);
     try {
       await awaitGateBeforeSettlement(entered.promise, pending, "policy wait did not start");
       await upsertSessionEntryCore(scope, { sandboxMode: undefined });
@@ -441,6 +446,7 @@ async function withAccountingFixture(
   await withOpenClawTestState(
     { label: "compaction-accounting", scenario: "minimal" },
     async (state) => {
+      setRuntimeConfigSnapshot({});
       const scope = {
         agentId: "main",
         storePath: path.join(state.agentDir(), "openclaw-agent.sqlite"),

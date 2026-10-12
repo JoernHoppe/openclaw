@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureRuntimeConfigAsyncReader } from "../src/config/io.js";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 import { connectGatewayClient, disconnectGatewayClient } from "../src/gateway/test-helpers.e2e.js";
 import { redactSensitiveText } from "../src/logging/redact.js";
@@ -207,6 +208,7 @@ describe("Gateway copied Codex session resume", () => {
       await installCodexHarnessFixture(instance.stateDir, config);
 
       instance.state.applyEnv();
+      await captureRuntimeConfigAsyncReader()();
       await upsertSessionEntry({
         agentId: "main",
         sessionKey: SESSION_KEY,
