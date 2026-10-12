@@ -49,6 +49,8 @@ export const databaseWorkerCoreTestFiles = [
   "src/gateway/mention-inbox.worker.test.ts",
   "src/gateway/mention-inbox.test.ts",
   "src/gateway/local-request-context.session-archive.test.ts",
+  "src/gateway/github-oauth-lifecycle.test.ts",
+  "src/gateway/github-oauth-lifecycle.scheduling.test.ts",
   "src/tts/tts-preferences.worker.test.ts",
   "src/agents/openclaw-tools.session-status.gateway-model.test.ts",
   "src/state/openclaw-state-db-cron-delivery-migration.test.ts",
