@@ -222,6 +222,53 @@ describe("createLazyGatewayCronState", () => {
     expect(cron["start"]).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["run", "enqueueRun"] as const)(
+    "finishes startup recovery before admitting a manual %s",
+    async (operation) => {
+      const recoveryStarted = deferred();
+      const recoveryFinished = deferred();
+      const cron = createCronService();
+      cron.start = vi.fn(async () => {
+        recoveryStarted.resolve();
+        await recoveryFinished.promise;
+      });
+      hoisted.setState(createCronState(cron));
+      const lazy = createLazyGatewayCronState(createParams());
+
+      const run = lazy.cron[operation]("demo", "force");
+      await Promise.race([
+        recoveryStarted.promise,
+        run.then(() => {
+          throw new Error("Manual cron run was admitted before startup recovery");
+        }),
+      ]);
+      expect(cron[operation]).not.toHaveBeenCalled();
+      recoveryFinished.resolve();
+      await run;
+
+      expect(cron[operation]).toHaveBeenCalledExactlyOnceWith("demo", "force");
+      await lazy.cron.start();
+      expect(cron.start).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["run", "enqueueRun"] as const)(
+    "keeps a stopped scheduler stopped when a manual %s arrives",
+    async (operation) => {
+      const cron = createCronService();
+      hoisted.setState(createCronState(cron));
+      const lazy = createLazyGatewayCronState(createParams());
+      await lazy.cron.status();
+      lazy.cron.stop();
+
+      await lazy.cron[operation]("demo", "force");
+
+      expect(cron.start).not.toHaveBeenCalled();
+      expect(cron.stop).toHaveBeenCalledOnce();
+      expect(cron[operation]).toHaveBeenCalledExactlyOnceWith("demo", "force");
+    },
+  );
+
   it("does not start cron after stop wins the lazy startup race", async () => {
     const cron = createCronService();
     hoisted.setState(createCronState(cron));
