@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { expect, it, vi } from "vitest";
 import type { MemoryWorkspaceFiles } from "../../packages/memory-host-sdk/src/host/workspace-files.js";
 import { withinTest } from "../../test/helpers/promise.js";
+import {
+  clearRuntimeConfigSnapshot as clearFixtureRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot as setFixtureRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import {
@@ -41,6 +45,12 @@ const providerId = "background-reload-fixture";
 const { createOpenClawTestState } = loadHost(
   path.join(repository, "src/test-utils/openclaw-test-state.ts"),
 ) as typeof import("../test-utils/openclaw-test-state.js");
+const {
+  clearRuntimeConfigSnapshot: clearHostRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot: setHostRuntimeConfigSnapshot,
+} = loadHost(
+  path.join(repository, "src/config/runtime-snapshot.ts"),
+) as typeof import("../config/runtime-snapshot.js");
 // Match the SDK's native host so its module-local workspace bindings are shared.
 const workspaceSdk = tryNativeRequireModule(
   path.join(repository, "src/plugin-sdk/agent-workspace-runtime.ts"),
@@ -278,6 +288,8 @@ it("retires Memory Core while session startup discovery is in flight", async ({ 
     },
   };
   setRuntimeConfigSnapshot(config, config);
+  setFixtureRuntimeConfigSnapshot(config, config);
+  setHostRuntimeConfigSnapshot(config, config);
   const memory = loadMemory(registryHost(), config);
   try {
     // A transient manager exposes the shared prototype without scheduling startup work.
@@ -327,7 +339,11 @@ it("retires Memory Core while session startup discovery is in flight", async ({ 
   } finally {
     await memory.instance.dispose();
     vi.restoreAllMocks();
-    await state.cleanup().finally(clearRuntimeConfigSnapshot);
+    await state.cleanup().finally(() => {
+      clearRuntimeConfigSnapshot();
+      clearFixtureRuntimeConfigSnapshot();
+      clearHostRuntimeConfigSnapshot();
+    });
   }
 });
 
@@ -536,6 +552,8 @@ it.for([false, true])(
         const agentId = reason;
         const cfg = config(agentId, reason);
         setRuntimeConfigSnapshot(cfg, cfg);
+        setFixtureRuntimeConfigSnapshot(cfg, cfg);
+        setHostRuntimeConfigSnapshot(cfg, cfg);
         const workspace = path.join(state.workspaceDir, agentId);
         await fs.mkdir(workspace, { recursive: true });
         await fs.writeFile(
@@ -621,7 +639,11 @@ it.for([false, true])(
         instances.toReversed().map(async (instance) => await instance.dispose()),
       );
       const cleaned = await Promise.allSettled([
-        state.cleanup().finally(clearRuntimeConfigSnapshot),
+        state.cleanup().finally(() => {
+          clearRuntimeConfigSnapshot();
+          clearFixtureRuntimeConfigSnapshot();
+          clearHostRuntimeConfigSnapshot();
+        }),
       ]);
       signal.removeEventListener("abort", reportInterruptedStage);
       errors.push(

@@ -1,5 +1,9 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withTempHome } from "../plugin-sdk/test-env.js";
@@ -16,6 +20,7 @@ describe("plugin registry SQLite session ownership", () => {
       const config: OpenClawConfig = {
         agents: { entries: { researcher: {} } },
       };
+      setRuntimeConfigSnapshot(config);
       const subagent = {
         complete: vi.fn(async () => ({ text: "completed" })),
         run: vi.fn(async () => ({ runId: "workboard-run" })),
@@ -91,10 +96,12 @@ describe("plugin registry SQLite session ownership", () => {
         );
         const pending = api.runtime.subagent.run({ sessionKey, message: "continue" });
         runtimeConfig = { agents: { entries: { replacement: {} } } };
+        setRuntimeConfigSnapshot(runtimeConfig);
         await expect(pending).rejects.toThrow('owned by plugin "harness-owner"');
         expect(subagent.run).toHaveBeenCalledOnce();
       } finally {
         closeOpenClawAgentDatabasesForTest();
+        clearRuntimeConfigSnapshot();
       }
     });
   });
