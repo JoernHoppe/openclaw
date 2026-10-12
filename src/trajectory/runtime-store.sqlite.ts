@@ -90,21 +90,21 @@ export function appendSqliteTrajectoryRuntimeEventsWithWriter(
       break;
     }
   }
-  return write("trajectory.runtime.append", (database) => {
-    const publishRetention = captureTrajectoryRuntimeRetentionMutation(database.db);
-    const db = getTrajectoryKysely(database.db);
-    const window = prepareSqliteTrajectoryRuntimeWindow(database, sessionId, {
-      maxRuntimeBytes,
-      retainedBytes,
-      expiredThroughIndex,
-      discardPrevious: input.discardPrevious,
-    });
-    let seq = window.nextSeq;
-    for (const row of rows) {
-      row.seq = seq++;
-    }
-    // Runtime events never change session rows, transcript anchors, or summary sources.
+  return write("trajectory.runtime.append", (database) =>
+    // Runtime event rows do not change session entries or transcript projections.
     withSqliteDatabaseWriteScope(database.db, [], () => {
+      const publishRetention = captureTrajectoryRuntimeRetentionMutation(database.db);
+      const db = getTrajectoryKysely(database.db);
+      const window = prepareSqliteTrajectoryRuntimeWindow(database, sessionId, {
+        maxRuntimeBytes,
+        retainedBytes,
+        expiredThroughIndex,
+        discardPrevious: input.discardPrevious,
+      });
+      let seq = window.nextSeq;
+      for (const row of rows) {
+        row.seq = seq++;
+      }
       for (let index = 0; index < rows.length; index += TRAJECTORY_RUNTIME_INSERT_BATCH_SIZE) {
         executeSqliteQuerySync(
           database.db,
@@ -122,18 +122,18 @@ export function appendSqliteTrajectoryRuntimeEventsWithWriter(
             .where("seq", "<=", window.removeThroughSeq),
         );
       }
-    });
-    publishRetention?.(sessionId);
-    return {
-      database,
-      receipt: {
-        kind: "trajectory-runtime-append" as const,
-        sessionId,
-        appendedRange: rows.length ? { firstSeq: window.nextSeq, lastSeq: seq - 1 } : undefined,
-        removedThroughSeq: window.removeThroughSeq,
-      },
-    };
-  });
+      publishRetention?.(sessionId);
+      return {
+        database,
+        receipt: {
+          kind: "trajectory-runtime-append" as const,
+          sessionId,
+          appendedRange: rows.length ? { firstSeq: window.nextSeq, lastSeq: seq - 1 } : undefined,
+          removedThroughSeq: window.removeThroughSeq,
+        },
+      };
+    }),
+  );
 }
 
 /** Loads runtime trajectory events from per-agent SQLite rows in storage order. */

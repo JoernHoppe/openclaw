@@ -8,10 +8,6 @@ import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { sessionChangeAffectsStoredRow } from "../../sessions/session-row-facts.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import { freezeJsonSnapshot, isDeeplyFrozenPlainData } from "../../shared/immutable-data.js";
-import type {
-  AgentDatabaseExecutionFileIdentity,
-  AgentDatabaseIncognitoIdentity,
-} from "../../state/openclaw-agent-execution-contract.js";
 import { readSessionActivitySummary } from "./activity-summary.js";
 import {
   readPreparedSessionEntryChange,
@@ -24,6 +20,13 @@ import type {
   SessionActorOutcome,
   SessionActorTarget,
 } from "./session-actor-contract.js";
+import type {
+  EphemeralTarget,
+  FileTarget,
+  ReplicaCell,
+  ReplicaPool,
+  SessionActorEntryFacts,
+} from "./session-actor-replica.types.js";
 import { readSessionActorTranscriptAnchors } from "./session-actor-transcript-anchors.js";
 import {
   advanceSessionActorTranscriptReplica,
@@ -31,45 +34,11 @@ import {
   sameSessionActorTranscriptVersion,
   type SessionActorTranscriptReplica,
 } from "./session-actor-transcript-replica.js";
-import type { SessionEntrySnapshotField } from "./session-entry-snapshot-values.js";
 import { deriveSessionPredicateColumns } from "./session-predicate-columns.js";
-import type { SessionRowDatabaseFacts } from "./session-row-facts.types.js";
 import type { SessionTranscriptAnchorSelection } from "./session-transcript-anchor-read.kernel.js";
 import { readPreparedSessionTranscriptChange } from "./session-transcript-authority.js";
+import type { SessionTranscriptProjectionReceipt } from "./session-transcript-projection-facts.types.js";
 import { collectSessionEntryLookupKeys } from "./store-entry.js";
-
-export type SessionActorEntryFacts = Pick<
-  SessionActorHotState,
-  "target" | "entry" | "writeToken" | "dependencySessionIds"
-> &
-  Partial<Pick<SessionActorHotState, "participants" | "members">> & {
-    snapshots: "full" | readonly SessionEntrySnapshotField[];
-    projection?: Pick<SessionRowDatabaseFacts, "hasBoard" | "activitySummaryWatermark">;
-    predicateColumns?: ReturnType<typeof deriveSessionPredicateColumns>;
-  };
-
-type FileTarget = SessionActorTarget & { database: AgentDatabaseExecutionFileIdentity };
-type EphemeralTarget = SessionActorTarget & {
-  database: AgentDatabaseIncognitoIdentity;
-};
-type ReplicaCell = {
-  target: SessionActorTarget;
-  snapshot?: SessionActorHotState;
-  entry?: SessionActorEntryFacts;
-  transcript?: SessionActorTranscriptReplica;
-  predicateColumns?: SessionActorEntryFacts["predicateColumns"];
-  generation?: string;
-  reservation: number;
-  handles: number;
-  pending: number;
-  bytes: number;
-};
-type ReplicaPool = {
-  cells: Map<string, ReplicaCell>;
-  snapshots: number;
-  bytes: number;
-  unsubscribe?: () => void;
-};
 
 const MAX_SNAPSHOTS = 128;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -376,6 +345,37 @@ function touch(cell: ReplicaCell): void {
     discard(candidate);
     forgetUnused(candidate);
   }
+}
+
+/** The receiving worker checks this receipt against its admitted database once. */
+export function readSessionActorProjectionReceipt(
+  params: Pick<SessionTranscriptProjectionReceipt, "path" | "sessionId"> & { sessionKey?: string },
+): SessionTranscriptProjectionReceipt | undefined {
+  for (const cell of pool.cells.values()) {
+    const { database, sessionKey } = cell.target;
+    const snapshot = cell.snapshot;
+    if (
+      database.kind !== "file" ||
+      database.nativeLocation !== params.path ||
+      (params.sessionKey !== undefined && sessionKey !== params.sessionKey) ||
+      snapshot?.entry?.sessionId !== params.sessionId ||
+      !snapshot.transcript.projection
+    ) {
+      continue;
+    }
+    touch(cell);
+    return {
+      path: database.nativeLocation,
+      sessionId: params.sessionId,
+      writeToken: snapshot.writeToken,
+      writeScopes: [
+        ...collectSessionEntryLookupKeys(sessionKey),
+        ...snapshot.dependencySessionIds.map(sqliteSessionIdWriteScope),
+      ],
+      facts: snapshot.transcript.projection,
+    };
+  }
+  return undefined;
 }
 
 function readCurrentEntryCell(target: FileTarget) {
