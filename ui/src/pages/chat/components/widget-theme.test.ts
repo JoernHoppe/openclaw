@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { installWidgetThemeObserver, postWidgetTheme } from "../../../lib/widget-theme.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { postWidgetTheme, registerWidgetThemeFrame } from "../../../lib/widget-theme.ts";
 
 function stubComputedStyles(values: Record<string, string>) {
   vi.stubGlobal(
@@ -19,7 +19,14 @@ function postedMessage(postMessage: ReturnType<typeof vi.fn>) {
   return postMessage.mock.calls[0] as [unknown, string];
 }
 
+beforeEach(() => {
+  // Other UI files can leave observers attached to the shared jsdom root.
+  document.documentElement.replaceWith(document.documentElement.cloneNode(true));
+});
+
 afterEach(() => {
+  document.body.replaceChildren();
+  document.documentElement.removeAttribute("style");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete document.documentElement.dataset.theme;
@@ -87,58 +94,87 @@ describe("widget theme bridge", () => {
     ]);
   });
 
-  it("posts theme changes to connected frames and installs once", () => {
-    class FakeMutationObserver {
-      static instances: FakeMutationObserver[] = [];
-      readonly observe = vi.fn();
-      readonly disconnect = vi.fn();
-      readonly takeRecords = vi.fn((): MutationRecord[] => []);
-
-      constructor(readonly callback: MutationCallback) {
-        FakeMutationObserver.instances.push(this);
-      }
-
-      trigger(record: MutationRecord): void {
-        this.callback([record], this as unknown as MutationObserver);
-      }
-    }
-
-    vi.stubGlobal("MutationObserver", FakeMutationObserver);
-    vi.stubGlobal("window", {});
-    stubComputedStyles({ "--accent": "#c41e30" });
+  it("shares one token sample across frames and refreshes mounted widgets on root changes", async () => {
+    const values = { "--bg": "#ffffff", "--accent": "#c41e30" };
+    stubComputedStyles(values);
+    const readStyles = vi.mocked(getComputedStyle);
     const chatFrame = document.createElement("iframe");
     chatFrame.className = "chat-tool-card__preview-frame";
     const boardFrame = document.createElement("iframe");
     boardFrame.className = "board-widget__frame";
+    const host = document.createElement("div");
+    const shadowFrame = document.createElement("iframe");
+    host.attachShadow({ mode: "open" }).append(shadowFrame);
     const unrelatedFrame = document.createElement("iframe");
-    document.body.append(chatFrame, boardFrame, unrelatedFrame);
+    document.body.append(chatFrame, boardFrame, host, unrelatedFrame);
     const chatPost = vi.spyOn(chatFrame.contentWindow!, "postMessage");
     const boardPost = vi.spyOn(boardFrame.contentWindow!, "postMessage");
+    const shadowPost = vi.spyOn(shadowFrame.contentWindow!, "postMessage");
     const unrelatedPost = vi.spyOn(unrelatedFrame.contentWindow!, "postMessage");
+    const release = registerWidgetThemeFrame(shadowFrame, "https://widget.example");
 
-    installWidgetThemeObserver();
-    installWidgetThemeObserver();
-
-    expect(FakeMutationObserver.instances).toHaveLength(1);
-    expect(FakeMutationObserver.instances[0]?.observe).toHaveBeenCalledWith(
-      document.documentElement,
-      {
-        attributes: true,
-        attributeFilter: ["data-theme", "data-theme-mode", "style"],
-      },
+    for (const frame of [chatFrame, boardFrame, shadowFrame]) {
+      postWidgetTheme(frame);
+    }
+    expect(readStyles).toHaveBeenCalledTimes(1);
+    expect(chatPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tokens: { surface: "#ffffff", accent: "#c41e30" },
+      }),
+      "*",
     );
-    FakeMutationObserver.instances[0]?.trigger({
-      attributeName: "data-theme",
-    } as MutationRecord);
-    expect(chatPost).toHaveBeenCalledOnce();
-    expect(boardPost).toHaveBeenCalledOnce();
+
+    values["--bg"] = "#101010";
+    document.documentElement.dataset.themeMode = "dark";
+    // A newly loaded frame must see the new palette before observer delivery.
+    postWidgetTheme(chatFrame);
+    expect(chatPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: "dark",
+        tokens: { surface: "#101010", accent: "#c41e30" },
+      }),
+      "*",
+    );
+    await Promise.resolve();
+    expect(boardPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: "dark",
+        tokens: { surface: "#101010", accent: "#c41e30" },
+      }),
+      "*",
+    );
+    expect(shadowPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: "dark",
+        tokens: { surface: "#101010", accent: "#c41e30" },
+      }),
+      "https://widget.example",
+    );
+
+    readStyles.mockClear();
+    values["--accent"] = "#207d82";
+    document.documentElement.style.setProperty("--accent", "#207d82");
+    await Promise.resolve();
+    expect(readStyles).toHaveBeenCalledTimes(1);
+    expect(boardPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tokens: { surface: "#101010", accent: "#207d82" },
+      }),
+      "*",
+    );
+    // Custom branding can replace its stylesheet without changing the theme ID.
+    document.documentElement.dataset.theme = "custom";
+    await Promise.resolve();
+    readStyles.mockClear();
+    values["--bg"] = "#181230";
+    document.documentElement.dataset.theme = "custom";
+    await Promise.resolve();
+    expect(readStyles).toHaveBeenCalledTimes(1);
+    expect(boardPost).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tokens: { surface: "#181230", accent: "#207d82" } }),
+      "*",
+    );
     expect(unrelatedPost).not.toHaveBeenCalled();
-    // Accent overrides land as inline style mutations on <html>.
-    FakeMutationObserver.instances[0]?.trigger({
-      attributeName: "style",
-    } as MutationRecord);
-    expect(chatPost).toHaveBeenCalledTimes(2);
-    expect(boardPost).toHaveBeenCalledTimes(2);
-    expect(unrelatedPost).not.toHaveBeenCalled();
+    release();
   });
 });

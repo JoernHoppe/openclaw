@@ -31,73 +31,75 @@ const HOST_TOKEN_SOURCES: Record<WidgetThemeToken, string> = {
   "font-mono": "--mono",
 };
 
-function collectWidgetThemeTokens(read: (hostVar: string) => string): Record<string, string> {
+type WidgetThemeState = {
+  message?: WidgetThemeMessage;
+  revision?: string;
+  frames: Map<HTMLIFrameElement, string>;
+};
+const widgetThemes = new WeakMap<HTMLElement, WidgetThemeState>();
+
+export function buildWidgetThemeMessage(): WidgetThemeMessage {
+  const root = document.documentElement;
+  const state = widgetThemeState(root);
+  // Reads in the same task as a theme change precede MutationObserver delivery.
+  const revision = JSON.stringify([
+    root.dataset.theme,
+    root.dataset.themeMode,
+    root.getAttribute("style"),
+  ]);
+  if (state.message && state.revision === revision) {
+    return state.message;
+  }
+  const styles = getComputedStyle(root);
   const tokens: Record<string, string> = {};
   for (const token of WIDGET_THEME_TOKENS) {
-    const value = read(HOST_TOKEN_SOURCES[token]).trim();
+    const value = styles.getPropertyValue(HOST_TOKEN_SOURCES[token]).trim();
     if (value) {
       tokens[token] = value;
     }
   }
-  return tokens;
-}
-
-export function buildWidgetThemeMessage(): WidgetThemeMessage {
-  const root = document.documentElement;
-  const styles = getComputedStyle(root);
-  return {
+  state.revision = revision;
+  state.message = {
     type: WIDGET_THEME_MESSAGE_TYPE,
     mode: root.dataset.themeMode === "light" ? "light" : "dark",
-    tokens: collectWidgetThemeTokens((hostVar) => styles.getPropertyValue(hostVar)),
+    tokens,
   };
+  return state.message;
 }
 
 export function postWidgetTheme(frame: HTMLIFrameElement, targetOrigin = "*"): void {
   frame.contentWindow?.postMessage(buildWidgetThemeMessage(), targetOrigin);
 }
 
-const widgetThemeObserverWindows = new WeakSet<Window>();
-const widgetThemeFrames = new WeakMap<Window, Map<HTMLIFrameElement, string>>();
-
 /** Explicit registration also reaches widgets inside a chat component's shadow root. */
 export function registerWidgetThemeFrame(frame: HTMLIFrameElement, origin: string): () => void {
-  let frames = widgetThemeFrames.get(window);
-  if (!frames) {
-    frames = new Map();
-    widgetThemeFrames.set(window, frames);
-  }
+  const frames = widgetThemeState(document.documentElement).frames;
   frames.set(frame, origin);
-  installWidgetThemeObserver();
   return () => frames.delete(frame);
 }
 
-export function installWidgetThemeObserver(): void {
-  if (
-    typeof window === "undefined" ||
-    typeof document === "undefined" ||
-    typeof MutationObserver === "undefined"
-  ) {
-    return;
+function widgetThemeState(root: HTMLElement): WidgetThemeState {
+  const existing = widgetThemes.get(root);
+  if (existing) {
+    return existing;
   }
-  if (widgetThemeObserverWindows.has(window)) {
-    return;
-  }
-  widgetThemeObserverWindows.add(window);
-  const root = document.documentElement;
+  const state: WidgetThemeState = { frames: new Map() };
+  widgetThemes.set(root, state);
   new MutationObserver(() => {
-    const registered = widgetThemeFrames.get(window);
-    for (const frame of document.querySelectorAll<HTMLIFrameElement>(
+    state.message = undefined;
+    const registered = state.frames;
+    for (const frame of root.ownerDocument.querySelectorAll<HTMLIFrameElement>(
       ".chat-tool-card__preview-frame, .board-widget__frame",
     )) {
-      if (!registered?.has(frame)) {
+      if (!registered.has(frame)) {
         postWidgetTheme(frame);
       }
     }
-    for (const [frame, origin] of registered ?? []) {
+    for (const [frame, origin] of registered) {
       if (frame.isConnected) {
         postWidgetTheme(frame, origin);
       } else {
-        registered?.delete(frame);
+        registered.delete(frame);
       }
     }
   }).observe(root, {
@@ -106,4 +108,5 @@ export function installWidgetThemeObserver(): void {
     // without it a user accent change would only reach frames incidentally.
     attributeFilter: ["data-theme", "data-theme-mode", "style"],
   });
+  return state;
 }
