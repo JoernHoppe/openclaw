@@ -21,7 +21,6 @@ import {
 } from "./session-accessor.sqlite-entry-cache-state.js";
 import {
   createSessionEntryCreationOperation,
-  assertSessionEntryCreationCurrent,
   assertSessionEntryCreationTarget,
   type SessionEntryCreationTarget,
   projectSessionSharingEntry,
@@ -210,7 +209,6 @@ export function runWithSessionEntryCreationPublication<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   const creation = preparedSharingChanges.operations.get(operation);
-  assertSessionEntryCreationCurrent(creation);
   return preparedSharingChanges.current.run(creation, run);
 }
 

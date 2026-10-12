@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { captureWorktreeRegistryReadGuard } from "../agents/worktrees/registry-read.js";
 import { captureWorktreeRunEndContext } from "../agents/worktrees/run-end-lifecycle.js";
 import type { managedWorktrees } from "../agents/worktrees/service.js";
@@ -208,13 +209,28 @@ export function createWorkerWorkspaceRecoveryPreparer(options: {
   };
 }
 
+const runtimeEntryFields = [
+  "sessionId",
+  "lifecycleRevision",
+  "providerOverride",
+  "modelOverride",
+  "modelOverrideSource",
+  "modelOverrideRouteResolution",
+  "modelOverrideFallbackOriginProvider",
+  "modelOverrideFallbackOriginModel",
+  "parentSessionKey",
+  "previousSessionId",
+  "agentHarnessId",
+  "modelSelectionLocked",
+  "pluginOwnerId",
+  "agentRuntimeOverride",
+  "authProfileOverride",
+] as const satisfies readonly (keyof InternalSessionEntry)[];
+
 export async function runWorkerPlacementSessionBarrier<T>(params: {
   sessionRuntime: WorkerPlacementSessionRuntime &
     Pick<typeof placementSessionRuntime, "resolveWorkerPlacementExecutionMode"> &
-    Pick<
-      typeof placementSessionRuntimePreparation,
-      "prepareWorkerPlacementSessionRuntime" | "matchesWorkerPlacementRuntimeEntry"
-    >;
+    Pick<typeof placementSessionRuntimePreparation, "prepareWorkerPlacementSessionRuntime">;
   getConfig: () => OpenClawConfig;
   sessionId: string;
   sessionKey: string;
@@ -242,7 +258,10 @@ export async function runWorkerPlacementSessionBarrier<T>(params: {
         sessionKey: params.sessionKey,
         agentId: params.agentId,
         expectedTarget: target,
-        entryMatches: params.sessionRuntime.matchesWorkerPlacementRuntimeEntry,
+        entryMatches: (before, after) =>
+          before && after
+            ? runtimeEntryFields.every((field) => isDeepStrictEqual(before[field], after[field]))
+            : before === after,
         errorMessage: `Session ${params.sessionKey} changed before cloud worker ${params.action}. Retry.`,
       });
       const { target: currentTarget, entry, workspace, assertCurrent } = resolved;
@@ -535,7 +554,6 @@ export const loadWorkerPlacementSessionRuntimeModule = createLazyRuntimeModule(a
     resolveWorkerPlacementCapabilities: placementSessionRuntime.resolveWorkerPlacementCapabilities,
     managedWorktrees,
     prepareWorkerPlacementSessionRuntime: runtimePreparation.prepareWorkerPlacementSessionRuntime,
-    matchesWorkerPlacementRuntimeEntry: runtimePreparation.matchesWorkerPlacementRuntimeEntry,
     resolveWorkerPlacementSessionRuntimeAsync:
       placementSessionRuntime.resolveWorkerPlacementSessionRuntimeAsync,
     resolveCanonicalSessionEntryFromStoreKeys:

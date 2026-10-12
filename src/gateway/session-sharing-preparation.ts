@@ -4,7 +4,6 @@ import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { readSessionEntryCreatedEntry } from "../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { readPreparedSessionSharingChange } from "../config/sessions/session-accessor.sqlite-entry-cache-publication.js";
 import {
-  assertSessionEntryCreationPublication,
   isPreparedSessionSharingChange,
   readSessionEntryCreationTransition,
   type SessionEntryPlaceholder,
@@ -132,7 +131,6 @@ export async function prepareSessionMutationFacts(
   let adoptCreatedEntry: ((entry: SessionSharingEntry) => void) | undefined;
   let assertSource: () => void;
   const selectedPaths = new Set<string>();
-  let selectedDatabaseIdentity: string | undefined;
   const acquiringPaths = new Set<string>();
   const acquiringReads = new Map<string, ReturnType<typeof retainPreparedSessionSharingFacts>>();
   const initializedReads = new Set<string>();
@@ -356,7 +354,6 @@ export async function prepareSessionMutationFacts(
       const { actor } = binding;
       storageTarget = Object.freeze({ agentId, canonicalKey, storePath: actor.path });
       selectedPaths.add(path.resolve(actor.path));
-      selectedDatabaseIdentity = actor.identity.incarnation;
       assertSource = actorRead!.assertCurrent;
       const readSource = {
         agentId: actor.agentId,
@@ -606,7 +603,6 @@ export async function prepareSessionMutationFacts(
         for (const candidate of sourceCandidates) {
           selectedPaths.add(path.resolve(candidate.path));
         }
-        selectedDatabaseIdentity = sharing.databaseIdentity;
       }
       if (!match) {
         if (!params.allowMissing) {
@@ -712,14 +708,6 @@ export async function prepareSessionMutationFacts(
         assertActive();
         assertRoutingCurrent(cfg);
         assertSource();
-        if (creation) {
-          assertSessionEntryCreationPublication(creation, {
-            agentId,
-            sessionKey: canonicalKey,
-            paths: selectedPaths,
-            databaseIdentity: selectedDatabaseIdentity,
-          });
-        }
         return readFacts();
       } catch (error) {
         throw error instanceof SessionMutationFactsUnavailableError
@@ -729,16 +717,6 @@ export async function prepareSessionMutationFacts(
     };
     readCurrent(params.cfg);
     const bindCreation = (operation: SessionEntryCreationOperation) => {
-      readCurrent(params.cfg);
-      if (creation && creation !== operation) {
-        throw new SessionMutationFactsUnavailableError();
-      }
-      assertSessionEntryCreationPublication(operation, {
-        agentId,
-        sessionKey: canonicalKey,
-        paths: selectedPaths,
-        databaseIdentity: selectedDatabaseIdentity,
-      });
       // Existing rows already follow write receipts; only absence needs a creation transition.
       if (facts?.target === null) {
         creation = operation;

@@ -32,17 +32,6 @@ const modelFields = [
   "modelOverrideFallbackOriginModel",
 ] as const satisfies readonly (keyof SessionEntry)[];
 
-const runtimeFields = [
-  ...modelFields,
-  "parentSessionKey",
-  "previousSessionId",
-  "agentHarnessId",
-  "modelSelectionLocked",
-  "pluginOwnerId",
-  "agentRuntimeOverride",
-  "authProfileOverride",
-] as const satisfies readonly (keyof SessionEntry)[];
-
 function matchesFields(
   before: SessionEntry | undefined,
   after: SessionEntry | undefined,
@@ -51,14 +40,6 @@ function matchesFields(
   return before && after
     ? fields.every((field) => isDeepStrictEqual(before[field], after[field]))
     : before === after;
-}
-
-/** The target owner binds these fields once; display and activity writes remain independent. */
-export function matchesWorkerPlacementRuntimeEntry(
-  before: SessionEntry | undefined,
-  after: SessionEntry | undefined,
-): boolean {
-  return matchesFields(before, after, runtimeFields);
 }
 
 /** Retain inherited model facts while the final resolver still asks the live harness owner. */

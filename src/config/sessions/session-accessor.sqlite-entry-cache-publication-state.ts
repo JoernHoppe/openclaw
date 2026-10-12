@@ -428,7 +428,7 @@ export function retainedSharingReads(
 type PreparedSharingChangeRegistry = {
   changes: WeakMap<object, SessionEntryPublicationRecord>;
   operations: WeakMap<SessionEntryCreationOperation, CreationRecord>;
-  current: AsyncLocalStorage<CreationRecord>;
+  current: AsyncLocalStorage<CreationRecord | undefined>;
 };
 
 export const preparedSharingChanges: PreparedSharingChangeRegistry = resolveGlobalSingleton(
@@ -436,7 +436,7 @@ export const preparedSharingChanges: PreparedSharingChangeRegistry = resolveGlob
   () => ({
     changes: new WeakMap<object, SessionEntryPublicationRecord>(),
     operations: new WeakMap<SessionEntryCreationOperation, CreationRecord>(),
-    current: new AsyncLocalStorage<CreationRecord>(),
+    current: new AsyncLocalStorage<CreationRecord | undefined>(),
   }),
 );
 
