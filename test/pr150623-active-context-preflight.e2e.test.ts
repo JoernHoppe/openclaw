@@ -44,25 +44,35 @@ describe("active-context preflight compaction", () => {
         env: { OPENCLAW_SKIP_PROVIDERS: undefined, OPENCLAW_TEST_MINIMAL_GATEWAY: undefined },
       });
       instances.push(instance);
-      await instance.startGateway();
 
       const sessionId = randomUUID();
       const storePath = path.join(instance.state.agentDir("main"), "openclaw-agent.sqlite");
-      const scope = { agentId: "main", sessionId, sessionKey: SESSION_KEY, storePath };
+      const scope = {
+        agentId: "main",
+        sessionId,
+        sessionKey: SESSION_KEY,
+        storePath,
+        env: instance.state.env,
+      };
       await upsertSessionEntryCore(scope, {
         sessionId,
         updatedAt: Date.now(),
         totalTokensFresh: false,
       });
-      const transcript = SessionManager.open(scope, instance.state.workspaceDir);
-      transcript.appendMessage({
+      const transcript = await SessionManager.openAsync(scope, instance.state.workspaceDir);
+      await transcript.appendMessageAsync({
         role: "user",
         content: `${SUPERSEDED_MARKER} `.repeat(25_000),
         timestamp: 1,
       });
-      const retained = transcript.appendMessage({ role: "user", content: "retain", timestamp: 2 });
-      transcript.appendCompaction(SUMMARY_MARKER, retained, 100_000);
-      transcript.appendMessage({ role: "user", content: "active tail", timestamp: 3 });
+      const retained = await transcript.appendMessageAsync({
+        role: "user",
+        content: "retain",
+        timestamp: 2,
+      });
+      await transcript.appendCompactionAsync(SUMMARY_MARKER, retained, 100_000);
+      await transcript.appendMessageAsync({ role: "user", content: "active tail", timestamp: 3 });
+      await instance.startGateway();
 
       const client = await connectGatewayClient({
         url: instance.url,
@@ -95,8 +105,9 @@ describe("active-context preflight compaction", () => {
           limit: 20,
         });
         expect(JSON.stringify(history.messages ?? [])).toContain(REPLY_MARKER);
+        await instance.stopGateway();
         expect(
-          SessionManager.open(scope, instance.state.workspaceDir)
+          (await SessionManager.openAsync(scope, instance.state.workspaceDir))
             .getEntries()
             .filter((entry) => entry.type === "compaction"),
         ).toHaveLength(1);
