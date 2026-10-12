@@ -9,7 +9,7 @@ import {
   type CommandPaletteInputHandoff,
   type CommandPaletteOpenInput,
 } from "../components/command-palette-contract.ts";
-import { renderCommandPaletteInput } from "../components/command-palette-input.ts";
+import { CommandPaletteInput } from "../components/command-palette-input.tsx";
 import type { OpenClawModalDialog } from "../components/modal-dialog.ts";
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";
@@ -19,6 +19,7 @@ import {
 } from "../lib/keyboard-shortcut-contract.ts";
 import { showToast } from "../lib/toast.ts";
 import { uploadsEnabled, uploadsDisabledMessage } from "../lib/uploads.ts";
+import { solidContent } from "../lit/solid-content.tsx";
 import type { ApplicationContext, ApplicationNavigationOptions } from "./context.ts";
 import { gatewayPresentationScope } from "./gateway-presentation-scope.ts";
 import {
@@ -243,11 +244,14 @@ export class CommandPaletteLoadingState {
     this.#host.requestUpdate();
   };
 
-  readonly inputRef = (element: Element | undefined): void => {
+  readonly inputRef = (element: Element | undefined, previous?: HTMLTextAreaElement): void => {
+    if (previous && previous !== this.#input) {
+      return;
+    }
+    if (this.active && this.#input && this.#input !== element) {
+      this.#draft = this.#snapshot();
+    }
     if (!(element instanceof HTMLTextAreaElement)) {
-      if (this.active && this.#input) {
-        this.#draft = this.#snapshot();
-      }
       this.#input = undefined;
       return;
     }
@@ -413,7 +417,7 @@ export function renderCommandPaletteLoading(
       @compositionend=${state.handleCompositionEnd}
       @keydown=${state.handleKeydown}
     >
-      ${renderCommandPaletteInput({
+      ${solidContent(CommandPaletteInput, {
         value: state.value,
         placeholder: label,
         onInputRef: state.inputRef,
