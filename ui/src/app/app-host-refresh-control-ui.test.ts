@@ -74,6 +74,7 @@ describe("OpenClaw shell Control UI refresh", () => {
     document.body.replaceChildren();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("retires cached roster admission before publishing a replacement connection", () => {
@@ -125,6 +126,7 @@ describe("OpenClaw shell Control UI refresh", () => {
   );
 
   it("continues the browser handoff when manual refresh follows a failed automatic probe", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
     store.current().opts.onClose?.({
       code: 1008,
@@ -159,6 +161,10 @@ describe("OpenClaw shell Control UI refresh", () => {
     expect(resumed.pendingBootstrapToken).toBe("synthetic-owner-bootstrap");
     expect(resumed.pendingBootstrapProfile).toBe("owner");
     expect(resumed.location.hash).toBe("");
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(replace).toHaveBeenCalledOnce();
   });
 
   it.each(["browser", "native"] as const)(
