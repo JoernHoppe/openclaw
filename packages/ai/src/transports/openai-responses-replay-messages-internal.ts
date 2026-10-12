@@ -161,16 +161,17 @@ function normalizeResponsesReplayItemId(id: string | undefined): string | undefi
 
 export { encodeTextSignatureV1 } from "../utils/text-signature.js";
 
+function responsesAssistantTurnKey(message: AssistantMessage) {
+  // Early fragments keep this identity when the provider ID arrives at completion.
+  const id = message.turnId || message.responseId;
+  return id ? `${message.provider}:${message.api}:${message.model}:${id}` : undefined;
+}
+
 function orderResponsesAsyncToolResults(source: Context["messages"]): Context["messages"] {
-  const turnKey = (message: AssistantMessage) => {
-    // Early fragments keep this identity when the provider ID arrives at completion.
-    const id = message.turnId || message.responseId;
-    return id ? `${message.provider}:${message.api}:${message.model}:${id}` : undefined;
-  };
   const lastAssistant = new Map<string, number>();
   for (const [index, message] of source.entries()) {
     if (message.role === "assistant") {
-      const key = turnKey(message);
+      const key = responsesAssistantTurnKey(message);
       if (key) {
         lastAssistant.set(key, index);
       }
@@ -181,7 +182,7 @@ function orderResponsesAsyncToolResults(source: Context["messages"]): Context["m
   const ordered: Context["messages"] = [];
   for (const [index, message] of source.entries()) {
     if (message.role === "assistant") {
-      const key = turnKey(message);
+      const key = responsesAssistantTurnKey(message);
       if (key) {
         for (const block of message.content) {
           if (block.type === "toolCall" && block.async) {
@@ -364,11 +365,13 @@ function convertResponsesMessagesWithStyle(
   // internal user content to normalize or reinterpret as text/image blocks.
   if (replayPlan.compactedWindow) {
     messages.push(
-      ...replayPlan.compactedWindow.map((item) =>
-        options?.retainUserProvenance && item.type === "message" && item.role === "user"
-          ? Object.assign({}, item, { [RESPONSES_RETAINED_USER]: true })
-          : item,
-      ),
+      ...replayPlan.compactedWindow.map((item) => {
+        if (options?.retainUserProvenance && item.type === "message" && item.role === "user") {
+          return Object.assign({}, item, { [RESPONSES_RETAINED_USER]: true });
+        }
+        // SAFETY: Validated window; Responses accepts assistant output_text without an id.
+        return item as ResponseInputItem;
+      }),
     );
   }
   let replayMessages = replayPlan.compaction
@@ -456,6 +459,8 @@ function convertResponsesMessagesWithStyle(
       }
     } else if (msg.role === "assistant") {
       const output: ResponseInput = [];
+      const sourceTurnKey = responsesAssistantTurnKey(msg);
+      const sourceFragmentId = msg.content.find((block) => block.type === "toolCall")?.id;
       let textFallbackOrdinal = 0;
       let previousReplayItemWasReasoning = false;
       const isDifferentModel =
@@ -503,7 +508,10 @@ function convertResponsesMessagesWithStyle(
           let msgId = resolveReplayableResponsesMessageId({
             replayResponsesItemIds: shouldReplayResponsesItemIds,
             textSignatureId: textSignature?.id,
-            fallbackId: `msg_${msgIndex}`,
+            // Async prefixes own a call; the final tail has none. Both survive history pruning.
+            fallbackId: sourceTurnKey
+              ? `msg_${shortHash(JSON.stringify([sourceTurnKey, sourceFragmentId]))}`
+              : `msg_${msgIndex}`,
             fallbackOrdinal: textFallbackOrdinal,
             previousReplayItemWasReasoning,
           });

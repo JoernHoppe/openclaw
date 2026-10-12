@@ -157,6 +157,9 @@ Repair settles only native commands belonging to its Doctor. Another Doctor's
 retained command is recorded as foreign custody with its Doctor PID, without
 making the completed Doctor unsettled. Installation replacement remains blocked
 while any live command claim exists.
+If retaining a spawned command's custody fails, Doctor keeps its process identity
+and stops the command before settling its reservation. A reservation without a
+recorded identity still blocks recovery; repeating repair cannot prove it stopped.
 A verified rollback does not automatically start triage: the previous generation
 is running again, and the report keeps the failing check as the reason.
 An interactive update offers the diagnose/report menu with **Exit** selected by
@@ -698,6 +701,15 @@ captured before that update began. Symlink retirement removes only the link;
 source checkouts remain untouched. Failed updates and rollbacks preserve those
 historical backups, and separately retained database snapshots keep their own
 recovery lifetime.
+
+Optional Doctor inspections that have matching lint checks can run after the
+restarted Gateway is ready. The target Doctor reports the checks it actually
+deferred; the updater runs those checks against the updated installation and
+current configuration. Older update parents or targets keep these inspections
+inside Doctor. If the target does not provide a usable report, the updater records
+an advisory rather than claiming that the post-restart inspections completed.
+On the first upgrade from an older updater, that retained parent can still report
+its own post-restart inspection warning even though the target ran checks inline.
 
 Post-plugin config validation and readiness checks use the measured shared and
 agent database sizes after Doctor finishes, including WAL files. Post-core plugin
