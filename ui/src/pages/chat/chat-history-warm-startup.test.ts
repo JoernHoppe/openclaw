@@ -276,6 +276,31 @@ describe("first chat startup snapshot ordering", () => {
     },
   );
 
+  it.each(["never settles", "settles late"] as const)(
+    "publishes history after its cache grace period when the snapshot read %s",
+    async (settlement) => {
+      const h = mountPane();
+      const network = createDeferred<typeof h.liveResult>();
+      h.request.mockReturnValueOnce(network.promise);
+      h.connect();
+      const loading = h.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(h.state.chatMessages).toEqual([]);
+      network.resolve(h.liveResult);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(h.state.chatMessages).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(h.state.chatMessages).toEqual(liveMessages);
+      await loading;
+      if (settlement === "settles late") {
+        h.read.resolve(stored);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(h.state.chatMessages).toEqual(liveMessages);
+      }
+      expect(h.request).toHaveBeenCalledOnce();
+    },
+  );
+
   it("uses the cursor when the local read completed before startup", async () => {
     const h = mountPane();
     h.read.resolve(stored);

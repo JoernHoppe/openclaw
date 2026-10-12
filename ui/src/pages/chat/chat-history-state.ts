@@ -78,6 +78,8 @@ export type InitialChatSnapshotHydration = {
 };
 
 const chatHistoryPaneRequests = new WeakMap<object, ChatHistoryPaneRequests>();
+// Start at history publication so slow network time never spends the cache grace period.
+const INITIAL_CHAT_SNAPSHOT_WAIT_MS = 2_000;
 
 export function chatHistoryRequests(owner: object): ChatHistoryPaneRequests {
   let requests = chatHistoryPaneRequests.get(owner);
@@ -160,11 +162,13 @@ export function waitForInitialChatSnapshot(state: ChatHistoryHost): Promise<bool
   }
   hydration.wait = new Promise<boolean>((resolve) => {
     const finish = (current: boolean) => {
+      clearTimeout(timeout);
       if (requests.initialSnapshotHydration === hydration) {
         delete requests.initialSnapshotHydration;
       }
       resolve(current);
     };
+    const timeout = setTimeout(() => finish(true), INITIAL_CHAT_SNAPSHOT_WAIT_MS);
     const complete = () => finish(true);
     hydration.complete = complete;
     hydration.cancel = () => finish(false);
