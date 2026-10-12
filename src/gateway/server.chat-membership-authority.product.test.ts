@@ -415,13 +415,26 @@ it(
                 },
               );
               expect(started.status).toBe(method === "chat.send" ? "started" : "accepted");
-              await expect(
-                gateway.client.request<{ status: string }>(
-                  "agent.wait",
-                  { runId: started.runId, timeoutMs: 30_000 },
-                  { timeoutMs: 35_000 },
-                ),
-              ).resolves.toMatchObject({ status: "ok" });
+              const terminal = await gateway.client.request<{ status: string }>(
+                "agent.wait",
+                { runId: started.runId, timeoutMs: 30_000 },
+                { timeoutMs: 35_000 },
+              );
+              const terminalDiagnostic =
+                terminal.status === "ok"
+                  ? undefined
+                  : redactSensitiveText(
+                      JSON.stringify({
+                        firstAgent: first,
+                        agentId,
+                        method,
+                        withAttachment,
+                        providerRequests: requests.length - requestOffset,
+                        terminal,
+                      }),
+                      { mode: "tools" },
+                    ).slice(0, 4_000);
+              expect(terminal, terminalDiagnostic).toMatchObject({ status: "ok" });
               const providerInput = requests.slice(requestOffset).join("\n");
               expect(providerInput).toContain(message);
               expect(providerInput).not.toContain(markers[otherAgentId]);
