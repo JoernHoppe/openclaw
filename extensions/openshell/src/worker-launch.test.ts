@@ -79,6 +79,7 @@ console.log(JSON.stringify({args, target, placeholder: process.env.OPENAI_API_KE
     expect(received.unsafe).toBeUndefined();
     expect(received.config.models.providers.openai.apiKey).toBe("${OPENAI_API_KEY}");
     expect(received.config.nodeHost.workerRuns).toEqual({ enabled: true, isolation: "none" });
+    expect(received.config.models.providers.openai.models[0]).not.toHaveProperty("credentialEnv");
     await expect(fs.stat(path.join(worker.stateDir, "pairing-target"))).rejects.toMatchObject({
       code: "ENOENT",
     });

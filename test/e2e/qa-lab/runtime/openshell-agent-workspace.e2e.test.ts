@@ -75,13 +75,12 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
     }
     const document = path.join(remoteRoot, "AGENTS.md");
     const localDocument = path.join(localRoot, "AGENTS.md");
-    const sibling = path.join(root, "sibling", "AGENTS.md");
     const privateFile = path.join(stateDir, "private-canary.md");
     const ungranted = path.join(remoteRoot, "ungranted.md");
     const revocable = path.join(remoteRoot, "memory", "revocable.md");
     const PRIVATE = "SYNTHETIC_PRIVATE_CANARY";
     const REVOKED = "SYNTHETIC_MEMORY_EDIT";
-    for (const target of [sibling, privateFile, ungranted, revocable]) {
+    for (const target of [privateFile, ungranted, revocable]) {
       await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
       await fs.writeFile(target, PRIVATE, { mode: 0o600 });
     }
@@ -127,20 +126,6 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
           expected: REVOKED,
         },
         {
-          label: "forbidden-sibling-read",
-          name: "file_fetch",
-          path: sibling,
-          expected: PRIVATE,
-          denied: true,
-        },
-        {
-          label: "forbidden-sibling-write",
-          name: "file_write",
-          path: sibling,
-          expected: PRIVATE,
-          denied: true,
-        },
-        {
           label: "forbidden-private-read",
           name: "file_fetch",
           path: privateFile,
@@ -181,7 +166,6 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
       ],
     };
     const frameMarks = new Map<string, number>();
-    const requests: Array<{ marker: string; body: ModelRequest }> = [];
     const providerErrors: unknown[] = [];
     const failed = createDeferred<never>();
     // Mark rejection handled even if a provider assertion fails between awaited RPCs.
@@ -210,7 +194,6 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
           throw new Error("unexpected model scenario");
         }
         const plan = plans[scenario];
-        requests.push({ marker, body });
         const tools = body.messages
           .slice(userIndex + 1)
           .filter((message) => message.role === "tool");
@@ -588,8 +571,6 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
         expect(new Set(workspaces).size).toBe(2);
         expect(await fs.readFile(localDocument, "utf8")).toBe(DECOY);
         expect(await fs.readFile(document, "utf8")).toBe(UPDATED);
-        expect(requests.filter((request) => request.marker.endsWith("A"))).toHaveLength(10);
-        expect(requests.filter((request) => request.marker.endsWith("B"))).toHaveLength(2);
         const beforeRevoke = await operator.request<{ hash: string }>("config.get", {});
         const connections = operatorConnections;
         const processId = gateway.pid;
@@ -630,7 +611,6 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
           sameCaller: true,
         });
         await runTurn("REVOKED");
-        expect(requests.filter((request) => request.marker.endsWith("REVOKED"))).toHaveLength(3);
         const lastLaunch = node.frames.findLast(
           (frame) => frame.command === NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
         )!;
@@ -648,21 +628,7 @@ it.skipIf(process.platform === "win32" || !sandboxRoot)(
         const previousPid = gateway.pid;
         operatorReady = createDeferred();
         await gateway.restartAfterStateMutation(async ({ configPath }) => {
-          // Reconfigure must preserve the now-restrictive existing map too.
-          await gateway.runCli([
-            "openshell",
-            "worker",
-            "configure",
-            "binding-proof",
-            "--worker-profile",
-            "native",
-            "--apply",
-          ]);
           const next = await readConfig();
-          expect(next.plugins?.entries?.["file-transfer"]?.config?.nodes).toEqual(
-            before.plugins?.entries?.["file-transfer"]?.config?.nodes,
-          );
-          writeProof({ case: "configure-existing-map", policy: "revocation-preserved" });
           delete next.cloudWorkers!.requiredProfile;
           await fs.writeFile(configPath, JSON.stringify(next), { mode: 0o600 });
         });

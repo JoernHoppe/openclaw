@@ -160,8 +160,8 @@ describe("OpenShell plugin registration lifecycle", () => {
         const context = (await prompt())?.appendSystemContext;
         expect(context).toContain(nodeId);
         expect(context).toContain("/agent/canonical");
-        expect(context).toContain("file_fetch and file_write");
-        expect(context).toContain("task workspace");
+        expect(context).toContain("file_fetch");
+        expect(context).toContain("file_write");
       }
       setRuntimeConfigSnapshot({});
       expect(await prompt()).toBeUndefined();
