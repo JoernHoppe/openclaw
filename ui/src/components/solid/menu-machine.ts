@@ -87,7 +87,8 @@ export function useMenuMachine(
       focusFromKeyboard &&
       ![...overlay.children].some((child) => child.open && containsComposed(child.surface, active))
     ) {
-      node.focus();
+      node.focus({ preventScroll: true });
+      node.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   };
   const adapted: typeof machine = {
@@ -350,6 +351,8 @@ export function useMenuMachine(
             read().setHighlightedValue(value);
           }
           result.onKeyDown?.(e);
+          // End/Home can keep the same highlight after the user scrolls it out of view.
+          focusItem(service.service);
         },
       };
     },

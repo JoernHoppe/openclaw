@@ -189,6 +189,16 @@ describe("native overlay presentation", () => {
       expect(currentChildBox.height).toBeLessThanOrEqual(420);
       expect(lastBox.bottom).toBeLessThanOrEqual(currentChildBox.bottom);
       expect(lastBox.top).toBeGreaterThanOrEqual(currentChildBox.top);
+
+      // Scrolling the menu can hide the focused action; End must reveal it again.
+      surface("people-large").scrollTo({ top: 0, behavior: "instant" });
+      await userEvent.keyboard("{End}");
+      expect(document.activeElement).toBe(last);
+      const revealedBox = last.getBoundingClientRect();
+      const scrolledChildBox = expectWithinViewport(surface("people-large"));
+      expect(scrolledChildBox.height).toBeLessThanOrEqual(420);
+      expect(revealedBox.bottom).toBeLessThanOrEqual(scrolledChildBox.bottom);
+      expect(revealedBox.top).toBeGreaterThanOrEqual(scrolledChildBox.top);
     },
   );
 
