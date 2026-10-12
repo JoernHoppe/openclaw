@@ -26,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.replaceChildren();
+  document.head.querySelectorAll("[data-widget-theme-test]").forEach((node) => node.remove());
   document.documentElement.removeAttribute("style");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -34,6 +35,94 @@ afterEach(() => {
 });
 
 describe("widget theme bridge", () => {
+  function mountedWidget() {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    registerWidgetThemeFrame(frame, "https://widget.example");
+    postWidgetTheme(frame);
+    return post;
+  }
+
+  it("refreshes a mounted widget when custom palette CSS is inserted, edited, or removed", async () => {
+    const values = { "--bg": "#ffffff" };
+    stubComputedStyles(values);
+    const post = mountedWidget();
+    const style = document.createElement("style");
+    style.dataset.widgetThemeTest = "";
+    values["--bg"] = "#112233";
+    style.textContent = ":root { --bg: #112233; }";
+    document.head.append(style);
+    await Promise.resolve();
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tokens: { surface: "#112233" } }),
+      "https://widget.example",
+    );
+    for (const replaceTextNode of [false, true]) {
+      values["--bg"] = replaceTextNode ? "#556677" : "#334455";
+      const css = `:root { --bg: ${values["--bg"]}; }`;
+      if (replaceTextNode) {
+        style.textContent = css;
+      } else {
+        style.firstChild!.textContent = css;
+      }
+      await Promise.resolve();
+      expect(post).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tokens: { surface: values["--bg"] } }),
+        "https://widget.example",
+      );
+    }
+    values["--bg"] = "#ffffff";
+    style.remove();
+    await Promise.resolve();
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tokens: { surface: "#ffffff" } }),
+      "https://widget.example",
+    );
+  });
+
+  it("refreshes loaded or replaced stylesheets without a root attribute change", async () => {
+    const values = { "--bg": "#ffffff" };
+    stubComputedStyles(values);
+    const post = mountedWidget();
+    const link = document.createElement("link");
+    link.dataset.widgetThemeTest = "";
+    link.rel = "stylesheet";
+    link.href = "/themes/tide.css";
+    document.head.append(link);
+    await Promise.resolve();
+    for (const color of ["#112233", "#334455"]) {
+      link.href = `/themes/${color.slice(1)}.css`;
+      await Promise.resolve();
+      values["--bg"] = color;
+      // Resource load events do not bubble.
+      link.dispatchEvent(new Event("load"));
+      expect(post).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tokens: { surface: color } }),
+        "https://widget.example",
+      );
+    }
+  });
+
+  it("refreshes plugin CSS when its downloaded stylesheet is activated", async () => {
+    const values = { "--bg": "#ffffff" };
+    stubComputedStyles(values);
+    const post = mountedWidget();
+    const link = document.createElement("link");
+    link.dataset.widgetThemeTest = "";
+    link.rel = "stylesheet";
+    link.media = "not all";
+    document.head.append(link);
+    await Promise.resolve();
+    values["--bg"] = "#112233";
+    link.media = "all";
+    await Promise.resolve();
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tokens: { surface: "#112233" } }),
+      "https://widget.example",
+    );
+  });
+
   it("posts host variables mapped to widget tokens, dropping empty values", () => {
     document.documentElement.dataset.themeMode = "light";
     stubComputedStyles({
@@ -160,18 +249,6 @@ describe("widget theme bridge", () => {
       expect.objectContaining({
         tokens: { surface: "#101010", accent: "#207d82" },
       }),
-      "*",
-    );
-    // Custom branding can replace its stylesheet without changing the theme ID.
-    document.documentElement.dataset.theme = "custom";
-    await Promise.resolve();
-    readStyles.mockClear();
-    values["--bg"] = "#181230";
-    document.documentElement.dataset.theme = "custom";
-    await Promise.resolve();
-    expect(readStyles).toHaveBeenCalledTimes(1);
-    expect(boardPost).toHaveBeenLastCalledWith(
-      expect.objectContaining({ tokens: { surface: "#181230", accent: "#207d82" } }),
       "*",
     );
     expect(unrelatedPost).not.toHaveBeenCalled();

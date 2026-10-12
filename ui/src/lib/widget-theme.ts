@@ -38,6 +38,18 @@ type WidgetThemeState = {
 };
 const widgetThemes = new WeakMap<HTMLElement, WidgetThemeState>();
 
+function isStylesheet(node: Node | null): boolean {
+  return node instanceof Element && node.matches('style, link[rel~="stylesheet"]');
+}
+
+function changesStylesheet(record: MutationRecord): boolean {
+  return (
+    isStylesheet(record.target) ||
+    (record.type === "characterData" && isStylesheet(record.target.parentNode)) ||
+    [...record.addedNodes, ...record.removedNodes].some(isStylesheet)
+  );
+}
+
 export function buildWidgetThemeMessage(): WidgetThemeMessage {
   const root = document.documentElement;
   const state = widgetThemeState(root);
@@ -85,8 +97,7 @@ function widgetThemeState(root: HTMLElement): WidgetThemeState {
   }
   const state: WidgetThemeState = { frames: new Map() };
   widgetThemes.set(root, state);
-  new MutationObserver(() => {
-    state.message = undefined;
+  const publish = () => {
     const registered = state.frames;
     for (const frame of root.ownerDocument.querySelectorAll<HTMLIFrameElement>(
       ".chat-tool-card__preview-frame, .board-widget__frame",
@@ -102,11 +113,40 @@ function widgetThemeState(root: HTMLElement): WidgetThemeState {
         registered.delete(frame);
       }
     }
-  }).observe(root, {
+  };
+  const observer = new MutationObserver((records) => {
+    const stylesheetChanged = records.some(changesStylesheet);
+    if (stylesheetChanged) {
+      state.message = undefined;
+    }
+    if (stylesheetChanged || records.some((record) => record.target === root)) {
+      publish();
+    }
+  });
+  observer.observe(root, {
     attributes: true,
     // "style" carries the accent override (inline custom properties on <html>);
     // without it a user accent change would only reach frames incidentally.
     attributeFilter: ["data-theme", "data-theme-mode", "style"],
   });
+  // Custom palettes replace style text; plugin activation changes link media.
+  const head = root.ownerDocument.head;
+  observer.observe(head, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["href", "rel", "media", "disabled"],
+  });
+  head.addEventListener(
+    "load",
+    (event) => {
+      if (event.target instanceof HTMLLinkElement && isStylesheet(event.target)) {
+        state.message = undefined;
+        publish();
+      }
+    },
+    true,
+  );
   return state;
 }
