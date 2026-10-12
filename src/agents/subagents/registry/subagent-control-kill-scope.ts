@@ -324,6 +324,11 @@ export async function withSubagentKillScope<T>(
     const pending: PendingKillTree[] = [];
     capture(pending, runs, trees, owner, parent, ownsRoot);
     captureResidentDescendants(pending);
+    // Hold every resident target before preparing the caller's source generation.
+    const preparation = params.prepareRead?.();
+    if (preparation) {
+      await preparation;
+    }
     for (const item of pending) {
       await item.prepare();
     }

@@ -96,6 +96,7 @@ type RowFixture = {
   runs?: SubagentRunRecord[];
   omitRowContext?: boolean;
   expectedIsDock?: boolean;
+  transcript?: boolean;
   decoration?: "current" | "stale";
 };
 

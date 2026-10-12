@@ -8,6 +8,8 @@ import type {
 } from "../../infra/sqlite-worker-operation-admission.js";
 import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
 import { freezeJsonSnapshot } from "../../shared/immutable-data.js";
+import { publishRetainedSessionEntryChange } from "./session-accessor.sqlite-entry-cache-publication-state.js";
+import { projectSessionSharingEntry } from "./session-accessor.sqlite-entry-cache.types.js";
 import { projectSessionActorAuthority } from "./session-actor-command.js";
 import type {
   SessionActorAuthority,
@@ -296,6 +298,18 @@ export function createSqliteSessionActorExecutor(
                 }
                 result = committed;
                 try {
+                  // Retained effect predicates must observe this commit before its callbacks.
+                  if (target.database.kind === "file") {
+                    const entry = committed.receipt.postimage.entry;
+                    publishRetainedSessionEntryChange(
+                      target.database.physicalIdentity,
+                      target.sessionKey,
+                      entry ? projectSessionSharingEntry(entry) : undefined,
+                      selected.transactionSnapshot?.entry,
+                      true,
+                      entry,
+                    );
+                  }
                   observer?.committed(committed);
                 } catch (error) {
                   result = preserveFailure(error);

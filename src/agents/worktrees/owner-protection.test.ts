@@ -87,7 +87,7 @@ beforeEach(() => {
   mocks.runExclusiveSessionLifecycleMutation.mockImplementation(
     (_operation, { run }: { run: () => Promise<unknown> }) => run(),
   );
-  readOwners.mockImplementation(({ sessionKeys }: { sessionKeys: string[] }) =>
+  readOwners.mockImplementation(({ sessionKeys }: { sessionKeys: readonly string[] }) =>
     Promise.resolve(new Map(sessionKeys.map((key) => [key, target(key)]))),
   );
 });

@@ -137,6 +137,7 @@ export async function resolveSessionMutationAuthorizationAsync(
         storageTarget: retained.storageTarget,
         readSource,
         bindCreation: retained.bindCreation,
+        followRegistration: retained.followRegistration,
         read: () => {
           const facts = readCurrent();
           return {
@@ -166,6 +167,15 @@ export async function resolveSessionMutationAuthorizationAsync(
       ...result,
       authorization: {
         ...authorization,
+        followRegistration: (target, change) => {
+          preparedTargets
+            .find(
+              (prepared) =>
+                prepared.storageTarget.agentId === target.agentId &&
+                prepared.storageTarget.canonicalKey === target.sessionKey,
+            )
+            ?.followRegistration?.(change);
+        },
         release: () => {
           if (!transferred) {
             release();
@@ -192,7 +202,7 @@ export async function resolveSessionMutationAuthorizationAsync(
           const read = () => {
             const current = retained.readCurrent();
             if (!active || !current?.entry) {
-              throw new Error("Created session authority is no longer current");
+              throw sessionMutationTargetChanged(params.method, created.sessionKey);
             }
             return {
               target: {
@@ -213,7 +223,7 @@ export async function resolveSessionMutationAuthorizationAsync(
               isMember: (identityId: string) => current.membership.has(identityId),
               assertCurrent: () => {
                 if (!active || !retained.readCurrent()) {
-                  throw new Error("Created session authority is no longer current");
+                  throw sessionMutationTargetChanged(params.method, created.sessionKey);
                 }
               },
             };

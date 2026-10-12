@@ -5,8 +5,8 @@ import {
   errorShape,
   type ErrorShape,
 } from "../../packages/gateway-protocol/src/index.js";
-import { resolveSqliteSessionKey } from "../config/sessions/session-accessor.sqlite-scope-helpers.js";
 import type { SessionEntry } from "../config/sessions/types.js";
+import { toAgentStoreSessionKey } from "../routing/session-key.js";
 import type { SessionOperatorScope } from "../shared/session-method-scopes-base.js";
 import { resolveGatewayOperatorRoleActor } from "./operator-role-policy.js";
 import { authenticatedProfileUnavailableError } from "./server-methods/gateway-client-identity.js";
@@ -58,6 +58,9 @@ export type SessionMutationAuthorizationParams = {
     agentId?: string;
     readSource?: import("../config/sessions/session-entry-read-source.types.js").CapturedSessionEntryReadSource;
     read: () => PreparedMutationSharing;
+    followRegistration?: (
+      change: import("../state/openclaw-agent-db-contract.js").AgentDatabaseRegistryChange,
+    ) => void;
     bindCreation: (
       operation: import("../config/sessions/session-accessor.sqlite-entry-cache.types.js").SessionEntryCreationOperation,
     ) => void;
@@ -221,10 +224,15 @@ export function prepareAuthorizedSessionMutationFacts(params: {
         }
       : undefined;
   const expectedReadSource = original?.readSource ?? params.source;
+  // Transaction authority qualifies global/unknown too; the retained storage route does not.
   if (
     !expectedRoute ||
     facts.agentId !== expectedRoute.agentId ||
-    facts.sessionKey !== resolveSqliteSessionKey(expectedRoute.storeKey, expectedRoute.agentId) ||
+    facts.sessionKey !==
+      toAgentStoreSessionKey({
+        agentId: expectedRoute.agentId,
+        requestKey: expectedRoute.storeKey,
+      }) ||
     (expectedReadSource
       ? facts.readSource?.databaseIdentity !== expectedReadSource.databaseIdentity ||
         facts.readSource.databaseBirthtime !== expectedReadSource.databaseBirthtime ||

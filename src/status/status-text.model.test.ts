@@ -191,7 +191,7 @@ describe("buildStatusText prepared context windows", () => {
         totalTokens: 60,
         totalTokensFresh: true,
         totalTokensVersion: 1,
-      };
+      } satisfies InternalSessionEntry;
       await replaceSessionEntry(target, committedEntry);
       readUsage.mockClear();
       const committed = await renderPreparedStatus({

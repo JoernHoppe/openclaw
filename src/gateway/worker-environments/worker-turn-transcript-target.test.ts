@@ -1,3 +1,4 @@
+import { AsyncResource } from "node:async_hooks";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   isSessionEntryDataSql,
@@ -189,6 +190,7 @@ it("refuses a worker transcript effect after a committed writer change without h
       updatedAt: 1,
     });
     const observer = observeHostDataSql();
+    const incomingRpc = new AsyncResource("worker-transcript-rpc");
     try {
       await using source = await prepareWorkerTurnTranscriptSource(target);
       source();
@@ -199,6 +201,8 @@ it("refuses a worker transcript effect after a committed writer change without h
           prepareAuthority: async () => ({ isCurrent: () => true, release() {} }),
         },
         async (pinned) => {
+          const assertReceipt = captureWorkerTurnTranscriptSource(pinned);
+          incomingRpc.runInAsyncScope(assertReceipt);
           const effect = vi.fn(() => {
             resolveWorkerTurnTranscriptTarget({ ...pinned, sessionTarget: pinned });
           });
@@ -206,10 +210,14 @@ it("refuses a worker transcript effect after a committed writer change without h
           await patchSessionEntryCore(target, () => ({ activeWriterRunId: "next-writer" }));
           expect(effect).toThrow("transcript identity is no longer current");
           expect(source).toThrow("transcript identity is no longer current");
+          expect(() => incomingRpc.runInAsyncScope(assertReceipt)).toThrow(
+            "transcript identity is no longer current",
+          );
         },
       );
       expect(observer.queries.filter(isSessionEntryDataSql)).toEqual([]);
     } finally {
+      incomingRpc.emitDestroy();
       observer.restore();
     }
   });

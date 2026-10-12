@@ -13,7 +13,7 @@ import {
   inspectAgentDatabaseAdmission,
   recordAgentDatabaseAdmissions,
 } from "../../state/agent-database-admission.js";
-import * as sessionStoreLookup from "../session-utils-store-lookup.js";
+import * as sessionStoreWorker from "../session-utils-store-worker.js";
 import { prepareAgentRequestPreflight } from "./agent-request-preflight.js";
 import { createAgentTurnService } from "./agent-turn-service.js";
 import { createAgentTurnIo } from "./io.js";
@@ -231,7 +231,7 @@ describe("agent request Swarm preflight", () => {
     "derives coordination source role from canonical spawn lineage ($expectedRole)",
     async ({ entry, sourceAcp, expectedRole }) => {
       const sourceKey = "agent:main:visible-worker";
-      vi.spyOn(sessionStoreLookup, "resolveGatewaySessionStoreTargetWithStore").mockReturnValue({
+      vi.spyOn(sessionStoreWorker, "resolveGatewaySessionStoreTargetInWorker").mockResolvedValue({
         agentId: "main",
         canonicalKey: sourceKey,
         storePath: "/source-store",

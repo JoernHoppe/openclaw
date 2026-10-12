@@ -512,6 +512,11 @@ export type SessionMutationAuthorization = {
     target: { sessionKey?: string; key?: string; agentId?: string },
     operation: import("../../config/sessions/session-accessor.sqlite-entry-cache.types.js").SessionEntryCreationOperation,
   ) => void;
+  /** Follow only the selected creator execution's own registry receipts. */
+  followRegistration?: (
+    target: { sessionKey: string; agentId: string },
+    change: import("../../state/openclaw-agent-db-contract.js").AgentDatabaseRegistryChange,
+  ) => void;
   /** Consume fresh durable facts while their physical reader remains retained. */
   withCurrent?: <T>(consume: () => T) => Promise<T>;
   withPreparedCurrent?: <T>(

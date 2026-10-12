@@ -80,15 +80,15 @@ async function prepareGatewaySessionStoreReadInWorker(
   });
   // Ephemeral databases belong to the process and cannot be opened by a worker.
   if (isIncognitoSessionKey(canonicalKey)) {
-    return {
-      target: resolveGatewaySessionStoreTargetWithStore({
-        ...params,
-        agentId,
-        readOnly: true,
-        projection: params.projection ?? "list",
-        exactRead: true,
-      }),
-    };
+    const target = resolveGatewaySessionStoreTargetWithStore({
+      ...params,
+      agentId,
+      readOnly: true,
+      projection: params.projection ?? "list",
+      exactRead: true,
+    });
+    onSelected?.(target);
+    return { target };
   }
   const parsedAgent = parseAgentSessionKey(params.key)?.agentId;
   const { candidates, ...inventory } = prepareSessionStoreTargetInventory(

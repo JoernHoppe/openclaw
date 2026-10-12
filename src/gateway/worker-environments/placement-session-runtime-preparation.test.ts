@@ -36,14 +36,17 @@ it("retains parent model authority without host SQL and recomputes current confi
       expect(
         prepared.read({ ...cfg, cloudWorkers: { requiredProfile: "test-profile" } }, entry),
       ).toBe("openclaw");
-      await patchSessionEntryCore(child, () => ({ label: "A display-only edit" }));
+      await patchSessionEntryCore(child, () => ({ label: "A display-only edit" }), {
+        workerGuard: {},
+      });
       const currentChild = await readSessionEntryReadOnlyInWorker(child);
       expect(currentChild?.label).toBe("A display-only edit");
       expect(prepared.read(cfg, currentChild!)).toBe("codex");
-      await patchSessionEntryCore(parent, () => ({
-        providerOverride: "anthropic",
-        modelOverride: "claude-test",
-      }));
+      await patchSessionEntryCore(
+        parent,
+        () => ({ providerOverride: "anthropic", modelOverride: "claude-test" }),
+        { workerGuard: {} },
+      );
       expect(() => prepared.read(cfg, currentChild!)).toThrow("model inheritance changed");
       expect(sql.queries).toEqual([]);
     } finally {

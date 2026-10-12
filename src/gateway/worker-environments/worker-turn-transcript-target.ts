@@ -133,8 +133,10 @@ function findPreparedTranscript(target: BoundAgentRunSessionTarget) {
   return prepared;
 }
 
-function currentPreparedTranscript(target: BoundAgentRunSessionTarget) {
-  const prepared = findPreparedTranscript(target);
+function currentPreparedTranscript(
+  target: BoundAgentRunSessionTarget,
+  prepared = findPreparedTranscript(target),
+) {
   if (!prepared) {
     throw new Error("Cloud worker transcript requires prepared authority");
   }
@@ -371,9 +373,13 @@ export function captureWorkerTurnTranscriptSource(
       nativeSource: true,
     });
   }
-  return Object.assign(() => assertEntry(currentPreparedTranscript(target).readCurrent()), {
+  // RPC callbacks run in the connection context, outside the launching turn scope.
+  const captured = findPreparedTranscript(target);
+  const assertCurrent = () =>
+    assertEntry(currentPreparedTranscript(target, captured).readCurrent());
+  return Object.assign(assertCurrent, {
     async prepareSessionSource(): Promise<PreparedSessionSourceAuthority> {
-      const current = findPreparedTranscript(target);
+      const current = captured ?? findPreparedTranscript(target);
       const prepared = current ?? (await prepareWorkerTranscript(target, () => {}));
       try {
         const assertPrepared = () => {

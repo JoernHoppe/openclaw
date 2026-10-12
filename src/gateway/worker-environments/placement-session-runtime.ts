@@ -1,4 +1,5 @@
 import { resolveEffectiveAgentDir } from "../../agents/agent-scope-config.js";
+import { resolveSharedAuthStoreOwnershipAsync } from "../../agents/auth-profiles/path-resolve.js";
 import { getRegisteredAgentHarness } from "../../agents/harness/registry.js";
 import { readSessionRuntimeOwnershipAsync } from "../../agents/harness/session-runtime-ownership.js";
 import type { AgentHarnessSessionRuntimeOwnership } from "../../agents/harness/types.js";
@@ -14,6 +15,7 @@ import type { SessionEntry } from "../../config/sessions.js";
 import { withSessionEntriesFromStoresInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { prepareBundledDiscoveryMode } from "../../plugins/bundled-discovery-state.js";
 import { withPluginMetadataSnapshotScope } from "../../plugins/current-plugin-metadata-snapshot.js";
 import { resolvePluginMetadataSnapshotAsync } from "../../plugins/plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
@@ -22,6 +24,7 @@ import { isIncognitoSessionKey, parseAgentSessionKey } from "../../routing/sessi
 import { resolveSessionPinnedHarnessId } from "../../sessions/agent-harness-session-key.js";
 import { resolveStoredModelOverrideAsync } from "../../sessions/stored-model-overrides.js";
 import type { GatewayAgentRuntime } from "../../shared/session-types.js";
+import { captureOpenClawStateReadWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
 import { resolveSessionSelectedModelRef } from "../session-utils-model-selection.js";
 import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
@@ -60,13 +63,20 @@ export async function resolveWorkerPlacementSessionRuntimeAsync(
 ): Promise<string> {
   const preparedEnvironment = captureRuntimeStateEnvironment();
   const workspaceDir = getActivePluginRegistryWorkspaceDirFromState();
-  const metadataSnapshot = await resolvePluginMetadataSnapshotAsync({
-    config: params.cfg,
-    env: preparedEnvironment,
-    ...(workspaceDir ? { workspaceDir } : {}),
-    allowWorkspaceScopedCurrent: true,
-  });
+  const [metadataSnapshot, activateDiscovery] = await Promise.all([
+    resolvePluginMetadataSnapshotAsync({
+      config: params.cfg,
+      env: preparedEnvironment,
+      ...(workspaceDir ? { workspaceDir } : {}),
+      allowWorkspaceScopedCurrent: true,
+    }),
+    prepareBundledDiscoveryMode(preparedEnvironment),
+    resolveSharedAuthStoreOwnershipAsync(
+      captureOpenClawStateReadWorkerContext({ env: preparedEnvironment }),
+    ),
+  ]);
   params.assertCurrent?.();
+  activateDiscovery();
   return withPluginMetadataSnapshotScope(
     metadataSnapshot,
     async () => {
