@@ -10,6 +10,7 @@ import {
   patchSessionEntryCore,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
+import { appendAbortedSessionTranscriptPartial } from "../../config/sessions/session-accessor.sqlite-transcript-reports.js";
 import { withIncognitoSessionActor } from "../../config/sessions/session-incognito-binding.js";
 import { recordSessionParticipantInWorker } from "../../config/sessions/session-sharing-store.async.js";
 import { SQLITE_IDLE_HANDLE_TTL_MS } from "../../infra/sqlite-handle-lifecycle.js";
@@ -233,6 +234,19 @@ it("retains a logical-store worker transcript and refuses writer changes without
         admission.mockRestore();
       }
       expect(checkedPendingParticipant).toBe(true);
+      source();
+      await expect(
+        appendAbortedSessionTranscriptPartial(target, {
+          runId: target.expectedWriterRunId,
+          expectedLifecycleRevision: target.expectedLifecycleRevision,
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Interrupted worker response" }],
+            stopReason: "aborted",
+            timestamp: 2,
+          },
+        }),
+      ).resolves.toMatchObject({ ok: true, value: { skipped: false, append: { appended: true } } });
       source();
       await withWorkerTurnTranscriptDatabase(
         { ...target, sessionTarget: target },
