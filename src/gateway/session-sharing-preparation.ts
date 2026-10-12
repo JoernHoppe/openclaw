@@ -16,6 +16,7 @@ import type {
   SessionSharingEntry,
 } from "../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { readCommittedIncognitoSessionSharing } from "../config/sessions/session-accessor.sqlite-incognito-sharing.js";
+import { SessionCanonicalKeyMigrationRequiredError } from "../config/sessions/session-canonical-key-error.js";
 import { readSessionEntriesFromStoreInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import type { CapturedSessionEntryReadSource } from "../config/sessions/session-entry-read-source.types.js";
 import { captureIncognitoSessionBinding } from "../config/sessions/session-incognito-binding.js";
@@ -747,7 +748,9 @@ export async function prepareSessionMutationFacts(
     return { storageTarget, bindCreation, readCurrent, release, followRegistration };
   } catch (error) {
     release();
-    throw waitingForStorage || error instanceof SessionMutationFactsUnavailableError
+    throw waitingForStorage ||
+      error instanceof SessionMutationFactsUnavailableError ||
+      error instanceof SessionCanonicalKeyMigrationRequiredError
       ? error
       : new SessionMutationFactsUnavailableError({ cause: error });
   }
