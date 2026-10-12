@@ -1,10 +1,10 @@
-import { createServer, type AddressInfo, type Server } from "node:net";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailoverError } from "../agents/failover-error.js";
 import { createAgentRunSupersededAbortError } from "../agents/run-termination.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { acquireTestPortBlock, type TestPortClaim } from "../test-utils/port-claims.js";
 import {
   dispatchCronDeliveryMock,
   loadRunCronIsolatedAgentTurn,
@@ -32,25 +32,6 @@ function makeCommandLaneTaskTimeoutError(lane: string, timeoutMs: number): Error
   const error = new Error(`Command lane "${lane}" task timed out after ${timeoutMs}ms`);
   error.name = "CommandLaneTaskTimeoutError";
   return error;
-}
-
-async function listenForBrokenHttpConnections(): Promise<{
-  baseUrl: string;
-  server: Server;
-}> {
-  const server = createServer((socket) => socket.destroy());
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address() as AddressInfo;
-  return { baseUrl: `http://127.0.0.1:${address.port}`, server };
-}
-
-async function closeServer(server: Server): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
 }
 
 function configFor(modelRef: ModelRef, localBaseUrl?: string): OpenClawConfig {
@@ -145,7 +126,11 @@ async function runPersistedDiagnosticCase(params: {
 }
 
 describe("cron execution diagnostics", { concurrent: false }, () => {
-  const servers: Server[] = [];
+  let unavailableEndpoint: TestPortClaim;
+
+  beforeAll(async () => {
+    unavailableEndpoint = await acquireTestPortBlock({ offsets: [0] });
+  });
 
   beforeEach(() => {
     resetRunCronIsolatedAgentTurnHarness();
@@ -153,18 +138,16 @@ describe("cron execution diagnostics", { concurrent: false }, () => {
   });
 
   afterAll(async () => {
-    await Promise.all(servers.map(closeServer));
+    await unavailableEndpoint.release();
   });
 
   it("persists and emits a real isolated-run local-provider preflight failure", async () => {
-    const endpoint = await listenForBrokenHttpConnections();
-    servers.push(endpoint.server);
     const modelRef = { provider: "ollama", model: "diagnostic-model" };
     resolveConfiguredModelRefMock.mockReturnValue(modelRef);
     resolveAllowedModelRefMock.mockReturnValue({ ref: modelRef });
 
     const { finished, history } = await runPersistedDiagnosticCase({
-      cfg: configFor(modelRef, endpoint.baseUrl),
+      cfg: configFor(modelRef, `http://127.0.0.1:${unavailableEndpoint.port}`),
       modelRef,
       name: "unreachable provider",
     });
