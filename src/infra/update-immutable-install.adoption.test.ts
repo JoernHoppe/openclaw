@@ -249,8 +249,9 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
   afterEach(() => vi.restoreAllMocks());
 
   it.each(["selected", "changed-receipt", "unrelated", "none"] as const)(
-    "enables the verified bridge, retains its predecessor, and handles a %s prepared receipt",
+    "upgrades the legacy bridge adoption, retains its predecessor, and handles a %s prepared receipt",
     async (preparedKind) => {
+      expect(original.descriptor).not.toHaveProperty("identityEncoding");
       if (preparedKind !== "none") {
         const sha = preparedKind === "unrelated" ? "c".repeat(40) : bridgeSha;
         const candidatePath = path.join(root, "releases", sha);
@@ -316,6 +317,7 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
     "enabled",
     "disabled",
     "pending",
+    "imprecise-legacy-identity",
   ] as const)(
     "refuses %s drift without rewriting the launcher or adoption record",
     async (change) => {
@@ -361,6 +363,15 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
       if (change === "pending") {
         retainPendingActivation();
       }
+      if (change === "imprecise-legacy-identity") {
+        mocks.read.mockResolvedValueOnce({
+          ...original,
+          descriptor: {
+            ...original.descriptor,
+            current: { ...original.descriptor.current, pointerIdentity: "1:9007199254740992" },
+          },
+        });
+      }
       await expect(adoptImmutableInstall(params)).rejects.toThrow(
         ["previous-tree", "previous-digest"].includes(change)
           ? "Previous sealed immutable generation changed"
@@ -368,7 +379,9 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
             ? "not the serving physical generation"
             : change === "pending"
               ? "Immutable activation recovery is pending"
-              : "Existing immutable adoption differs",
+              : change === "imprecise-legacy-identity"
+                ? "Legacy immutable receipt contains an imprecise file identity"
+                : "Existing immutable adoption differs",
       );
       expect(read()).toEqual(original);
       expect(fsSync.readlinkSync(path.join(root, "current"))).toBe(`releases/${bridgeSha}`);

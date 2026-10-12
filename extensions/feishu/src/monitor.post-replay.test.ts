@@ -2,7 +2,10 @@
 // oxfmt-ignore
 import { getFeishuLifecycleTestMocks, resetFeishuLifecycleTestMocks } from "./lifecycle.test-support.js";
 import { EventDispatcher } from "@larksuiteoapi/node-sdk";
-import { createChannelIngressQueueForTests } from "openclaw/plugin-sdk/channel-ingress-test-runtime";
+import {
+  createChannelIngressQueueForTests,
+  observeChannelIngressQueueWrite,
+} from "openclaw/plugin-sdk/channel-ingress-test-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { createNonExitingRuntimeEnv } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { closeOpenClawStateDatabaseAsync } from "openclaw/plugin-sdk/sqlite-runtime-testing";
@@ -50,12 +53,22 @@ it("suppresses rich-post transport twins and retained legacy records without blo
       storePath: `${state.stateDir}/sessions.json`,
     });
     runtime.config.current = () => cfg;
-    runtime.state.openChannelIngressQueue = () =>
-      createChannelIngressQueueForTests({
+    const completionObserver = createDeferred<(eventId: string) => Promise<boolean>>();
+    runtime.state.openChannelIngressQueue = <
+      T,
+      TMetadata = unknown,
+      TCompletedMetadata = unknown,
+    >() => {
+      const ingressQueue = createChannelIngressQueueForTests<T, TMetadata, TCompletedMetadata>({
         channelId: "feishu",
         accountId: "test",
         stateDir: state.stateDir,
       });
+      completionObserver.resolve((eventId) =>
+        observeChannelIngressQueueWrite(ingressQueue, "complete", eventId),
+      );
+      return ingressQueue;
+    };
     const queue = createChannelIngressQueueForTests({
       channelId: "feishu",
       accountId: "test",
@@ -88,6 +101,7 @@ it("suppresses rich-post transport twins and retained legacy records without blo
     void monitor.catch(ready.reject);
     try {
       const dispatcher = await ready.promise;
+      const observeCompletion = await completionObserver.promise;
       let sequence = 0;
       const send = async (
         messageId: string,
@@ -95,6 +109,7 @@ it("suppresses rich-post transport twins and retained legacy records without blo
         media: { imageKey?: string; fileKey?: string } = {},
       ) => {
         sequence += 1;
+        const completed = observeCompletion(`evt-post-${sequence}`);
         await dispatcher.invoke({
           schema: "2.0",
           header: { event_id: `evt-post-${sequence}`, event_type: "im.message.receive_v1" },
@@ -123,10 +138,9 @@ it("suppresses rich-post transport twins and retained legacy records without blo
             },
           },
         });
-        await vi.waitFor(async () => {
-          expect(await queue.listPending()).toEqual([]);
-          expect(await queue.listClaims()).toEqual([]);
-        });
+        expect(await completed).toBe(true);
+        expect(await queue.listPending()).toEqual([]);
+        expect(await queue.listClaims()).toEqual([]);
         // Ingress adoption clears the queue before reply delivery settles.
         await Promise.all(mocks.withReplyDispatcherMock.mock.results.map((result) => result.value));
       };

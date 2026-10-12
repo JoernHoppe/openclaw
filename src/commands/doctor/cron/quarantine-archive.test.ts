@@ -67,10 +67,10 @@ it.each(["unchanged", "contents", "identity"] as const)(
     } else {
       expect(result).toEqual({ ok: true, archivePath });
       expect(await fs.readFile(archivePath, "utf8")).toBe(source);
-      const stat = await fs.stat(archivePath);
-      expect(stat.mtimeMs).toBe(sourceMtime.getTime());
+      const archiveStat = await fs.stat(archivePath);
+      expect(archiveStat.mtimeMs).toBe(sourceMtime.getTime());
       if (process.platform !== "win32") {
-        expect(stat.mode & 0o777).toBe(0o640);
+        expect(archiveStat.mode & 0o777).toBe(0o640);
       }
       await expect(fs.stat(filePath)).rejects.toMatchObject({ code: "ENOENT" });
     }

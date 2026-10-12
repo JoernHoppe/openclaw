@@ -516,9 +516,10 @@ export async function scrubLegacyAuditRecoveryArchive(params: {
     await using opened = writable;
     if (
       !legacyAuditRawCheckpointsMatch(params.expectedSnapshot, {
-        ...opened.stat,
         dev: String(opened.exactIdentity.dev),
         ino: String(opened.exactIdentity.ino),
+        mtimeMs: opened.stat.mtimeMs,
+        size: opened.stat.size,
       })
     ) {
       params.warnings.push(

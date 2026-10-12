@@ -1286,8 +1286,22 @@ describe("Team explicit restored-config reconciliation", () => {
     assert.notEqual(first.status, 0);
     assert.match(first.stderr, /intent and journal retained; repeat start refused/);
     assert.deepEqual(readFileSync(f.journal), f.journalBytes);
+    const intent = join(f.serving, "journal", `recovery-start-${hash(f.journalBytes)}.json`);
+    const receipt = JSON.parse(readFileSync(intent));
+    const evidence = receipt.evidence;
+    // These persisted receipt fields were numeric in the released controller.
+    for (const descriptor of [evidence.identity, ...evidence.releases,
+      ...Object.values(evidence.selectedPointers), evidence.configReconciliation.config,
+      ...evidence.configReconciliation.stores]) {
+      descriptor.device = Number(descriptor.device); descriptor.inode = Number(descriptor.inode);
+      assert(Number.isSafeInteger(descriptor.device) && Number.isSafeInteger(descriptor.inode));
+    }
+    const legacyReceipt = Buffer.from(JSON.stringify(receipt));
+    writeFileSync(intent, legacyReceipt);
     const second = runOwner(f, f.stoppedArgs);
     assert.notEqual(second.status, 0);
+    assert.match(second.stderr, /intent and journal retained; repeat start refused/);
+    assert.deepEqual(readFileSync(intent), legacyReceipt);
     assert.equal(events(f).split("service.system.start\n").length - 1, 1);
     assert.deepEqual(readFileSync(f.journal), f.journalBytes);
   });

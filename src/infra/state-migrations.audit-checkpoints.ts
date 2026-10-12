@@ -119,14 +119,24 @@ function legacyAuditRawCheckpointIsCurrent(
     fd = fs.openSync(sourcePath, "r");
     const beforeStat = fs.fstatSync(fd);
     const beforeExact = fs.fstatSync(fd, { bigint: true });
-    const before = { ...beforeStat, dev: String(beforeExact.dev), ino: String(beforeExact.ino) };
+    const before = {
+      dev: String(beforeExact.dev),
+      ino: String(beforeExact.ino),
+      mtimeMs: beforeStat.mtimeMs,
+      size: beforeStat.size,
+    };
     if (!beforeStat.isFile() || !legacyAuditRawCheckpointsMatch(checkpoint, before)) {
       return false;
     }
     const hash = sha256FileSync(fd, { maxBytes: checkpoint.size });
     const afterStat = fs.fstatSync(fd);
     const afterExact = fs.fstatSync(fd, { bigint: true });
-    const after = { ...afterStat, dev: String(afterExact.dev), ino: String(afterExact.ino) };
+    const after = {
+      dev: String(afterExact.dev),
+      ino: String(afterExact.ino),
+      mtimeMs: afterStat.mtimeMs,
+      size: afterStat.size,
+    };
     return (
       legacyAuditRawCheckpointsMatch(before, after) &&
       hash.bytes === checkpoint.size &&

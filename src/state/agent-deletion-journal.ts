@@ -17,6 +17,7 @@ import { resolveAgentCreationClaimAgentId } from "./agent-creation-claim.js";
 import { getAgentDeletionDatabaseCleanup } from "./agent-deletion-cleanup.js";
 import { hasClawDeletionOwnership } from "./agent-deletion-journal-authority.worker.js";
 import { resolveAgentDeletionRecoveryHolds } from "./agent-deletion-journal-recovery.js";
+import { publishAgentDeletionJournalStatus } from "./agent-deletion-journal-status.js";
 import { parseAgentDeletionDatabasePaths } from "./agent-deletion-journal.read.js";
 import type {
   AgentDeletionJournalCleanupPath,
@@ -424,6 +425,7 @@ export function beginAgentDeletionJournalInDatabase(
         })
         .where("agent_id", "=", normalized.agentId),
     );
+    publishAgentDeletionJournalStatus(database.db, normalized.agentId, "pending");
     return {
       previousEntry: previous,
       entry: {
@@ -453,6 +455,7 @@ export function beginAgentDeletionJournalInDatabase(
       delete_files: normalized.deleteFiles ? 1 : 0,
     }),
   );
+  publishAgentDeletionJournalStatus(database.db, normalized.agentId, "pending");
   return {
     entry: { ...normalized, databasePaths, cleanupPaths, createdAt, cleanupCompleted: false },
   };
@@ -530,6 +533,7 @@ export function completeAgentDeletionJournalInDatabase(
   // The journal already fences authority. Keep creation history through refusals and
   // partial cleanup, and remove it only when this exact deletion owner completes.
   if (completed) {
+    publishAgentDeletionJournalStatus(database.db, id, "complete");
     resolveAgentDeletionRecoveryHolds(
       database,
       id,
@@ -561,6 +565,7 @@ export function deleteAgentDeletionJournalInDatabase(
   );
   const removed = Number(result.numAffectedRows ?? 0) > 0;
   if (removed) {
+    publishAgentDeletionJournalStatus(database.db, id, "absent");
     sessionChanges.emit({ all: true, scope: "stores" }, database.db);
   }
   return removed;

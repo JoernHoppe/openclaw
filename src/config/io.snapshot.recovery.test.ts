@@ -198,10 +198,10 @@ describe("prepared config recovery", () => {
                     target,
                     options as Parameters<typeof fs.promises.readFile>[1],
                   )) as typeof fs.promises.readFile,
-            stat: ((target: fs.PathLike) =>
+            stat: ((target: fs.PathLike, options?: Parameters<typeof fs.promises.stat>[1]) =>
               armed && isBackup(target) && phase === "async-stat"
                 ? Promise.reject(readError)
-                : fs.promises.stat(target)) as typeof fs.promises.stat,
+                : fs.promises.stat(target, options)) as typeof fs.promises.stat,
           },
         },
       });
@@ -296,10 +296,10 @@ describe("prepared config recovery", () => {
           ...fs,
           promises: {
             ...fs.promises,
-            stat: ((target: fs.PathLike) =>
+            stat: ((target: fs.PathLike, options?: Parameters<typeof fs.promises.stat>[1]) =>
               target === backupPath
                 ? Promise.reject(statError)
-                : fs.promises.stat(target)) as typeof fs.promises.stat,
+                : fs.promises.stat(target, options)) as typeof fs.promises.stat,
           },
           statSync: ((target: fs.PathLike, options?: { throwIfNoEntry?: boolean }) => {
             if (target === backupPath) {

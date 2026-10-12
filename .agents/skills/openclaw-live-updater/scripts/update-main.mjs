@@ -2224,7 +2224,7 @@ function assertExactBuild(checkout, expectedSha) {
 
 function isOriginalMacBundle(bundlePath, originalStat) {
   try {
-    const currentStat = lstatSync(bundlePath);
+    const currentStat = lstatSync(bundlePath, { bigint: true });
     return (
       currentStat.isDirectory() &&
       !currentStat.isSymbolicLink() &&
@@ -2251,7 +2251,7 @@ async function runBuildWithPreservedMacApp(
     });
     return;
   }
-  const appStat = lstatSync(appBundle);
+  const appStat = lstatSync(appBundle, { bigint: true });
   if (!appStat.isDirectory() || appStat.isSymbolicLink()) {
     throw new UpdateInvariantError(
       "unsafe_mac_bundle",

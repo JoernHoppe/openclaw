@@ -287,9 +287,11 @@ export async function adoptImmutableInstall(params: {
       if (existing.activation?.operation) {
         throw new Error("Immutable activation recovery is pending; run openclaw update recover.");
       }
+      assertImmutableDescriptorIdentityEncoding(existing.descriptor);
       const { isDeepStrictEqual } = await import("node:util");
       const {
         version: _version,
+        identityEncoding: _identityEncoding,
         activationEnabled: _enabled,
         current: previous,
         releaseRetention: _retention,
@@ -297,6 +299,7 @@ export async function adoptImmutableInstall(params: {
       } = existing.descriptor;
       const {
         version: _nextVersion,
+        identityEncoding: _nextIdentityEncoding,
         activationEnabled: _nextEnabled,
         current: selected,
         releaseRetention: _nextRetention,

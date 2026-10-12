@@ -1158,6 +1158,7 @@ src/infra/update-failure-facts.ts
 src/infra/update-failure-public-codes.ts
 src/infra/update-failure-public-identifiers.ts
 src/infra/update-immutable-install-schema.ts
+src/infra/update-immutable-layout.ts
 src/infra/update-immutable-protection-schema.ts
 src/infra/update-maintenance.ts
 src/infra/update-managed-service-handoff-boot.ts
@@ -1680,6 +1681,7 @@ src/state/agent-deletion-discovery.ts
 src/state/agent-deletion-journal-history.ts
 src/state/agent-deletion-journal-recovery.kernel.ts
 src/state/agent-deletion-journal-recovery.ts
+src/state/agent-deletion-journal-status.ts
 src/state/agent-deletion-journal.read.ts
 src/state/agent-deletion-journal.ts
 src/state/agent-provenance.kernel.ts

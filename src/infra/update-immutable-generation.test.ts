@@ -32,14 +32,19 @@ const temporary = useAutoCleanupTempDirTracker((cleanup) =>
   }),
 );
 let foreignPath: string | undefined;
+let exactInode: { path: string; ino: bigint } | undefined;
 beforeEach(() => {
   foreignPath = undefined;
+  exactInode = undefined;
   const lstat = fs.lstat;
   // Synthetic releases exercise real permissions and Git without requiring the test worker to be root.
   vi.spyOn(fs, "lstat").mockImplementation(async (...args) => {
     const stat = await lstat(...args);
     const owner = String(args[0]) === foreignPath ? 1 : 0;
     stat.uid = typeof stat.uid === "bigint" ? BigInt(owner) : owner;
+    if (exactInode && String(args[0]) === exactInode.path) {
+      stat.ino = typeof stat.ino === "bigint" ? exactInode.ino : Number(exactInode.ino);
+    }
     return stat;
   });
 });
@@ -111,14 +116,8 @@ describe("sealed immutable generation", () => {
     const file = path.join(temporary.make("immutable-exact-identity-"), "entry.js");
     await fs.writeFile(file, "export {};\n", { mode: 0o644 });
     const inode = 9007199254740993n;
-    const lstat = fs.lstat;
-    vi.spyOn(fs, "lstat").mockImplementation(async (...args) => {
-      const stat = await lstat(...args);
-      if (String(args[0]) === file) {
-        stat.ino = typeof stat.ino === "bigint" ? inode : Number(inode);
-      }
-      return stat;
-    });
+    expect(Number(inode - 1n)).toBe(Number(inode));
+    exactInode = { path: file, ino: inode };
     const open = fs.open;
     vi.spyOn(fs, "open").mockImplementation(async (...args) => {
       const handle = await open(...args);

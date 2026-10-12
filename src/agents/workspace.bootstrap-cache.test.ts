@@ -178,7 +178,7 @@ describe("workspace bootstrap file caching", () => {
       }
       return {
         ...opened,
-        stat: { ...opened.stat, ino: Number(fileId), mtimeMs: 1, ctimeMs: 1 },
+        stat: Object.assign(opened.stat, { ino: Number(fileId), mtimeMs: 1, ctimeMs: 1 }),
         exactIdentity: { ...opened.exactIdentity, ino: fileId },
       };
     });

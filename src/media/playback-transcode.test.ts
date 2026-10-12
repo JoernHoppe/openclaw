@@ -69,10 +69,13 @@ async function createSource(fileName: string, contents = "source") {
   const fixturePath = path.join(tempHome.home, fileName);
   await fs.writeFile(fixturePath, contents);
   const sourcePath = await fs.realpath(fixturePath);
+  const sourceStat = await fs.stat(sourcePath);
   return {
     sourcePath,
     sourceStat: {
-      ...(await fs.stat(sourcePath)),
+      size: sourceStat.size,
+      mtimeMs: sourceStat.mtimeMs,
+      ctimeMs: sourceStat.ctimeMs,
       exactIdentity: await fs.stat(sourcePath, { bigint: true }),
     },
   };
@@ -262,10 +265,13 @@ describe("resolvePlaybackTranscode", () => {
       videoStreamIndex: 0,
     });
 
+    const currentStat = await fs.stat(source.sourcePath);
     const metadata = await playback.resolvePlaybackMetadataForSource({
       sourcePath: source.sourcePath,
       sourceStat: {
-        ...(await fs.stat(source.sourcePath)),
+        size: currentStat.size,
+        mtimeMs: currentStat.mtimeMs,
+        ctimeMs: currentStat.ctimeMs,
         exactIdentity: await fs.stat(source.sourcePath, { bigint: true }),
       },
       mimeType: "video/mp4",

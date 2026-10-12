@@ -30,8 +30,8 @@ async function runPreload() {
   const processStart = (pid) =>
     fs.readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1).split(" ")[19];
   const metadata = (file) => {
-    const s = fs.statSync(file);
-    return { dev: s.dev, ino: s.ino, size: s.size, uid: s.uid, gid: s.gid, mode: s.mode };
+    const s = fs.statSync(file, { bigint: true });
+    return { dev: s.dev.toString(), ino: s.ino.toString(), size: Number(s.size), uid: Number(s.uid), gid: Number(s.gid), mode: Number(s.mode) };
   };
   function readRootJson(name) {
     const fd = fs.openSync(
@@ -173,8 +173,16 @@ async function runPreload() {
       assert.equal(admission.start, processStart(process.pid));
       assert.equal(admission.invocationId, process.env.INVOCATION_ID);
       assert(aliveOwner());
-      assert.deepEqual(metadata(process.execPath), intent.node);
-      assert.deepEqual(metadata(intent.entry), intent.entryMetadata);
+      const recordedMetadata = value => {
+        const exact = id => {
+          assert((typeof id === "number" && Number.isSafeInteger(id) && id >= 0) ||
+            (typeof id === "string" && /^(0|[1-9][0-9]*)$/.test(id)), "invalid or rounded profiling file identity");
+          return typeof id === "number" ? BigInt(id).toString() : id;
+        };
+        return { ...value, dev: exact(value.dev), ino: exact(value.ino) };
+      };
+      assert.deepEqual(metadata(process.execPath), recordedMetadata(intent.node));
+      assert.deepEqual(metadata(intent.entry), recordedMetadata(intent.entryMetadata));
       assert.equal(fs.realpathSync(process.argv[1]), intent.entry);
       assert.equal(fs.realpathSync(process.cwd()), intent.release);
       if (intent.mode === "steady") {

@@ -462,7 +462,15 @@ describe("service definition backup receipts", () => {
   it.each([false, true])(
     "restores a released numeric service receipt without replacing a newer file (replaced=%s)",
     async (replaced) => {
-      const f = await fixture("linux", true);
+      const platform = process.platform === "win32" ? "win32" : "linux";
+      const f = await fixture(platform, true);
+      const originalFiles = await Promise.all(
+        f.files.map(async (file) => ({
+          file,
+          contents: await fs.readFile(file),
+          mode: (await fs.stat(file)).mode & 0o777,
+        })),
+      );
       await f.install();
       // v2026.10.2 stored numeric dev/ino in every retained service file state.
       const serialized = JSON.stringify(await f.capture.finish(), (key, value: unknown) => {
@@ -479,17 +487,31 @@ describe("service definition backup receipts", () => {
         const replacement = `${f.sourcePath}.operator`;
         await fs.writeFile(replacement, candidate, { mode: 0o600 });
         await fs.rename(replacement, f.sourcePath);
+        const replacementIdentity = await fs.stat(f.sourcePath, { bigint: true });
         await expect(restoreGatewayServiceDefinitionBackup({ ...f, receipt })).rejects.toThrow(
           "Service definition changed",
         );
         expect(await fs.readFile(f.sourcePath)).toEqual(candidate);
+        expect(await fs.stat(f.sourcePath, { bigint: true })).toMatchObject({
+          dev: replacementIdentity.dev,
+          ino: replacementIdentity.ino,
+        });
         return;
       }
       await restoreGatewayServiceDefinitionBackup({ ...f, receipt });
-      expect(await fs.readFile(f.sourcePath)).toEqual(f.original);
-      expect((await fs.stat(f.sourcePath)).mode & 0o777).toBe(0o600);
-      for (const file of f.files.slice(1)) {
-        expect(await fs.readFile(file, "utf8")).toBe("OPERATOR_SETTING=old-value\n");
+      for (const original of originalFiles) {
+        expect(await fs.readFile(original.file)).toEqual(original.contents);
+        const mode = (await fs.stat(original.file)).mode & 0o777;
+        if (platform === "win32") {
+          // Windows chmod represents writability; service receipts do not retain DACLs.
+          expect(mode).toBe(original.mode);
+          expect(mode & 0o200).toBe(0o200);
+          await expect(
+            fs.access(original.file, fs.constants.R_OK | fs.constants.W_OK),
+          ).resolves.toBeUndefined();
+        } else {
+          expect(mode).toBe(0o600);
+        }
       }
     },
   );

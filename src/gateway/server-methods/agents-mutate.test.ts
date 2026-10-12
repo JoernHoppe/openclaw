@@ -1445,7 +1445,7 @@ describe("agents.delete", () => {
   ])(
     "resumes $encoding cleanup through the deletion handler (replaced=$replaced)",
     async ({ savedIno, replaced }) => {
-      const workspaceDir = "/journal/workspace";
+      const workspaceDir = path.resolve("/journal/workspace");
       // v2026.10.2 persisted the prepared numeric identity in cleanup_paths_json.
       const journal = deletionJournal({
         workspaceDir,
