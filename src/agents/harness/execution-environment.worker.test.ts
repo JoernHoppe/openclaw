@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -7,6 +8,7 @@ import type { AgentHarness } from "./types.js";
 
 it("reads native consent in the worker and observes a committed revocation", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    setRuntimeConfigSnapshot({});
     const sessionKey = "agent:main:native-consent";
     const scope = { agentId: "main", sessionKey };
     const harness: AgentHarness = {
