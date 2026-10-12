@@ -61,7 +61,7 @@ it("confirms file paths in the pane before requesting or opening a file", async 
     flush();
     prompted.resolve();
   });
-  mountSolid(
+  const mounted = mountSolid(
     () =>
       createComponent(McpAppConfirmation, {
         confirmation,
@@ -145,6 +145,7 @@ it("confirms file paths in the pane before requesting or opening a file", async 
     confirmation.cancel();
     await app.close();
     await bridge.close();
+    mounted.unmount();
   }
 });
 

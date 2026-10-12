@@ -15,7 +15,7 @@ import {
   isBrowserDashboardAvailable,
   isBrowserPanelAvailable,
 } from "../../../app/panel-availability.ts";
-import { BoardWidgetError } from "../../../components/board/board-widget-cell-render.solid.tsx";
+import { BoardWidgetError } from "../../../components/board/board-widget-error.tsx";
 import {
   requestBrowserDashboard,
   type BrowserDashboard,

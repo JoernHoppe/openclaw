@@ -452,9 +452,12 @@ export class TerminalPanelController extends SolidPanelController {
     return this.renderRoot.querySelector(".tp-viewport");
   }
 
-  private get sessionPickerProps() {
+  private get sessionPickerProps(): TerminalPanelViewState["picker"] {
     return {
       hosted: this.embedded && this.tabsInHeader,
+      triggerRef: (element) => {
+        this.sessionPickerTrigger.value = element;
+      },
       open: this.sessionPickerOpen,
       loading: this.pickerLoading,
       sessions: this.pickerSessions,
@@ -506,12 +509,7 @@ export class TerminalPanelController extends SolidPanelController {
         : null,
       dockDisabled:
         (this.embedded || this.sessionBottomOnly) && !this.terminalSessions.canHandoffSessions,
-      picker: {
-        ...this.sessionPickerProps,
-        triggerRef: (element) => {
-          this.sessionPickerTrigger.value = element;
-        },
-      },
+      picker: this.sessionPickerProps,
       upload: this.terminalPanelUploadController,
       onSelect: (id) => this.terminalSessions.switchTo(id),
       onClose: (id) => this.closeHostedTab(id),

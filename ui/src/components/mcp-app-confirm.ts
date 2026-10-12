@@ -34,7 +34,7 @@ export class McpAppConfirm {
 
   readonly focusStrip = (element: Element | undefined): void => {
     const pending = this.pending;
-    // The ref may run before the strip is inserted into the document.
+    // The renderer assigns the ref before inserting the strip into the document.
     queueMicrotask(() => {
       if (element instanceof HTMLElement && element.isConnected && this.pending === pending) {
         element.focus({ preventScroll: true });

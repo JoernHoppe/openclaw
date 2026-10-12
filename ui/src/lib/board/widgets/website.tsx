@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import { parseBoardWebsite } from "../../../../../src/boards/board-website.ts";
-import { BoardWidgetError } from "../../../components/board/board-widget-cell-render.solid.tsx";
+import { BoardWidgetError } from "../../../components/board/board-widget-error.tsx";
 import { resolveGatewayHttpOrigin } from "../../../components/sandbox-host.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { registerBoardWebsiteEnglish } from "../../../i18n/locales/en-board-website.ts";

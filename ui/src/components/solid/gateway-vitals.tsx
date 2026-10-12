@@ -9,6 +9,8 @@ import {
   type GatewayStatusSample,
   type GatewayStatusSnapshot,
 } from "../gateway-vitals.ts";
+import "../tooltip.ts";
+import "../sparkline-tile.tsx";
 
 registerEnglishCatalog(registerDebugEnglish);
 
@@ -19,6 +21,10 @@ type GatewayVitalsProps = {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatCpuCores(value: number): string {
+  return t("debug.overlay.cpuCores", { value: value.toFixed(2) });
 }
 
 function formatMemory(bytes: number): string {
@@ -85,16 +91,17 @@ export function GatewayCpuVital(props: GatewayVitalsProps) {
         <openclaw-sparkline
           class="gateway-vital gateway-vital--cpu"
           data-degraded={degraded() ? "" : undefined}
-          prop:label={t("debug.overlay.cpu")}
+          prop:label={t("debug.overlay.gatewayCpu")}
           prop:sub={t("debug.overlay.gatewayCpuScope")}
           prop:samples={samples()}
-          prop:format={formatPercent}
+          prop:format={formatCpuCores}
           prop:floorMax={1}
           prop:stackColors={["var(--cpu-main)", "var(--cpu-workers)", "var(--cpu-other)"]}
         />
       </button>
       <div slot="content" class="gateway-cpu-detail">
         <strong>{t("debug.overlay.cpuBreakdownCurrent")}</strong>
+        <p>{t("debug.overlay.cpuScopeDescription")}</p>
         <dl>
           <div class="gateway-cpu-detail__total">
             <dt>{t("debug.overlay.gatewayCpuProcess")}</dt>

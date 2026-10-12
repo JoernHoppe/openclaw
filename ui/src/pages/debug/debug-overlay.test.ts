@@ -21,14 +21,19 @@ type TestDebugOverlay = HTMLElement & {
   toggle: () => void;
 };
 
-type TestSparkline = HTMLElement & { samples: readonly SparklineSample[] };
+type TestSparkline = HTMLElement & {
+  readonly updateComplete: Promise<boolean>;
+  samples: readonly SparklineSample[];
+};
 
 async function updateOverlayVitals(overlay: TestDebugOverlay): Promise<void> {
   await overlay.updateComplete;
   flush();
   await overlay.querySelector<TestDebugContent>("openclaw-debug-overlay-content")?.updateComplete;
   flush();
-  flush();
+  for (const tile of overlay.querySelectorAll<TestSparkline>("openclaw-sparkline")) {
+    await tile.updateComplete;
+  }
 }
 
 useDebugTestEnvironment();
@@ -67,7 +72,7 @@ describe("DebugOverlay", () => {
       expect(requestCount("sessions.list")).toBe(1);
       expect(requestCount("diagnostics.lanes")).toBe(4);
       expect(requestCount("system.info")).toBe(4);
-      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("40%");
+      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("0.40 cores");
       expect(eventListeners.size).toBe(1);
 
       overlay.querySelector<HTMLButtonElement>('[aria-label="Minimize system busyness"]')!.click();
@@ -78,7 +83,7 @@ describe("DebugOverlay", () => {
       expect(requestCount("sessions.list")).toBe(1);
       expect(requestCount("diagnostics.lanes")).toBe(4);
       expect(requestCount("system.info")).toBe(5);
-      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("50%");
+      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("0.50 cores");
 
       heldRuns.resolve({ sessions: [] });
       await vi.advanceTimersByTimeAsync(0);
@@ -243,11 +248,10 @@ describe("DebugOverlay", () => {
       // One sample: tiles show current values, charts wait for a second point.
       expect(overlay.querySelectorAll(".gateway-vital")).toHaveLength(5);
       expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("Host —");
-      const loopLabel = [...overlay.querySelectorAll(".gateway-cpu-detail dt")].find(
-        (label) => normalizedText(label) === "Event loop busy",
+      const cpuReadings = [...overlay.querySelectorAll(".gateway-cpu-detail dl > div")].map(
+        (row) => [normalizedText(row.querySelector("dt")), normalizedText(row.querySelector("dd"))],
       );
-      expect(loopLabel).toBeDefined();
-      expect(normalizedText(loopLabel?.nextElementSibling)).toBe("42%");
+      expect(cpuReadings).toContainEqual(["Event loop busy", "42%"]);
       expect(overlay.querySelector(".sparkline-tile__chart")).toBeNull();
       expect(normalizedText(overlay.querySelector(".debug-overlay__vitals-footer"))).toBe(
         "Uptime 1m",
@@ -256,7 +260,7 @@ describe("DebugOverlay", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       await vitalUpdated();
 
-      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("120%");
+      expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("1.20 cores");
       expect(normalizedText(overlay.querySelector(".gateway-vital--memory"))).toContain("402 MB");
       expect(normalizedText(overlay.querySelector(".gateway-vital--memory"))).toContain(
         "heap 100 MB",
