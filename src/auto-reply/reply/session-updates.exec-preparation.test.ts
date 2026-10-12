@@ -164,15 +164,15 @@ it.each([false, true])(
 );
 
 it("prepares current sandbox and approval skill eligibility without caller-thread SQL", async () => {
-  const cfg: OpenClawConfig = {
+  const root = tempDirs.make("openclaw-skill-exec-");
+  const executionConfig: OpenClawConfig = {
     agents: { defaults: { sandbox: { mode: "all" } } },
     tools: { exec: { host: "auto", node: "build-node", mode: "full" } },
   };
-  setRuntimeConfigSnapshot(cfg);
-  const root = tempDirs.make("openclaw-skill-exec-");
   const source = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
   const approvals = vi.spyOn(approvalStore, "loadExecApprovalsReadOnlyAsync");
   vi.stubEnv("OPENCLAW_STATE_DIR", root);
+  setRuntimeConfigSnapshot(executionConfig);
   const scope = { agentId: "main", sessionKey: "agent:main:exec-preparation" };
   await upsertSessionEntryCore(scope, { sessionId: "skill-exec", updatedAt: 1 });
   const { databaseClaim } = await loadSessionEntryForAdmission(scope);
@@ -195,7 +195,7 @@ it("prepares current sandbox and approval skill eligibility without caller-threa
       );
       approvals.mockClear();
       const calls = observeMainThreadSql();
-      const pending = prepare(root, cfg, undefined, databaseClaim.reader);
+      const pending = prepare(root, executionConfig, undefined, databaseClaim.reader);
       vi.stubEnv("OPENCLAW_STATE_DIR", tempDirs.make("openclaw-foreign-skill-exec-"));
       await pending;
       expect(approvals).toHaveBeenCalledTimes(approvalReads);
@@ -291,6 +291,7 @@ it("refreshes skills without overwriting other session fields", async () => {
 it("refuses policy preparation when its admitted reader closes during the approval read", async () => {
   const root = tempDirs.make("openclaw-skill-reader-retired-");
   vi.stubEnv("OPENCLAW_STATE_DIR", root);
+  setRuntimeConfigSnapshot(config);
   const scope = { agentId: "main", sessionKey: "agent:main:exec-preparation" };
   await upsertSessionEntryCore(scope, { sessionId: "skill-exec", updatedAt: 1 });
   const { databaseClaim } = await loadSessionEntryForAdmission(scope);
@@ -321,13 +322,13 @@ it("refuses policy preparation when its admitted reader closes during the approv
 it.each(["approvals", "skills"] as const)(
   "refuses prepared eligibility when sandbox policy changes during %s preparation",
   async (phase) => {
-    const cfg: OpenClawConfig = {
+    const root = tempDirs.make("openclaw-skill-policy-changed-");
+    const executionConfig: OpenClawConfig = {
       ...config,
       agents: { defaults: { sandbox: { mode: "all" } } },
     };
-    setRuntimeConfigSnapshot(cfg);
-    const root = tempDirs.make("openclaw-skill-policy-changed-");
     vi.stubEnv("OPENCLAW_STATE_DIR", root);
+    setRuntimeConfigSnapshot(executionConfig);
     const scope = { agentId: "main", sessionKey: "agent:main:exec-preparation" };
     await upsertSessionEntryCore(scope, {
       sessionId: "skill-exec",
@@ -357,7 +358,7 @@ it.each(["approvals", "skills"] as const)(
       }
       return { snapshot: { prompt: "", skills: [] }, shouldRefresh: false, snapshotVersion: 0 };
     });
-    const pending = prepare(root, cfg, undefined, databaseClaim.reader);
+    const pending = prepare(root, executionConfig, undefined, databaseClaim.reader);
     try {
       await awaitGateBeforeSettlement(entered.promise, pending, "policy wait did not start");
       await upsertSessionEntryCore(scope, { sandboxMode: undefined });
