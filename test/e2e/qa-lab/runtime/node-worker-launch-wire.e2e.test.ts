@@ -560,13 +560,19 @@ describe("node worker launch wire", () => {
               }),
             );
             const waveGateway = gateway;
+            const waveOperator = operator;
+            const waveDeadline = Date.now() + PROOF_TIMEOUT_MS;
             const waits = Promise.all(
               loadRunIds.map(async (loadRunId) => {
-                const completedLoad = await operator!.request<{ status?: string }>(
-                  "agent.wait",
-                  { runId: loadRunId, timeoutMs: PROOF_TIMEOUT_MS },
-                  { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
-                );
+                const completedLoad = await waitFor("load worker turn completion", async () => {
+                  const remainingMs = Math.max(0, waveDeadline - Date.now());
+                  const observation = await waveOperator.request<{ status?: string }>(
+                    "agent.wait",
+                    { runId: loadRunId, timeoutMs: remainingMs },
+                    { timeoutMs: remainingMs + 5_000 },
+                  );
+                  return observation.status === "pending" ? undefined : observation;
+                });
                 expect(
                   completedLoad,
                   `load run ${loadRunId} failed\n${redactSensitiveText(JSON.stringify(completedLoad)).slice(0, 4000)}\n${waveGateway.logs().slice(-12_000)}`,

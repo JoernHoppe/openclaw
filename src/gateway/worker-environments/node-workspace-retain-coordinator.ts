@@ -309,6 +309,8 @@ export function createNodeWorkspaceRetainCoordinator(
           timeoutMs: RETAIN_COMMAND_TIMEOUT_MS,
           signal: abortController.signal,
           isDispatchAuthorized,
+          // Placement changes cannot undo pruning already dispatched to this node.
+          isCompletionAuthorized: isCurrent,
         });
         if (!isCurrent()) {
           return;
