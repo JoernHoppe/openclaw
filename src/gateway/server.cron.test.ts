@@ -1195,6 +1195,16 @@ describe("gateway server cron", () => {
     } finally {
       finishRepairTurn.resolve();
     }
+    await vi.waitFor(async () => {
+      const stored = await loadCronStore(path.join(dir, "cron", "jobs.json"));
+      const repair = stored.jobs.find((job) => job.id === jobId)?.state.failureAlertIncident
+        ?.repair;
+      expect(repair?.settledAtMs).toEqual(expect.any(Number));
+    });
+    await runCronJobAndWaitForFinished(ws, jobId);
+    await vi.waitFor(() => expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce());
+    await runCronJobAndWaitForFinished(ws, jobId);
+    expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce();
   }, 45_000);
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
