@@ -162,6 +162,7 @@ describe("buildStatusText prepared context windows", () => {
         storePath: target.storePath,
         includeTranscriptUsage: true,
       });
+    setRuntimeConfigSnapshot({});
     try {
       const first = await render();
       // The newest message still contributes usage when its body exceeds the byte budget.

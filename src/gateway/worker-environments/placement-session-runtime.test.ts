@@ -151,6 +151,7 @@ describe("worker placement runtime capabilities", () => {
 
   it("reads inherited runtime selection off-thread and observes a committed parent update", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const parent = { agentId: "main", sessionKey: "agent:main:parent-runtime" };
       await upsertSessionEntryCore(parent, {
         sessionId: "parent-runtime",
@@ -164,7 +165,6 @@ describe("worker placement runtime capabilities", () => {
         sessionKey: "agent:main:child-runtime",
         entry: { sessionId: "child-runtime", updatedAt: 1, parentSessionKey: parent.sessionKey },
       };
-      setRuntimeConfigSnapshot({});
       const observed = observeHostDataSql();
       try {
         expect(await resolveWorkerPlacementSessionRuntimeAsync(input)).toBe("codex");

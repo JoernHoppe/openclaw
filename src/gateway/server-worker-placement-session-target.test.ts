@@ -39,6 +39,7 @@ afterEach(() => resetConfigRuntimeState());
 
 test("guards a durable workspace with committed facts and no host session SQL", async () => {
   await withStateDirEnv("durable-placement-source-", async () => {
+    setRuntimeConfigSnapshot({});
     const identity = {
       agentId: "main",
       sessionKey: "agent:main:placement-source",
