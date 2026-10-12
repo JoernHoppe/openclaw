@@ -490,36 +490,8 @@ export async function executePluginOwnedProcess(params: {
     outstanding.approvals = Math.max(0, outstanding.approvals + delta);
     reportOutstandingWork();
   };
-  const watchdog = createCliPluginWatchdog(
-    {
-      provider: run.provider,
-      model: params.context.modelId,
-      sessionId: run.sessionId,
-      lane: run.lane,
-      overallTimeoutMs: clampPositiveTimerTimeoutMs(run.timeoutMs),
-      noOutputTimeoutMs: clampPositiveTimerTimeoutMs(params.noOutputTimeoutMs),
-      useResume: params.useResume,
-      getActiveAskUserDeadline: params.getActiveLoopbackAskUserDeadline,
-      activeToolCount: () => Math.max(params.activeToolCount?.() ?? 0, outstanding.approvals),
-      backgroundTaskCount: () => outstanding.background,
-      compactionActive: () => params.compactionActive?.() ?? false,
-      hasObservedActivity: () => outstanding.observed,
-      hasReplayUnsafeActivity: () => outstanding.replayUnsafe,
-      onNoOutputTimeout: (error) => {
-        termination.reason = "no-output-timeout";
-        params.onNoOutputTimeout?.(error);
-        controller.abort(error);
-      },
-      onOverallTimeout: () => {
-        termination.reason = "overall-timeout";
-        controller.abort(new Error("CLI plugin runtime exceeded its execution timeout."));
-      },
-    },
-    params.watchdogClock,
-  );
-  const stopAskUserDeadlineListener = params.onActiveLoopbackAskUserDeadlineChange?.(() =>
-    watchdog.reset(),
-  );
+  let watchdog: ReturnType<typeof createCliPluginWatchdog> | undefined;
+  let stopAskUserDeadlineListener: (() => void) | undefined;
   const stopCompactionWorkListener = params.onCompactionActiveChange?.(() =>
     reportOutstandingWork(),
   );
@@ -534,7 +506,6 @@ export async function executePluginOwnedProcess(params: {
   let terminalResult: "none" | "success" | "error" = "none";
   try {
     assertCurrent();
-    watchdog.reset();
     if (
       params.liveSession &&
       (params.forceNewSession ||
@@ -570,6 +541,35 @@ export async function executePluginOwnedProcess(params: {
       env: params.env,
     });
     assertCurrent();
+    watchdog = createCliPluginWatchdog(
+      {
+        provider: run.provider,
+        model: params.context.modelId,
+        sessionId: run.sessionId,
+        lane: run.lane,
+        overallTimeoutMs: clampPositiveTimerTimeoutMs(run.timeoutMs),
+        noOutputTimeoutMs: clampPositiveTimerTimeoutMs(params.noOutputTimeoutMs),
+        useResume: params.useResume,
+        getActiveAskUserDeadline: params.getActiveLoopbackAskUserDeadline,
+        activeToolCount: () => Math.max(params.activeToolCount?.() ?? 0, outstanding.approvals),
+        backgroundTaskCount: () => outstanding.background,
+        compactionActive: () => params.compactionActive?.() ?? false,
+        hasObservedActivity: () => outstanding.observed,
+        hasReplayUnsafeActivity: () => outstanding.replayUnsafe,
+        onNoOutputTimeout: (error) => {
+          termination.reason = "no-output-timeout";
+          params.onNoOutputTimeout?.(error);
+          controller.abort(error);
+        },
+        onOverallTimeout: () => {
+          termination.reason = "overall-timeout";
+          controller.abort(new Error("CLI plugin runtime exceeded its execution timeout."));
+        },
+      },
+      params.watchdogClock,
+    );
+    stopAskUserDeadlineListener = params.onActiveLoopbackAskUserDeadlineChange?.(watchdog.reset);
+    watchdog.reset();
     const execution = params.execute({
       command,
       argv0: params.executionArgv0,
@@ -666,7 +666,7 @@ export async function executePluginOwnedProcess(params: {
       throw error;
     }
   } finally {
-    watchdog.dispose();
+    watchdog?.dispose();
     stopAskUserDeadlineListener?.();
     stopCompactionWorkListener?.();
     params.onOutstandingWorkChange?.(false);
