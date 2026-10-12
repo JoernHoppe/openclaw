@@ -9,7 +9,10 @@ import {
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { normalizeAgentId, parseAgentSessionKey } from "openclaw/plugin-sdk/routing";
 import { resolvePreparedSandboxRuntimeStatus } from "openclaw/plugin-sdk/sandbox";
-import { captureSessionEntryCurrentCheck } from "openclaw/plugin-sdk/session-binding-runtime";
+import {
+  captureSessionEntryCurrentCheckAsync,
+  type PreparedSessionSourceAssertion,
+} from "openclaw/plugin-sdk/session-binding-runtime";
 import type { SessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 
 type ExecHost = "sandbox" | "gateway" | "node";
@@ -32,7 +35,8 @@ export type CodexNativeExecutionPolicy = {
 
 export type PreparedCodexNativeExecutionPolicy = {
   policy: CodexNativeExecutionPolicy;
-  assertCurrent: () => void;
+  assertCurrent: () => Promise<void>;
+  source?: PreparedSessionSourceAssertion;
   retain: () => () => void;
   release: () => void;
 };
@@ -87,12 +91,12 @@ export async function prepareCodexNativeExecutionPolicy(
         ...captured,
         sessionEntry: captured.sessionEntry ?? null,
       }),
-      assertCurrent() {},
+      async assertCurrent() {},
       retain: () => () => {},
       release() {},
     };
   }
-  const selected = await captureSessionEntryCurrentCheck({
+  const selected = await captureSessionEntryCurrentCheckAsync({
     agentId: sourceAgentId,
     sessionKey: sourceSessionKey,
     storePath: captured.sessionTarget?.storePath ?? captured.storePath,
@@ -122,6 +126,7 @@ export async function prepareCodexNativeExecutionPolicy(
         readRuntimeSessionEntry: false,
       }),
       assertCurrent: selected.assertCurrent,
+      source: selected.source,
       retain,
       release: retain(),
     };

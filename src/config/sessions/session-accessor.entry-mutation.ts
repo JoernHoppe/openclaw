@@ -46,6 +46,7 @@ import {
   captureExternalSessionCommitGuard,
   sessionEntryCommitGuardOptions,
   type SessionSourceCheck,
+  type AsyncSessionSourceCheck,
 } from "./session-source-authority.js";
 import { resolveSessionStorePathForScope } from "./session-store-path.js";
 import {
@@ -629,7 +630,7 @@ export function matchesSessionAbortTargetOwner(
  * storage-sized operation. Runtime abort side effects remain with callers.
  */
 export async function markSessionAbortTarget(params: {
-  isCurrent?: SessionSourceCheck;
+  isCurrent?: SessionSourceCheck | AsyncSessionSourceCheck;
   expectedTarget?: Pick<
     SessionEntry,
     "sessionId" | "lifecycleRevision" | "activeWriterRunId"

@@ -6,7 +6,7 @@ import {
   captureHarnessCompletionRecovery,
   createHarnessCompletionSourceAssertion,
   getOwedHarnessCompletionTask,
-  readAdmittedHarnessCompletionInput,
+  readAdmittedHarnessCompletionInputAsync,
 } from "../agents/agent-harness-completion-recovery.js";
 import { createAgentHarnessCompletionScope } from "../agents/agent-harness-completion-scope.js";
 import {
@@ -21,10 +21,6 @@ import {
   readActiveTranscriptEntryAnchor,
   replaceSessionEntry,
 } from "../config/sessions/session-accessor.js";
-import {
-  bindPreparedSessionSourceAssertion,
-  prepareSessionSourceAuthority,
-} from "../config/sessions/session-source-authority.js";
 import { runWithSessionTranscriptReadFence } from "../config/sessions/session-transcript-read-fence.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { registerChatAbortController } from "../gateway/chat-abort.js";
@@ -45,7 +41,6 @@ import {
   createOperationalRunInstanceRef,
   prepareAgentRunAdmission,
   resolveAdmittedRunActiveAssertion,
-  runWithPreparedRunSourceScope,
 } from "./admitted-run-context.js";
 import {
   buildCurrentRunRestartRecoveryClaim,
@@ -53,6 +48,7 @@ import {
 } from "./agent-command-restart-recovery.js";
 import { reconcileHarnessCompletionDelivery } from "./agent-harness-completion-delivery.js";
 import { captureAdmittedHarnessCompletionForTest } from "./agent-harness-completion.test-support.js";
+import { runWithAgentToolSourceExecutionScope } from "./agent-tool-source-execution-guard.js";
 
 const sessionKey = "agent:main:main";
 const runId = "harness:child-1";
@@ -151,16 +147,11 @@ function appendCompletionSource({ target, entry }: Pick<AdmittedCompletion, "tar
   );
 }
 
-async function prepareCompletionAdmission(
+function prepareCompletionAdmission(
   { claim, target }: Pick<AdmittedCompletion, "claim" | "target">,
   operationalRunId = announceId,
 ) {
-  const assertion = createHarnessCompletionSourceAssertion({ claim, storePath: target.storePath });
-  const source = bindPreparedSessionSourceAssertion(
-    assertion,
-    await prepareSessionSourceAuthority(assertion),
-  );
-  const admission = prepareAgentRunAdmission({
+  return prepareAgentRunAdmission({
     cfg: {},
     facts: {
       agentId: "main",
@@ -168,15 +159,11 @@ async function prepareCompletionAdmission(
       ingress: { kind: "system", boundary: "test-harness-completion", state: "present" },
     },
     operationalRunInstance: createOperationalRunInstanceRef(operationalRunId),
-    assertSourceCurrent: source,
+    assertSourceCurrent: createHarnessCompletionSourceAssertion({
+      claim,
+      storePath: target.storePath,
+    }),
   });
-  return {
-    ...admission,
-    async close() {
-      admission.close();
-      await source.release();
-    },
-  };
 }
 
 describe("host-owned harness completion recovery", () => {
@@ -192,17 +179,15 @@ describe("host-owned harness completion recovery", () => {
           ...entry,
           restartRecoveryDeliveryRunId: recoveryRunId,
         });
-        const admission = await prepareCompletionAdmission({ claim, target }, recoveryRunId);
+        const admission = prepareCompletionAdmission({ claim, target }, recoveryRunId);
         try {
           const context = await admission.admit("embedded");
-          const assertEffect = resolveAdmittedRunActiveAssertion(context);
-          if (!assertEffect) {
+          const assertion = resolveAdmittedRunActiveAssertion(context);
+          if (!assertion) {
             throw new Error("Source effect was not captured.");
           }
           const effect = () =>
-            runWithPreparedRunSourceScope({ admittedRunContext: context }, async () =>
-              assertEffect(),
-            );
+            runWithAgentToolSourceExecutionScope(assertion, async () => assertion());
           await effect();
           if (phase === "reset") {
             await appendTranscriptEvent(transcript, {
@@ -236,39 +221,48 @@ describe("host-owned harness completion recovery", () => {
             await expect(effect()).rejects.toThrow();
           }
         } finally {
-          await admission.close();
+          admission.close();
         }
       });
     },
   );
 
-  it.each(["before-admission", "after-admission"])(
+  it.each(["before-admission", "after-admission", "at-effect"])(
     "revokes requester custody %s through the execution authority",
     async (phase) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const { claim, target, entry } = await admit(state);
-        const admission = await prepareCompletionAdmission({ claim, target });
+        const admission = prepareCompletionAdmission({ claim, target });
         try {
           if (phase === "before-admission") {
             await replaceSessionEntry(target, { ...entry, lifecycleRevision: "revoked-revision" });
             await expect(admission.admit("embedded")).rejects.toThrow();
           } else {
             const context = await admission.admit("embedded");
-            const assertEffect = resolveAdmittedRunActiveAssertion(context);
-            expect(assertEffect).toBeDefined();
-            if (!assertEffect) {
+            const assertion = resolveAdmittedRunActiveAssertion(context);
+            expect(assertion).toBeDefined();
+            if (!assertion) {
               throw new Error("Source effect was not captured.");
             }
             const effect = () =>
-              runWithPreparedRunSourceScope({ admittedRunContext: context }, async () =>
-                assertEffect(),
-              );
+              runWithAgentToolSourceExecutionScope(assertion, async () => assertion());
             await effect();
-            await replaceSessionEntry(target, { ...entry, lifecycleRevision: "revoked-revision" });
-            await expect(effect()).rejects.toThrow();
+            const revoke = () =>
+              replaceSessionEntry(target, { ...entry, lifecycleRevision: "revoked-revision" });
+            if (phase === "at-effect") {
+              await expect(
+                runWithAgentToolSourceExecutionScope(assertion, async () => {
+                  await revoke();
+                  assertion();
+                }),
+              ).rejects.toThrow();
+            } else {
+              await revoke();
+              await expect(effect()).rejects.toThrow();
+            }
           }
         } finally {
-          await admission.close();
+          admission.close();
         }
       });
     },
@@ -285,7 +279,7 @@ describe("host-owned harness completion recovery", () => {
         });
       }
       expect(
-        readAdmittedHarnessCompletionInput({
+        await readAdmittedHarnessCompletionInputAsync({
           claim,
           entry,
           storePath: target.storePath,
@@ -301,7 +295,7 @@ describe("host-owned harness completion recovery", () => {
         });
       }
       expect(
-        readAdmittedHarnessCompletionInput({
+        await readAdmittedHarnessCompletionInputAsync({
           claim,
           entry,
           storePath: target.storePath,
@@ -346,7 +340,7 @@ describe("host-owned harness completion recovery", () => {
         };
         await replaceSessionEntry(target, saved);
         expect(
-          readAdmittedHarnessCompletionInput({
+          await readAdmittedHarnessCompletionInputAsync({
             claim,
             entry: saved,
             storePath: target.storePath,
@@ -613,7 +607,11 @@ describe("host-owned harness completion recovery", () => {
           },
         );
         expect(
-          readAdmittedHarnessCompletionInput({ claim, entry, storePath: target.storePath }),
+          await readAdmittedHarnessCompletionInputAsync({
+            claim,
+            entry,
+            storePath: target.storePath,
+          }),
         ).toBe(scenario === "valid");
         expect(() =>
           captureHarnessCompletionRecovery({

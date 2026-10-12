@@ -162,7 +162,10 @@ export async function maybeCompactCodexAppServerSession(
     const { binding: initialBinding, authority } = resolvedBinding;
     const assertCurrent = () => {
       authority.assertCurrent();
-      nativeExecutionGuard.assertCurrent();
+    };
+    const withCurrent = async (write: () => void) => {
+      await nativeExecutionGuard.assertCurrent();
+      await authority.withCurrent(write);
     };
     // Native admission uses caller authority; terminal settlement keeps captured
     // lineage after cancellation without reusing the caller's aborted signal.
@@ -213,6 +216,7 @@ export async function maybeCompactCodexAppServerSession(
         pluginConfig: options.pluginConfig,
         config,
         assertCurrent,
+        assertCurrentAsync: nativeExecutionGuard.assertCurrent,
         agentDir: resolveAgentDir(config, bindingIdentity.agentId),
       });
     } catch (error) {
@@ -275,12 +279,12 @@ export async function maybeCompactCodexAppServerSession(
         return await withCodexAppServerThreadMutationHold(
           binding.threadId,
           async (hold, start) => {
-            await authority.withCurrent(assertAdmissionCurrent);
+            await withCurrent(assertAdmissionCurrent);
             const boundClientLease = await retainSharedCodexAppServerClientByInstanceId(
               binding.clientId,
             );
             try {
-              await authority.withCurrent(assertAdmissionCurrent);
+              await withCurrent(assertAdmissionCurrent);
               attempt.abortSignal.throwIfAborted();
             } catch (error) {
               await boundClientLease?.release();
@@ -297,6 +301,7 @@ export async function maybeCompactCodexAppServerSession(
                 agentDir: attempt.agentDir,
                 config: attempt.config,
                 assertCurrent: assertAdmissionCurrent,
+                assertCurrentAsync: nativeExecutionGuard.assertCurrent,
               }));
             start();
             embeddedAgentLog.info("selected codex app-server compaction client", {
@@ -421,7 +426,7 @@ export async function maybeCompactCodexAppServerSession(
                     request: { threadId: binding.threadId, excludeTurns: true },
                     timeoutMs: timeoutMs ?? appServer.requestTimeoutMs,
                     assertCurrent: assertAdmissionCurrent,
-                    withCurrent: authority.withCurrent,
+                    withCurrent,
                     signal: attempt.abortSignal,
                   });
                   releaseThreadSubscription = async () => releaseCompactionThread(binding.threadId);
@@ -435,7 +440,7 @@ export async function maybeCompactCodexAppServerSession(
                       threadId: binding.threadId,
                       includeTurns: false,
                     },
-                    { assertCurrent: assertAdmissionCurrent, withCurrent: authority.withCurrent },
+                    { assertCurrent: assertAdmissionCurrent, withCurrent },
                   );
                   retainedThreadOwnership.assertCurrent();
                   assertCodexSupervisionThreadLineage(binding, thread);
@@ -551,7 +556,7 @@ export async function maybeCompactCodexAppServerSession(
                           ? {}
                           : { timeoutMs: guardedRequestTimeoutMs }),
                         signal: attempt.abortSignal,
-                        withCurrent: authority.withCurrent,
+                        withCurrent,
                         assertCurrent: assertAdmissionCurrent,
                       },
                     );

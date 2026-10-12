@@ -540,8 +540,9 @@ class Monitor {
     capture: NativeModelSourceCapture,
   ): Promise<void> {
     const known = this.knownChildren.get(request.threadId);
+    const store = known?.parent.assignmentStore;
     // Root turns and non-durable/sessionless registrations have no child locator.
-    if (!known?.parent.assignmentStore) {
+    if (!known || !store) {
       return;
     }
     const state = known.parent;
@@ -580,6 +581,7 @@ class Monitor {
       },
       assertCurrent,
     );
+    await store.assertCurrentAsync();
     assertCurrent();
   }
 

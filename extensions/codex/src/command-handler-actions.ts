@@ -5,8 +5,9 @@ import {
 } from "openclaw/plugin-sdk/model-session-runtime";
 import type { PluginCommandContext } from "openclaw/plugin-sdk/plugin-entry";
 import {
-  captureSessionEntryCurrentCheck,
+  captureSessionEntryCurrentCheckAsync,
   composeSessionEntryCommitGuards,
+  type PreparedSessionSourceAssertion,
 } from "openclaw/plugin-sdk/session-binding-runtime";
 import { getSessionEntryAsync, resolveStorePath } from "openclaw/plugin-sdk/session-store-runtime";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
@@ -68,24 +69,29 @@ export async function resolveCodexNativeCommandSandboxBlock(
   ctx: PluginCommandContext,
   subcommand: string,
   args: readonly string[],
-): Promise<{ block: string | undefined; assertCurrent: () => void; release: () => void }> {
+): Promise<{
+  block: string | undefined;
+  assertCurrent: () => Promise<void>;
+  source?: PreparedSessionSourceAssertion;
+  release: () => void;
+}> {
   if (
     isReadOnlyCodexGoalCommand(subcommand, args) ||
     returnsBeforeNativeCodexExecution(subcommand, args)
   ) {
-    return { block: undefined, assertCurrent() {}, release() {} };
+    return { block: undefined, async assertCurrent() {}, release() {} };
   }
   const sessionKey = ctx.sessionTarget?.sessionKey ?? ctx.sessionKey;
   const checksModelLock = ["bind", "resume", "detach", "unbind", "model"].includes(subcommand);
   if (!checksModelLock && !CODEX_NATIVE_EXECUTION_SUBCOMMANDS.has(subcommand)) {
-    return { block: undefined, assertCurrent() {}, release() {} };
+    return { block: undefined, async assertCurrent() {}, release() {} };
   }
   const agentId = ctx.sessionTarget?.agentId ?? resolveCodexConversationControlScope(ctx).agentId;
   const storePath =
     ctx.sessionTarget?.storePath ?? resolveStorePath(ctx.config.session?.store, { agentId });
   const modelCurrent =
     checksModelLock && sessionKey
-      ? await captureSessionEntryCurrentCheck({
+      ? await captureSessionEntryCurrentCheckAsync({
           agentId,
           storePath,
           sessionKey,
@@ -95,7 +101,8 @@ export async function resolveCodexNativeCommandSandboxBlock(
   if (!CODEX_NATIVE_EXECUTION_SUBCOMMANDS.has(subcommand)) {
     return {
       block: undefined,
-      assertCurrent: modelCurrent?.assertCurrent ?? (() => {}),
+      assertCurrent: modelCurrent?.assertCurrent ?? (async () => {}),
+      source: modelCurrent?.source,
       release: modelCurrent?.release ?? (() => {}),
     };
   }
@@ -114,10 +121,11 @@ export async function resolveCodexNativeCommandSandboxBlock(
     }
     return {
       block: sandbox.block,
-      assertCurrent: composeSessionEntryCommitGuards([
-        modelCurrent?.assertCurrent,
-        sandbox.assertCurrent,
-      ]),
+      source: composeSessionEntryCommitGuards([modelCurrent?.source, sandbox.source]),
+      assertCurrent: async () => {
+        await modelCurrent?.assertCurrent();
+        await sandbox.assertCurrent();
+      },
       release: () => {
         sandbox.release();
         modelCurrent?.release();
@@ -140,10 +148,11 @@ export async function resolveCodexNativeCommandSandboxBlock(
   }
   return {
     block: execution.block,
-    assertCurrent: composeSessionEntryCommitGuards([
-      modelCurrent?.assertCurrent,
-      execution.assertCurrent,
-    ]),
+    source: composeSessionEntryCommitGuards([modelCurrent?.source, execution.source]),
+    assertCurrent: async () => {
+      await modelCurrent?.assertCurrent();
+      await execution.assertCurrent();
+    },
     release: () => {
       modelCurrent?.release();
       execution.release();
@@ -266,6 +275,7 @@ export async function handleNativeGoal(
     agentDir: target.agentDir,
     config: ctx.config,
     assertCurrent: authority.assertCurrent,
+    assertCurrentAsync: authority.assertCurrentAsync,
   });
   const goalRequestOptions: CodexControlRequestOptions = {
     agentDir: target.agentDir,
@@ -275,6 +285,7 @@ export async function handleNativeGoal(
     sessionKey: authority.sessionKey,
     storePath: authority.storePath,
     assertCurrent: authority.assertCurrent,
+    assertCurrentAsync: authority.assertCurrentAsync,
     ...(connection.usesSupervisionConnection ? { startOptions: connection.appServer.start } : {}),
   };
   if (action === "status" || action === "get" || action === "clear") {
@@ -369,6 +380,7 @@ export async function controlConversationTurn(
     identity: target.identity,
     binding,
     assertCurrent: authority.assertMutationCurrent,
+    assertCurrentAsync: authority.assertCurrentAsync,
   };
   const result =
     command === "stop"
@@ -427,7 +439,11 @@ export async function setConversationModel(
     binding,
     storePath: authority.storePath,
     assertCurrent: authority.assertCurrent,
-    assertCommitAllowed: authority.assertMutationCurrent,
+    assertCurrentAsync: authority.assertCurrentAsync,
+    assertCommitAllowed: composeSessionEntryCommitGuards([
+      authority.mutationSource,
+      authority.assertMutationCurrent,
+    ]),
   });
 }
 
@@ -458,7 +474,12 @@ export async function setConversationPreference(
       binding,
       enabled: parsed,
       assertCurrent:
-        parsed === undefined ? authority.assertCurrent : authority.assertMutationCurrent,
+        parsed === undefined
+          ? authority.assertCurrent
+          : composeSessionEntryCommitGuards([
+              authority.mutationSource,
+              authority.assertMutationCurrent,
+            ]),
     });
   }
   if (!target || !ctx.sessionId || !ctx.sessionKey) {
@@ -479,7 +500,12 @@ export async function setConversationPreference(
     config: ctx.config,
     storePath: authority.storePath,
     assertCurrent: parsed ? authority.assertHostMutationCurrent : authority.assertHostCurrent,
-    sourceAuthority: parsed ? authority.assertHostMutationCurrent : undefined,
+    sourceAuthority: parsed
+      ? composeSessionEntryCommitGuards([
+          authority.mutationSource,
+          authority.assertHostMutationCurrent,
+        ])
+      : undefined,
     session: {
       agentId: target.agentId,
       sessionId: ctx.sessionId,
@@ -538,6 +564,7 @@ export async function startThreadAction(
     if (!compactCurrent) {
       return "Codex compaction is unavailable because this command is not bound to a session.";
     }
+    await authority.assertCurrentAsync();
     authority.assertMutationCurrent();
     const result = await compactCurrent();
     return result.compacted
@@ -551,6 +578,7 @@ export async function startThreadAction(
     agentDir: target.agentDir,
     config: ctx.config,
     assertCurrent: authority.assertCurrent,
+    assertCurrentAsync: authority.assertCurrentAsync,
   });
   await deps.bindingStore.withLease(target.identity, () =>
     deps.codexControlRequest(
@@ -565,6 +593,7 @@ export async function startThreadAction(
         sessionKey: authority.sessionKey,
         storePath: authority.storePath,
         assertCurrent: authority.assertCurrent,
+        assertCurrentAsync: authority.assertCurrentAsync,
         assertOwnerCurrent: () => assertCodexHostOwnerCurrent(ctx),
         ...(connection.usesSupervisionConnection
           ? {

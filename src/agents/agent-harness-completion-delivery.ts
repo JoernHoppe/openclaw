@@ -29,7 +29,7 @@ import { rethrowIncognitoSessionError } from "../state/incognito-session-error.j
 import {
   getOwedHarnessCompletionTask,
   hasHarnessCompletionFinalReceipt,
-  readAdmittedHarnessCompletionInput,
+  readAdmittedHarnessCompletionInputAsync,
 } from "./agent-harness-completion-recovery.js";
 
 const log = createSubsystemLogger("agents/harness-completion-recovery");
@@ -275,7 +275,7 @@ async function reconcileCurrentHarnessCompletionDelivery(
       }
       return snapshot.validInput ? "pending" : "blocked";
     }
-    const validInput = readAdmittedHarnessCompletionInput({
+    const validInput = await readAdmittedHarnessCompletionInputAsync({
       claim,
       entry,
       storePath: params.storePath,

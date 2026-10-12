@@ -178,7 +178,6 @@ export async function buildDynamicTools(
       sandbox: input.sandbox,
     }));
   try {
-    preparedExecution.assertCurrent();
     const nativeExecutionPolicy = preparedExecution.policy;
     const webSearchPlan = resolveCodexWebSearchPlan({
       config: params.config,
@@ -496,7 +495,6 @@ export async function buildDynamicTools(
         },
       );
     }
-    preparedExecution.assertCurrent();
     return exposedTools;
   } finally {
     if (!input.nativeExecutionPolicy) {

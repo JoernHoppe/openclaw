@@ -139,10 +139,13 @@ export function publishSessionEntryWorkerMetadataInvalidation(params: {
   storePath: string;
   databaseIdentity: string;
   sessionKey: string;
+  entry?: SessionEntry;
 }): void {
   invalidateSessionEntryCaches(params.databaseIdentity);
   for (const read of retainedSharingReads(params.databaseIdentity, params.sessionKey) ?? []) {
-    publishRetainedSessionEntryPredicate(read, undefined, false);
+    publishRetainedSessionEntryPredicate(read, params.entry, params.entry !== undefined, {
+      preserveMatchingEntry: true,
+    });
   }
   const change: SessionRowChange = {
     agentId: params.agentId,

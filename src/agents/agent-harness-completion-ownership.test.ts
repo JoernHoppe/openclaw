@@ -4,10 +4,6 @@ import {
   appendTranscriptMessage,
   replaceSessionEntry,
 } from "../config/sessions/session-accessor.js";
-import {
-  bindPreparedSessionSourceAssertion,
-  prepareSessionSourceAuthority,
-} from "../config/sessions/session-source-authority.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { createUserTurnTranscriptRecorder } from "../sessions/user-turn-transcript.js";
 import {
@@ -18,7 +14,6 @@ import {
   createOperationalRunInstanceRef,
   prepareAgentRunAdmission,
   resolveAdmittedRunActiveAssertion,
-  runWithPreparedRunSourceScope,
 } from "./admitted-run-context.js";
 import { buildCurrentRunRestartRecoveryClaim } from "./agent-command-restart-recovery.js";
 import {
@@ -30,6 +25,7 @@ import {
   createAgentHarnessCompletionScope,
   withAgentHarnessCompletionAdmission,
 } from "./agent-harness-completion-scope.js";
+import { runWithAgentToolSourceExecutionScope } from "./agent-tool-source-execution-guard.js";
 
 const requesterSessionKey = "agent:main:main";
 const sourceSessionKey = "native-child:one";
@@ -227,11 +223,6 @@ describe("pre-mirror recovery input custody", () => {
           claim,
           storePath: target.storePath,
         });
-        const boundSource = bindPreparedSessionSourceAssertion(
-          guard,
-          await prepareSessionSourceAuthority(guard),
-        );
-        await using _ = { [Symbol.asyncDispose]: () => boundSource.release() };
         const admission = prepareAgentRunAdmission({
           cfg: {},
           facts: {
@@ -240,18 +231,16 @@ describe("pre-mirror recovery input custody", () => {
             ingress: { kind: "system", boundary: "test-recorder-recovery", state: "present" },
           },
           operationalRunInstance: createOperationalRunInstanceRef(recoveryRunId),
-          assertSourceCurrent: boundSource,
+          assertSourceCurrent: guard,
         });
         try {
           const context = await admission.admit("embedded");
-          const assertEffect = resolveAdmittedRunActiveAssertion(context);
-          if (!assertEffect) {
+          const assertion = resolveAdmittedRunActiveAssertion(context);
+          if (!assertion) {
             throw new Error("Missing real delegated effect authority");
           }
           const effect = () =>
-            runWithPreparedRunSourceScope({ admittedRunContext: context }, async () =>
-              assertEffect(),
-            );
+            runWithAgentToolSourceExecutionScope(assertion, async () => assertion());
           await effect();
           const inputRunId =
             scenario === "prior" || scenario === "unadmitted-prior" ? priorRunId : recoveryRunId;

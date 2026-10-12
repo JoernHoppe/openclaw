@@ -12,6 +12,7 @@ import {
   prepareCodexNativeExecutionPolicy,
   type resolveCodexNativeExecutionPolicy,
   type CodexNativeExecutionPolicy,
+  type PreparedCodexNativeExecutionPolicy,
 } from "./native-execution-policy.js";
 
 const ALLOWED_CONTROL_PLANE_METHODS = new Set([
@@ -106,12 +107,17 @@ export async function prepareCodexAppServerDirectSandboxBypassBlock(
     Parameters<typeof resolveCodexAppServerDirectSandboxBypassBlock>[0],
     "executionPolicy"
   >,
-): Promise<{ block: string | undefined; assertCurrent: () => void; release: () => void }> {
+): Promise<
+  { block: string | undefined } & Pick<
+    PreparedCodexNativeExecutionPolicy,
+    "assertCurrent" | "source" | "release"
+  >
+> {
   if (
     ALLOWED_CONTROL_PLANE_METHODS.has(params.method) &&
     params.method !== "config/mcpServer/reload"
   ) {
-    return { block: undefined, assertCurrent() {}, release() {} };
+    return { block: undefined, async assertCurrent() {}, release() {} };
   }
   const selected = await prepareCodexNativeExecutionPolicy({
     ...params,
@@ -123,13 +129,19 @@ export async function prepareCodexAppServerDirectSandboxBypassBlock(
       executionPolicy: selected.policy,
     }),
     assertCurrent: selected.assertCurrent,
+    source: selected.source,
     release: selected.release,
   };
 }
 
 export async function prepareCodexNativeExecutionBlock(
   params: Omit<Parameters<typeof resolveCodexNativeExecutionBlock>[0], "executionPolicy">,
-): Promise<{ block: string | undefined; assertCurrent: () => void; release: () => void }> {
+): Promise<
+  { block: string | undefined } & Pick<
+    PreparedCodexNativeExecutionPolicy,
+    "assertCurrent" | "source" | "release"
+  >
+> {
   const selected = await prepareCodexNativeExecutionPolicy({
     ...params,
     readRuntimeSessionEntry: true,
@@ -137,13 +149,19 @@ export async function prepareCodexNativeExecutionBlock(
   return {
     block: resolveCodexNativeExecutionBlock({ ...params, executionPolicy: selected.policy }),
     assertCurrent: selected.assertCurrent,
+    source: selected.source,
     release: selected.release,
   };
 }
 
 export async function prepareCodexNativeSandboxBlock(
   params: Omit<Parameters<typeof resolveCodexNativeSandboxBlock>[0], "executionPolicy">,
-): Promise<{ block: string | undefined; assertCurrent: () => void; release: () => void }> {
+): Promise<
+  { block: string | undefined } & Pick<
+    PreparedCodexNativeExecutionPolicy,
+    "assertCurrent" | "source" | "release"
+  >
+> {
   const selected = await prepareCodexNativeExecutionPolicy({
     ...params,
     readRuntimeSessionEntry: true,
@@ -151,6 +169,7 @@ export async function prepareCodexNativeSandboxBlock(
   return {
     block: resolveCodexNativeSandboxBlock({ ...params, executionPolicy: selected.policy }),
     assertCurrent: selected.assertCurrent,
+    source: selected.source,
     release: selected.release,
   };
 }

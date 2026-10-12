@@ -154,11 +154,17 @@ describe("Codex submitted prompt provenance", () => {
         editorText: params.prompt,
       });
     } finally {
-      cleanupStage = "complete-turn";
-      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-      cleanupStage = "await-attempt";
-      await run;
-      closeHost();
+      try {
+        // A preparation failure can precede the notification handler's attachment.
+        if (harness.requests.some(({ method }) => method === "turn/start")) {
+          cleanupStage = "complete-turn";
+          await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+        }
+        cleanupStage = "await-attempt";
+        await run;
+      } finally {
+        closeHost();
+      }
       cleanupStage = "done";
     }
   });
