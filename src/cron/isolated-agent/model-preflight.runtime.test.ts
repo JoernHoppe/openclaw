@@ -216,7 +216,7 @@ describe("preflightCronModelProvider", () => {
       errors[index]!.cause = errors[index + 1];
     }
     errors.at(-1)!.cause = errors[0];
-    mockUnavailableEndpoint(errors[0]);
+    mockUnavailableEndpoint(errors[0]!);
     const result = await preflightCronModelProvider(makeLocalPreflightParams("ollama"));
     if (result.status !== "unavailable") {
       throw new Error(`expected preflight unavailable, got ${result.status}`);
