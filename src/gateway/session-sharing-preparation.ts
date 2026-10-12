@@ -85,6 +85,7 @@ export type SessionFactsRead<Facts extends PreparedSessionMutationFacts> = {
   readonly storageTarget: Pick<GatewaySessionStoreTarget, "agentId" | "canonicalKey" | "storePath">;
   bindCreation(this: void, operation: SessionEntryCreationOperation): void;
   followRegistration?(this: void, change: AgentDatabaseRegistryChange): void;
+  prepareRead(this: void): Promise<void> | undefined;
   readCurrent(this: void, cfg: OpenClawConfig): Facts;
   release(this: void): void;
 };
@@ -723,7 +724,14 @@ export async function prepareSessionMutationFacts(
       }
       actorRead?.bindCreation(operation);
     };
-    return { storageTarget, bindCreation, readCurrent, release, followRegistration };
+    const prepareRead = () => {
+      if (!active) {
+        return undefined;
+      }
+      const pending = [...acquiringReads.values()].flatMap((read) => read.prepareRead() ?? []);
+      return pending.length > 0 ? Promise.all(pending).then(() => {}) : undefined;
+    };
+    return { storageTarget, bindCreation, prepareRead, readCurrent, release, followRegistration };
   } catch (error) {
     release();
     throw waitingForStorage ||

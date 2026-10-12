@@ -335,9 +335,18 @@ async function serveAuthorizedSessionHistory(
     sessionKey: target.canonicalKey,
     storePath: target.storePath,
   };
+  const streamClosed = createDeferredCore();
   const publishAuthorizedHistory = async (
     publish: (presentation: HistoryPresentation) => void,
   ): Promise<boolean> => {
+    try {
+      const pending = sharing?.prepareRead();
+      if (pending) {
+        await Promise.race([pending, streamClosed.promise]);
+      }
+    } catch {
+      return false;
+    }
     const cfgLocal = getRuntimeConfig();
     const currentRequestAuth = await checkGatewayHttpRequestAuth({
       ...opts,
@@ -478,7 +487,6 @@ async function serveAuthorizedSessionHistory(
     cursor,
     snapshot: historySnapshot,
   });
-  const streamClosed = createDeferredCore();
   let streamStopped = false;
   let streamQueue = Promise.resolve();
   let pendingRefresh: (() => Promise<void>) | undefined;

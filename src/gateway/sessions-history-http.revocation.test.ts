@@ -125,6 +125,7 @@ vi.mock("./session-sharing.js", () => ({
 vi.mock("./session-sharing-preparation.js", () => ({
   prepareSessionMutationFacts: async () => ({
     storageTarget: { agentId: "main", canonicalKey: "agent:main:main", storePath: "/tmp" },
+    prepareRead: () => undefined,
     readCurrent: () => ({
       target: {
         agentId: "main",
