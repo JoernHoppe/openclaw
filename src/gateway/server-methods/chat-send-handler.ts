@@ -224,11 +224,9 @@ async function handleChatSendWithOptions(
       recorder: userTurnRecorder,
       replyContextFieldsPromise,
     } = userTurn;
-    const persistGatewayUserTurnTranscript = (
-      ...args: Parameters<typeof persistUserTurnTranscript>
-    ) =>
+    const withUserTurnInputPublication = <T>(run: () => Promise<T>) =>
       admission.withInputCommitPublication(
-        () => persistUserTurnTranscript(...args),
+        run,
         entry
           ? undefined
           : (source, committedEntry) =>
@@ -242,6 +240,12 @@ async function handleChatSendWithOptions(
                 entry: committedEntry,
               }),
       );
+    const persistGatewayUserTurnTranscript = (
+      ...args: Parameters<typeof persistUserTurnTranscript>
+    ) => withUserTurnInputPublication(() => persistUserTurnTranscript(...args));
+    const persistGatewayUserTurnTranscriptBestEffort = (
+      ...args: Parameters<typeof userTurn.persistBestEffort>
+    ) => withUserTurnInputPublication(() => userTurn.persistBestEffort(...args));
     bindPreparedMediaRecorder(userTurnRecorder);
     phase?.mark("preparation");
     const preparedUserTurn = prepareChatSendUserTurn({
@@ -643,7 +647,11 @@ async function handleChatSendWithOptions(
         chatSendTiming,
       },
       turn: preparedUserTurn,
-      userTurn,
+      userTurn: {
+        ...userTurn,
+        persist: persistGatewayUserTurnTranscript,
+        persistBestEffort: persistGatewayUserTurnTranscriptBestEffort,
+      },
     });
     admittedCleanup.dispatched = true;
   } catch (err) {

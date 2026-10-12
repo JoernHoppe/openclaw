@@ -102,8 +102,9 @@ vi.mock("./http-utils.js", () => ({
 
 // mock-isolation: HTTP history fixtures control visibility and target replacement during awaited reads.
 vi.mock("./session-sharing.js", () => ({
-  createSessionListEntryFilter: ({ client }: { client: unknown }) =>
-    client ? () => fixture.visible : undefined,
+  prepareProjectedSessionSharing: ({ client }: { client: unknown }) => ({
+    entryFilter: client ? () => fixture.visible : undefined,
+  }),
   resolveSessionSharingTarget: () => ({
     canonicalKey: "agent:main:main",
     agentId: "main",

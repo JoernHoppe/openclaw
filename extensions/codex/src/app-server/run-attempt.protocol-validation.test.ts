@@ -66,7 +66,12 @@ describe("Codex submitted prompt provenance", () => {
     const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
     const run = runCodexAppServerAttempt(params);
     try {
-      await harness.waitForMethod("turn/start");
+      await Promise.race([
+        harness.waitForMethod("turn/start"),
+        run.then((result) => {
+          throw new Error("Codex attempt settled before turn/start", { cause: result });
+        }),
+      ]);
       const request = harness.requests.find(({ method }) => method === "turn/start")!
         .params as CodexTurnStartParams;
       const sentInput = structuredClone(request.input);
