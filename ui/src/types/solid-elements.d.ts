@@ -70,7 +70,7 @@ declare module "@solidjs/web" {
         "prop:measureRatio": () => number;
         "prop:measureSize": () => number;
         onResize: (event: CustomEvent<{ splitRatio: number }>) => void;
-        "onResize-end": () => void;
+        "onResize-end"?: () => void;
       };
       "wa-popup": LegacyAttributes<WaPopup> & {
         active?: boolean;
@@ -130,9 +130,26 @@ declare module "@solidjs/web" {
         ElementProperties<Pick<HTMLElementTagNameMap["openclaw-session-owner-chip"], "owner">> & {
           size?: HTMLElementTagNameMap["openclaw-session-owner-chip"]["size"];
         };
+      "openclaw-chat-pdf-preview": HTMLAttributes<
+        HTMLElementTagNameMap["openclaw-chat-pdf-preview"]
+      > &
+        ElementProperties<
+          Pick<
+            HTMLElementTagNameMap["openclaw-chat-pdf-preview"],
+            "src" | "sourceIdentity" | "label" | "mimeType" | "sizeBytes"
+          >
+        >;
       "openclaw-agent-row-chip": HTMLAttributes<HTMLElement> & {
         "prop:agentId"?: string;
       };
+      "openclaw-systems-page": HTMLAttributes<HTMLElementTagNameMap["openclaw-systems-page"]> &
+        ElementProperties<
+          Pick<HTMLElementTagNameMap["openclaw-systems-page"], "routeData" | "presented">
+        >;
+      "openclaw-systems-sidebar": HTMLAttributes<
+        HTMLElementTagNameMap["openclaw-systems-sidebar"]
+      > &
+        ElementProperties<Pick<HTMLElementTagNameMap["openclaw-systems-sidebar"], "controller">>;
       "openclaw-mascot": LegacyAttributes<HTMLElement> & {
         mood?: MascotMood;
         "prop:size"?: number;

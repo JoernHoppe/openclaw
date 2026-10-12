@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { createSignal, flush, For, type Setter } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../lit/presentation-binding.ts";
 import { installTestLinkReader, TEST_LINK_READER } from "../test-helpers/link-reader.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
+import { flush } from "../test-helpers/solid-settle.ts";
 import { prefetchLinkReader } from "./link-reader-prefetch-request.ts";
 import * as linkTargets from "./link-reader-target.ts";
 import { linkReaderPrefetchRef } from "./markdown-element-refs-solid.ts";
@@ -46,45 +47,50 @@ let provider: HTMLElement;
 let idleCallbacks: Map<number, IdleRequestCallback>;
 let nextIdleHandle: number;
 let presentation: PresentationBinding | undefined;
+type LinkInputs = {
+  links: string[];
+  session: string;
+  active: boolean;
+  connected: boolean;
+  presentation: PresentationBinding | undefined;
+};
+let setInputs: (inputs: LinkInputs) => void;
+let unmount: (() => void) | undefined;
 
-type LinkState = { links: string[]; session: string; active: boolean; connected: boolean };
-let mounted: ReturnType<typeof mountSolid> | undefined;
-let updateLinks: Setter<LinkState>;
 function renderLinks(links = [href(1)], session = "first", active = true, connected = true) {
-  const next = { links, session, active, connected };
-  if (mounted) {
-    updateLinks(next);
-  } else {
-    mounted = mountSolid(
-      () => {
-        const [state, setState] = createSignal(next);
-        updateLinks = setState;
-        return (
-          <div
-            ref={linkReaderPrefetchRef(() => [
-              state().session,
-              state().active ? (presentation ?? true) : false,
-              state().connected,
-            ])}
-          >
-            <For each={state().links} keyed={false}>
-              {(url) => (
-                <a class="markdown-github-link" href={url()}>
-                  Item
-                </a>
-              )}
-            </For>
-          </div>
-        );
-      },
+  const next = { links, session, active, connected, presentation };
+  if (!unmount) {
+    const [inputs, update] = createSignal(next);
+    setInputs = update;
+    unmount = mountSolid(
+      () => (
+        <div
+          ref={linkReaderPrefetchRef(() => [
+            inputs().session,
+            inputs().active ? (inputs().presentation ?? true) : false,
+            inputs().connected,
+          ])}
+        >
+          <For each={inputs().links}>
+            {(url) => (
+              <a class="markdown-github-link" href={url}>
+                Item
+              </a>
+            )}
+          </For>
+        </div>
+      ),
       { container },
-    );
+    ).unmount;
+  } else {
+    setInputs(next);
   }
   flush();
 }
+
 function unmountLinks() {
-  mounted?.unmount();
-  mounted = undefined;
+  unmount?.();
+  unmount = undefined;
 }
 
 function flushIdleScans() {
@@ -143,7 +149,7 @@ describe("GitHub preview warming", () => {
     observer().intersect(links);
     await vi.advanceTimersByTimeAsync(200);
     expect(prefetch).toHaveBeenCalledTimes(1);
-    // Bind the external provider after Solid connects the template's root.
+    // Keep the external provider bound while the parent refreshes.
     await show();
     const scan = vi.spyOn(container.firstElementChild!, "querySelectorAll");
     await show();
