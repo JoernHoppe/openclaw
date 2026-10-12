@@ -419,7 +419,16 @@ it("joins the worker-backed persistence of a legacy event adapter", async () => 
     observer.handleEvent(
       event({ stream: "item", data: { kind: "preamble", progressText: "Legacy admission" } }),
     );
-    await observer.disposeAsync();
+    const disposal = observer.disposeAsync();
+    const afterClose = event({
+      stream: "item",
+      data: { kind: "preamble", progressText: "Rejected after close" },
+    });
+    observer.handleEvent(afterClose);
+    await expect(observer.handleEventAsync(afterClose)).rejects.toThrow(
+      "Session observer is closed",
+    );
+    await disposal;
     expect(
       peer
         .prepare(
