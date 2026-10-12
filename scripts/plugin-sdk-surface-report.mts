@@ -219,7 +219,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
     publicEntrypoints: readPluginSdkSurfaceBudgetEnv(
       "OPENCLAW_PLUGIN_SDK_MAX_PUBLIC_ENTRYPOINTS",
       // +1: the shared state-owner boundary for plugin CLIs.
-      152,
+      // +2: shared database-engine host and worker adapters.
+      154,
       env,
     ),
     publicExports: readPluginSdkSurfaceBudgetEnv(
@@ -254,7 +255,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: deprecated createSessionHeaderLink retained from shipped 2026.10.1.
       // +2: approved async transcript event/stat read replacements.
       // +1: approved PreparedAgentRunStart contract.
-      3726,
+      // +10: shared database-engine contracts and operations after the SQLite export cutover.
+      3736,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -283,7 +285,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +2: the same sandbox replacements.
       // +1: the same deprecated createSessionHeaderLink.
       // +2: the same transcript read replacement pairs.
-      2184,
+      // +5: shared database-engine host and worker operations.
+      2189,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
