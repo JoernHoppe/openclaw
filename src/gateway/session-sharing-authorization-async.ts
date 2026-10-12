@@ -180,14 +180,11 @@ export async function resolveSessionMutationAuthorizationAsync(
       ...result,
       authorization: {
         ...authorization,
-        followRegistration: (target, change) => {
-          preparedTargets
-            .find(
-              (prepared) =>
-                prepared.storageTarget.agentId === target.agentId &&
-                prepared.storageTarget.canonicalKey === target.sessionKey,
-            )
-            ?.followRegistration?.(change);
+        followRegistration: (_target, change) => {
+          // The parent's retained discovery also follows its own child-store registration.
+          for (const prepared of preparedTargets) {
+            prepared.followRegistration?.(change);
+          }
         },
         retain,
         release: () => {
