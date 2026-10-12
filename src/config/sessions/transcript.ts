@@ -626,9 +626,7 @@ async function findLatestEquivalentAssistantMessageId(
   target: SessionTranscriptTurnWriteContext,
   message: SessionTranscriptAssistantMessage,
 ): Promise<string | undefined> {
-  const expected = projectAssistantTranscriptMirrorIdentity(
-    sanitizeTranscriptMessage(message),
-  );
+  const expected = projectAssistantTranscriptMirrorIdentity(sanitizeTranscriptMessage(message));
   if (!expected) {
     return undefined;
   }

@@ -83,9 +83,7 @@ export function findEquivalentAssistantMessageInRun(
   return undefined;
 }
 
-function projectAssistantMirrorComparable(
-  message: SessionTranscriptAssistantMessage,
-) {
+function projectAssistantMirrorComparable(message: SessionTranscriptAssistantMessage) {
   const normalized = sanitizeTranscriptMessage(
     message as Parameters<typeof sanitizeTranscriptMessage>[0], // SAFETY: this stored assistant has the sanitizer's message envelope.
   );
