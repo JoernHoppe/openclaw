@@ -191,11 +191,14 @@ export function createNodeWorkspaceRetainCoordinator(
         }
       }
       const inventory = await options.placements.prepareMaintenancePlacements();
-      try {
-        inventory.assertCurrent();
-      } finally {
-        inventory.release();
-      }
+      const placements = (() => {
+        try {
+          inventory.assertCurrent();
+          return inventory.placements;
+        } finally {
+          inventory.release();
+        }
+      })();
       const environments = nodeEnvironments(options, node.nodeId);
       // Provisioning and refresh install before recording receipts. Keep the current build until
       // every live environment records it, so an acknowledged generation cannot prune it.
@@ -212,7 +215,7 @@ export function createNodeWorkspaceRetainCoordinator(
         ...new Set([
           ...listRetainedWorkerBundleHashes({
             environments,
-            placements: inventory.placements.filter(
+            placements: placements.filter(
               (placement) =>
                 placement.environmentId !== null && environmentIds.has(placement.environmentId),
             ),

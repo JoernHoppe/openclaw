@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { requireOpenClawStateDatabaseIdentity } from "../../state/openclaw-state-db-cache.js";
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
@@ -97,6 +97,37 @@ it("retains SQL-free placement facts through bookkeeping, claims, dispatch, reti
       expect(replacement.current()).toBeUndefined();
     } finally {
       replacement.release();
+    }
+  });
+});
+
+it("installs the committed placement when acquisition overlaps its writer receipt", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const store = createWorkerSessionPlacementStore();
+    const session = {
+      agentId: "main",
+      sessionKey: "agent:main:placement-acquisition",
+      sessionId: "placement-acquisition",
+    };
+    const getAsync = store.getAsync.bind(store);
+    let committed: Awaited<ReturnType<typeof store.startDispatch>> | undefined;
+    using read = vi.spyOn(store, "getAsync");
+    read.mockImplementationOnce(async (sessionId) => {
+      const prior = await getAsync(sessionId);
+      committed = await store.startDispatch(session);
+      return prior;
+    });
+    const retained = await store.prepareSessionPlacement(session.sessionId);
+    try {
+      const sql = observeHostDataSql();
+      try {
+        expect(retained.current()).toEqual(committed);
+        expect(sql.queries).toEqual([]);
+      } finally {
+        sql.restore();
+      }
+    } finally {
+      retained.release();
     }
   });
 });

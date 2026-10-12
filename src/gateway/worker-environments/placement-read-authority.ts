@@ -81,8 +81,9 @@ export function retainSessionPlacementRead(
   },
 ) {
   const { owner, authority, assertUsable } = captured;
+  const published = owner.placements.get(sessionId);
   const reader: RetainedPlacement = {
-    placement: freezeJsonSnapshot(placement),
+    placement: freezeJsonSnapshot(published ? published.placement : placement),
     sequence: owner.sequence,
     revoked: false,
   };

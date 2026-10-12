@@ -303,11 +303,15 @@ export async function prepareSessionPlacementRead(
   sessionId: string,
   read: () => Promise<WorkerSessionPlacementRecord | undefined>,
 ) {
-  return await preparePlacementRead(
-    capturePlacementObservation(pathname, sessionId),
-    read,
-    (placement, captured) => retainSessionPlacementRead(sessionId, placement, captured),
-  );
+  const captured = capturePlacementObservation(pathname, sessionId);
+  try {
+    const placement = await read();
+    captured.assertUsable();
+    return retainSessionPlacementRead(sessionId, placement, captured);
+  } catch (error) {
+    captured.authority.release();
+    throw error;
+  }
 }
 
 function stageChange(db: DatabaseSync, change: ClaimChange): void {
