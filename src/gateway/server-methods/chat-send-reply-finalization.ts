@@ -201,6 +201,9 @@ export async function finalizeChatSendDispatchedReplies(
         ? transcriptMirrorResolution.owner
         : undefined;
     const mediaScope = await captureMediaScope();
+    if (!mediaScope) {
+      return;
+    }
     const sourceSession = await loadGatewaySessionEntryReadOnlyInWorker({
       cfg: context.getRuntimeConfig(),
       key: sessionKey,

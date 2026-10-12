@@ -63,18 +63,19 @@ export async function createChatSendReplyFinalizationAuthority(
         authority ? prepared.get(authority)?.authority?.readCurrentSession?.() : undefined,
       );
     });
+  const authorizeDelivery = (stage: string) => {
+    if (deliveryAuthorized()) {
+      return true;
+    }
+    params.context.logGateway.warn(
+      `webchat settled final reply skipped: session writer changed before ${stage}`,
+    );
+    onUnauthorized?.();
+    return false;
+  };
   return {
     deliveryAuthorized,
-    authorizeDelivery: (stage: string) => {
-      if (deliveryAuthorized()) {
-        return true;
-      }
-      params.context.logGateway.warn(
-        `webchat settled final reply skipped: session writer changed before ${stage}`,
-      );
-      onUnauthorized?.();
-      return false;
-    },
+    authorizeDelivery,
     release: () => {
       for (const scope of mediaScopes) {
         scope.release();
@@ -84,21 +85,28 @@ export async function createChatSendReplyFinalizationAuthority(
       }
     },
     captureMediaScope: async () => {
-      const scope = await captureWebchatReplyMediaScope({
-        cfg,
-        sessionKey,
-        agentId,
-        sessionLoadOptions,
-        requesterContext: params.requesterContext,
-        accountId: params.accountId,
-        assertCurrent: () => {
-          if (!deliveryAuthorized()) {
-            throw new Error("Chat media delivery is no longer authorized.");
-          }
-        },
-      });
-      mediaScopes.push(scope);
-      return scope;
+      try {
+        const scope = await captureWebchatReplyMediaScope({
+          cfg,
+          sessionKey,
+          agentId,
+          sessionLoadOptions,
+          requesterContext: params.requesterContext,
+          accountId: params.accountId,
+          assertCurrent: () => {
+            if (!deliveryAuthorized()) {
+              throw new Error("Chat media delivery is no longer authorized.");
+            }
+          },
+        });
+        mediaScopes.push(scope);
+        return scope;
+      } catch (error) {
+        if (!authorizeDelivery("media preparation")) {
+          return undefined;
+        }
+        throw error;
+      }
     },
   };
 }

@@ -235,6 +235,9 @@ async function finalizeChatSendAgentReplyPayloads(
       isSourceReplyTranscriptMirrorPayload,
     );
     const mediaScope = await captureMediaScope();
+    if (!mediaScope) {
+      return { kind: "dropped", reason: "no-visible-content" };
+    }
     const { storePath: latestStorePath, entry: latestEntry } =
       await loadGatewaySessionEntryReadOnlyInWorker({
         cfg: context.getRuntimeConfig(),

@@ -1136,6 +1136,7 @@ describe("handlePendingApprovalRequest", () => {
     const manager = createTestApprovalManager(testContext);
     const owned = manager.create({ command: "owned" }, 60_000, "approval-prefix-owned");
     const foreign = manager.create({ command: "foreign" }, 60_000, "approval-prefix-foreign");
+    const cfg = {};
     await manager.register(owned, 60_000);
     await manager.register(foreign, 60_000);
     prepareApprovalChannelCustodyMock.mockReturnValue({
@@ -1155,7 +1156,7 @@ describe("handlePendingApprovalRequest", () => {
       context: {
         broadcast: vi.fn(),
         broadcastToConnIds: vi.fn(),
-        getRuntimeConfig: () => ({}),
+        getRuntimeConfig: () => cfg,
       } as unknown as GatewayRequestContext,
       client: null,
       exposeAmbiguousPrefixError: true,

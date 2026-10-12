@@ -1,6 +1,9 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { captureExecRequestCancellation } from "../../agents/bash-process-control.js";
-import { captureExecRequestSubagentSelection } from "../../agents/subagents/registry/subagent-control-scope.js";
+import {
+  captureExecRequestSubagentSelection,
+  resolveSubagentControllerIdentity,
+} from "../../agents/subagents/registry/subagent-control-scope.js";
 import {
   killAllControlledSubagentRuns,
   resolveSubagentController,
@@ -28,19 +31,27 @@ export async function abortControlledSubagents(params: {
     }>;
   };
 }) {
-  const preparedController = await prepareSessionCapabilityRead(() =>
-    resolveSubagentController({
-      cfg: params.cfg,
-      agentSessionKey: params.sessionKey,
-      agentId: params.agentId,
-    }),
-  );
-  using controllerRead = { [Symbol.dispose]: preparedController.release };
+  const controllerParams = {
+    cfg: params.cfg,
+    agentSessionKey: params.sessionKey,
+    agentId: params.agentId,
+  };
+  const identity = resolveSubagentControllerIdentity(controllerParams);
+  // Ordinary callers reserve queued descendants before yielding; only subagents need policy reads.
+  const preparedController = identity.callerIsSubagent
+    ? await prepareSessionCapabilityRead(() => resolveSubagentController(controllerParams))
+    : undefined;
+  using controllerRead = preparedController
+    ? { [Symbol.dispose]: preparedController.release }
+    : undefined;
   void controllerRead;
-  const controller = preparedController.read();
+  const controller = preparedController?.read() ?? {
+    ...identity,
+    controlScope: "children" as const,
+  };
   const assertCurrent = () => {
     params.assertCurrent?.();
-    preparedController.read();
+    preparedController?.read();
   };
   let commands =
     params.execCancellation ??

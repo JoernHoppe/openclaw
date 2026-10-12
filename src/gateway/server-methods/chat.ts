@@ -70,9 +70,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             databaseIdentity: `file:${target.capturedReadSource.databaseIdentity}`,
             sessionKey: target.canonicalKey,
             entry: selected,
-            matches: (_before, after) =>
-              after?.sessionId === selected?.sessionId &&
-              !resolveSessionWorkStartError(target.canonicalKey, after),
+            matches: (_before, after) => after?.sessionId === selected?.sessionId,
           });
         }
       },
@@ -94,12 +92,13 @@ export const chatHandlers: GatewayRequestHandlers = {
         scope: storePath,
         identities: [sessionKey, sessionId],
         assertAllowed: () => {
-          if (retained && !retained.isCurrent()) {
+          const current = retained?.readCurrent();
+          if (retained && !current) {
             throw new Error(`Session "${sessionKey}" changed while starting work. Retry.`);
           }
           const currentEntry = isIncognitoSessionKey(sessionKey)
             ? loadSessionEntry(rawSessionKey, sessionLoadOptions).entry
-            : entry;
+            : (current?.entry ?? entry);
           if (currentEntry?.sessionId !== sessionId) {
             throw new Error(`Session "${sessionKey}" changed while starting work. Retry.`);
           }

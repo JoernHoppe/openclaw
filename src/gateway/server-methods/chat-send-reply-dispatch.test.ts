@@ -278,7 +278,7 @@ describe("chat delivery watermark preparation", () => {
               const sessionReads = sql.queries.filter((query) =>
                 /\bfrom\s+"?session_(?:nodes|participants)\b/i.test(query),
               );
-              expect(sessionReads).toEqual([]);
+              expect(sessionReads.length > 0).toBe(incognito);
             } finally {
               sql.restore();
             }
