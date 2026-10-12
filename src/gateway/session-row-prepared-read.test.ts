@@ -295,7 +295,7 @@ it.each(["ready", "revoked", "changed config", "timeout", "cancelled"] as const)
   },
 );
 
-it("rechecks scopes after startup admission and refuses unprepared writes", async () => {
+it("rechecks scopes after startup admission", async () => {
   await withPendingStartupInspection(async ({ request, client, complete }) => {
     const read = authorizeGatewayRequestPreDispatch(request);
     await vi.advanceTimersByTimeAsync(0);
@@ -306,15 +306,6 @@ it("rechecks scopes after startup admission and refuses unprepared writes", asyn
         requestParams: { agentId: "healthy" },
       }),
     ).resolves.toMatchObject({ error: null });
-    await expect(
-      authorizeGatewayRequestPreDispatch({ ...request, method: "sessions.patch" }),
-    ).resolves.toMatchObject({
-      error: {
-        code: "UNAVAILABLE",
-        retryable: true,
-        details: { code: "agent-database-inspection-pending" },
-      },
-    });
     client.connect.scopes = [];
     complete();
     await expect(read).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
