@@ -19,11 +19,18 @@ const fetchAvatar = vi.fn<typeof fetch>();
 const createObjectURL = vi.fn<typeof URL.createObjectURL>();
 const revokeObjectURL = vi.fn<typeof URL.revokeObjectURL>();
 
-beforeEach(() => {
+beforeEach(({ onTestFailed }) => {
+  const fetchCalls: Array<{ url: string; stack: string | undefined }> = [];
+  onTestFailed(() => {
+    console.error("[identity-avatar fetch calls]", JSON.stringify(fetchCalls, null, 2));
+  });
   const nativeFetch = globalThis.fetch;
   fetchAvatar.mockReset();
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : String(input);
+    if (!url.startsWith("data:")) {
+      fetchCalls.push({ url, stack: new Error("Identity avatar fetch").stack });
+    }
     return url.startsWith("data:") ? nativeFetch(input, init) : fetchAvatar(input, init);
   });
   let sequence = 0;
