@@ -14,7 +14,10 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGatewayRestartDrainSignal } from "../process/gateway-work-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import * as creationClaims from "./agent-creation-claim.js";
-import { AgentDatabaseExecutionAdmissionClosedError } from "./agent-database-admission-error.js";
+import {
+  AgentDatabaseExecutionAdmissionClosedError,
+  AgentDatabaseSchemaAdmissionChangedError,
+} from "./agent-database-admission-error.js";
 import { captureAgentDatabaseAdmission } from "./agent-database-admission.js";
 import {
   assertAgentDeletionExecutionCleanupAccess,
@@ -189,7 +192,7 @@ export function createAgentDatabaseExecution(
     creatingTarget?: DatabasePathIdentity,
     signal?: AbortSignal,
     readmitSchema = false,
-    contentionDeadline?: number,
+    admissionDeadline?: number,
   ): Promise<T | undefined> {
     const pending = agentDatabaseLifecycle.pending.get(pathname);
     if (pending) {
@@ -259,9 +262,10 @@ export function createAgentDatabaseExecution(
     } catch (error) {
       const nativeFailure = current.failure();
       const contended = !entered && isSqliteLockError(error);
-      if (generation === current && (nativeFailure || retireNativeOnFailure)) {
+      const schemaChanged = !entered && error instanceof AgentDatabaseSchemaAdmissionChangedError;
+      if (generation === current && (nativeFailure || retireNativeOnFailure || schemaChanged)) {
         try {
-          if (nativeFailure === "native" && !contended && !nativeClosing) {
+          if (nativeFailure === "native" && !contended && !schemaChanged && !nativeClosing) {
             await owner.close();
           } else {
             // The rejected broker scope has settled; only its captured native owner is retired.
@@ -276,12 +280,13 @@ export function createAgentDatabaseExecution(
           );
         }
       }
-      if (contended) {
-        const deadline =
-          contentionDeadline ?? performance.now() + LEASE_CONTENTION_RETRY_TIMEOUT_MS;
-        if (contentionDeadline === undefined) {
+      if (contended || schemaChanged) {
+        const deadline = admissionDeadline ?? performance.now() + LEASE_CONTENTION_RETRY_TIMEOUT_MS;
+        if (admissionDeadline === undefined) {
           log.warn(
-            "Agent database execution admission delayed by SQLite lock contention; retrying before execution.",
+            schemaChanged
+              ? "Agent database schema admission changed; retrying before execution."
+              : "Agent database execution admission delayed by SQLite lock contention; retrying before execution.",
           );
         }
         const remaining = deadline - performance.now();
