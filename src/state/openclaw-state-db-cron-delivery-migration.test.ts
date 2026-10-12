@@ -125,6 +125,8 @@ it.each(["runtime open", "doctor repair"] as const)(
     });
     expect(db.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
     db.exec("UPDATE cron_run_receipts SET delivery_attempt_state = 'started'");
+    // Reuse remains valid while a sibling is live; final close requires readmission.
+    const survivingReader = openOpenClawStateReadOnlyLocation(database.path, database.path);
     closeOpenClawStateDatabaseForTest();
     // Final close retires admission; the cold reopen precedes the warm-borrow observation.
     openOpenClawStateDatabase(options);
@@ -144,6 +146,7 @@ it.each(["runtime open", "doctor repair"] as const)(
       ).toEqual([]);
     } finally {
       observation.restore();
+      survivingReader.close();
     }
     closeOpenClawStateDatabaseForTest();
     const preflight = await preflightOpenClawDatabaseSchemas({

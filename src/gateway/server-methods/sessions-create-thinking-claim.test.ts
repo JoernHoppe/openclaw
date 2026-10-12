@@ -151,7 +151,7 @@ test.each(["later-read", "delivered-event", "ui-patch"])(
     const sessions = createTestSessionCapability(gateway);
     try {
       await initializeSessionReadContext(context);
-      // Thinking claims reconcile against compact rows; sidebar rows omit settings.
+      // Thinking reconciliation needs compact detail facts, not the sidebar display projection.
       await sessions.refresh({ agentId: "main", rowMode: "compact", force: true });
       expect(sessions.state.result?.sessions.some((row) => row.key === key)).toBe(false);
       const created = await withTimeout(
