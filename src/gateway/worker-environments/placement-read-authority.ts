@@ -74,7 +74,13 @@ export function retainSessionPlacementRead(
   return {
     current(this: void) {
       assertUsable();
-      if (reader.revoked || hasPendingPublication(owner, sessionId)) {
+      // Result, ACK, and journal writes leave this read's execution target unchanged.
+      if (
+        reader.revoked ||
+        [...owner.pending].some(
+          (change) => change.kind === "claim" && change.sessionId === sessionId,
+        )
+      ) {
         throw new Error(`Session ${sessionId} placement authority changed`);
       }
       return reader.placement;

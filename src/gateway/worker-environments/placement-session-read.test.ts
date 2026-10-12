@@ -4,9 +4,13 @@ import { requireOpenClawStateDatabaseIdentity } from "../../state/openclaw-state
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
-import { stagePlacementTurnClaimWorkerPublication } from "./placement-turn-authority.js";
+import {
+  stagePlacementTurnClaimWorkerPublication,
+  stagePlacementWorkspaceJournalWorkerPublication,
+  stagePlacementWorkspaceResultWorkerPublication,
+} from "./placement-turn-authority.js";
 
-it("retains SQL-free placement facts through claims, dispatch, retirement and uncertain writes", async () => {
+it("retains SQL-free placement facts through bookkeeping, claims, dispatch, retirement and uncertain writes", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const database = openOpenClawStateDatabase();
     const store = createWorkerSessionPlacementStore({ database });
@@ -35,6 +39,24 @@ it("retains SQL-free placement facts through claims, dispatch, retirement and un
         claimId: "local-claim",
       });
       expect(current()).toMatchObject({ state: "local", turnClaim: { claimId: claim.claimId } });
+      const identity = requireOpenClawStateDatabaseIdentity({ db: database.db });
+      const beforeAck = current()!;
+      const afterAck = { ...beforeAck, lastLiveEventAckCursor: 1 };
+      const resultPublication = stagePlacementWorkspaceResultWorkerPublication(
+        identity,
+        session.sessionId,
+        { placement: afterAck, pendingResult: undefined },
+      );
+      expect(current()).toEqual(beforeAck);
+      resultPublication.commit();
+      expect(current()).toEqual(afterAck);
+      const journalPublication = stagePlacementWorkspaceJournalWorkerPublication(
+        identity,
+        session.sessionId,
+        true,
+      );
+      expect(current()).toEqual(afterAck);
+      journalPublication.rollback();
       const local = await store.releaseTurn(claim);
       expect(current()).toEqual(local);
       await store.retireSessionPlacementAsync({
@@ -51,7 +73,6 @@ it("retains SQL-free placement facts through claims, dispatch, retirement and un
         recoveryError: "synthetic provider unavailable",
       });
       expect(current()).toEqual(failed);
-      const identity = requireOpenClawStateDatabaseIdentity({ db: database.db });
       const publication = () =>
         stagePlacementTurnClaimWorkerPublication(identity, failed, undefined, failed.state, failed);
       const pending = publication();
