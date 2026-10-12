@@ -75,11 +75,17 @@ Scheduled cron runs reuse the job and receipt loaded by their queue transaction
 when claiming and activating work. Activation commits ownership and start time
 together. Isolated preparation persists skills with the pre-run metadata, and
 continuation synchronization includes its selected CLI provider in the same
-write. Transcript existence is read only when resume fields need reconciliation.
+write. The first unchanged embedded candidate reuses the successfully persisted
+pre-run model and harness plus its initialized continuation; failed preparation
+writes, CLI candidates, fallbacks, and later prompt attempts still persist before
+execution. Transcript existence is read only when resume fields need reconciliation.
 Duplicate-run exclusion, delivery settlement, and run-history retention keep
 their existing owners and semantics.
 The watchdog reuses write-invalidated scheduler rows and live local receipt
 ownership. Running contexts do not trigger queue drains; queued rows still do.
+After scheduled completion, committed job rows determine whether schedule repair
+is needed before dispatching a maintenance sweep. Manual runs retain their
+expired-slot and cadence repair.
 
 Managed outgoing media cleanup uses the same retained session reader as media
 serving. Durable session discovery and entry reads execute in the existing
@@ -334,9 +340,15 @@ graph. A kernel is T1-compat only when every reference is a direct call from
 another proven compatibility function or an already classified worker,
 boot/maintenance, or CLI operation. Any ordinary bundled caller makes the kernel
 and its callees live again. Import aliases, namespace access, and dynamic imports
-are checked against declaration identity, not matching names. Escaped callbacks,
-returned-method families, class methods, and unproven factory receivers remain
-T1; this proof does not attempt whole-program points-to analysis.
+are checked against declaration identity, not matching names.
+
+Closed receiver families join that graph: direct returned object methods,
+function-valued properties, returned callables, and simple class instances inherit
+their factory's proof. A bundled factory call or escaped member keeps the family
+live. Classes with inheritance, fields, computed names, decorators, or static
+blocks remain unproven because construction alone does not establish ownership
+of their effects. Shared async/sync factories and unsupported returned-object
+shapes also remain T1; this proof does not attempt whole-program points-to analysis.
 
 The same check runs from the inventory generator and the worker ratchet, including
 staged-source checks. Adding a bundled caller fails even if another T1 call is
@@ -356,7 +368,7 @@ The remaining cutover work includes these live or unproven API families:
 | Auth profiles / `findPersistedAuthProfileCredential`          | Auth upsert and Codex OAuth still call it; nested auth-store implementations forwarded through host properties also remain unproven.                                                                                   |
 | Conversation bindings / `inspectSessionBindingByConversation` | Gateway, Telegram, and Matrix routing retain bundled callers.                                                                                                                                                          |
 | Upstream links / `upsertSessionUpstreamLink`                  | The returned session-initialization `link` method still references it.                                                                                                                                                 |
-| Mention Inbox, publication, placement, model accounts         | Deprecated returned methods and class/interface contracts need receiver/escape proof before their shared kernels can be separated.                                                                                     |
+| Mention Inbox, publication, placement, model accounts         | Their factories still have bundled callers or shared receivers; deprecation of individual methods does not close the receiver family.                                                                                  |
 | Skill commands, TTS, proxy capture, session-store namespaces  | Lazy runtime namespaces escape into host API objects; absence of a named direct call is insufficient.                                                                                                                  |
 
 Remove a T1-compat API and its remaining synchronous kernel in the next Plugin SDK
@@ -3359,11 +3371,12 @@ successor. Binding renewal continues during queue waits, drains before transacti
 entry, and stays quiesced through settlement. Separate shared-state and agent receipts
 prevent a binding deletion receipt from publishing a successful session deletion.
 Unknown outcomes block reuse of that native generation and never replay the write.
-ACP finalizers become eligible only after acknowledged agent COMMIT. Initialization
-rollback and opaque released SDK mutations retain native planning and transactions:
-their synchronous authority callbacks may reread the same agent database. Their
-authority checks stay live through the native transaction; initialization is consumed
-only after COMMIT. Ordinary host-minted binding participants retain the worker route,
+ACP finalizers and initialization rollback become eligible only after acknowledged
+agent COMMIT. Initialization rollback uses the existing commit-only worker participant,
+including initializers without a stored binding. Opaque released SDK mutations retain
+native planning and transactions: their synchronous authority callbacks may reread
+the same agent database. Their authority checks stay live through the native transaction.
+Ordinary host-minted binding participants retain the worker route,
 and incognito retains its native owner.
 The existing cross-database crash window, schemas, retention, and update behavior
 are unchanged; no migration is required.
