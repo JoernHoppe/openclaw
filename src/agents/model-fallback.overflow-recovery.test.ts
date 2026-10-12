@@ -1,4 +1,8 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import type { ContextEngine } from "../context-engine/types.js";
 import { wrapRunWithTestPreparedAdmission } from "./admitted-run-context.test-support.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./embedded-agent-runner/result-fallback-classifier.js";
@@ -68,6 +72,8 @@ beforeEach(() => {
   resetFallbackSkipCacheForTest();
 });
 
+afterEach(clearRuntimeConfigSnapshot);
+
 describe("embedded overflow recovery before model fallback", () => {
   it.each([
     { outcome: "fits after compaction", primaryRecovers: true, sideEffects: false },
@@ -106,6 +112,7 @@ describe("embedded overflow recovery before model fallback", () => {
         });
       });
       const cfg = makeModelFallbackConfig();
+      setRuntimeConfigSnapshot(cfg);
       const sessionManager = SessionManager.inMemory(workspaceDir);
       const result = await runWithModelFallback({
         cfg,
