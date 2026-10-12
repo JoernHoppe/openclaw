@@ -163,8 +163,26 @@ export function readGitHubPublicationSession(
 /** The selected publication metadata is invalidated by the session writer's receipts. */
 export async function prepareGitHubPublicationSession(
   sessionKey: string,
-  options: { agentId?: string; assertCurrent?: () => void; target?: AgentRunSessionTarget } = {},
+  options: {
+    agentId?: string;
+    assertCurrent?: () => void;
+    target?: AgentRunSessionTarget;
+    fields?: readonly (keyof NonNullable<PublicationSessionRead["entry"]>)[];
+  } = {},
 ) {
+  const fields =
+    options.fields ??
+    ([
+      "sessionId",
+      "lifecycleRevision",
+      "archivedAt",
+      "repositoryWorkspaceId",
+      "worktree",
+      "owner",
+      "createdActor",
+      "visibility",
+      "incognito",
+    ] as const);
   let retained: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
   let active = true;
   const scope = { sessionKey, agentId: options.agentId, storePath: options.target?.storePath };
@@ -181,19 +199,7 @@ export async function prepareGitHubPublicationSession(
       sessionKey: key,
       entry,
       matches: (before, after) =>
-        (
-          [
-            "sessionId",
-            "lifecycleRevision",
-            "archivedAt",
-            "repositoryWorkspaceId",
-            "worktree",
-            "owner",
-            "createdActor",
-            "visibility",
-            "incognito",
-          ] as const
-        ).every((field) => isDeepStrictEqual(before?.[field], after?.[field])),
+        fields.every((field) => isDeepStrictEqual(before?.[field], after?.[field])),
     });
   };
   let loaded: PublicationSessionRead;

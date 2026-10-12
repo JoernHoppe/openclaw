@@ -33,6 +33,7 @@ export type CodexNativeExecutionPolicy = {
 export type PreparedCodexNativeExecutionPolicy = {
   policy: CodexNativeExecutionPolicy;
   assertCurrent: () => void;
+  retain: () => () => void;
   release: () => void;
 };
 
@@ -87,6 +88,7 @@ export async function prepareCodexNativeExecutionPolicy(
         sessionEntry: captured.sessionEntry ?? null,
       }),
       assertCurrent() {},
+      retain: () => () => {},
       release() {},
     };
   }
@@ -98,6 +100,21 @@ export async function prepareCodexNativeExecutionPolicy(
     errorMessage: "Codex session execution policy changed; prepare the operation again.",
   });
   try {
+    let owners = 0;
+    // Late relay callbacks and the attempt share the same prepared policy.
+    const retain = () => {
+      owners++;
+      let released = false;
+      return () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        if (--owners === 0) {
+          selected.release();
+        }
+      };
+    };
     return {
       policy: resolveCodexNativeExecutionPolicy({
         ...captured,
@@ -105,7 +122,8 @@ export async function prepareCodexNativeExecutionPolicy(
         readRuntimeSessionEntry: false,
       }),
       assertCurrent: selected.assertCurrent,
-      release: selected.release,
+      retain,
+      release: retain(),
     };
   } catch (error) {
     selected.release();

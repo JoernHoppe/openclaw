@@ -74,6 +74,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveDefaultAgentId: vi.fn(() => "main"),
 }));
 
+// mock-isolation: Exercise directive persistence independently of sandbox backends and storage.
 vi.mock("../../agents/sandbox.js", () => ({
   resolveSandboxRuntimeStatusAsync: vi.fn(async () => ({ sandboxed: false })),
 }));

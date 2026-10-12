@@ -106,8 +106,16 @@ export function withLegacySessionCapabilityReader<T>(
 }
 
 /** Prepare only the metadata a synchronous capability policy actually consumes. */
-export async function withPreparedSessionCapabilityRead<T>(read: () => T): Promise<T> {
-  return (await prepareCapabilityReads(read, false)).value;
+export async function withPreparedSessionCapabilityRead<T>(
+  read: () => T,
+  options?: { retain?: boolean },
+): Promise<T> {
+  const prepared = await prepareCapabilityReads(read, options?.retain === true);
+  try {
+    return await prepared.value;
+  } finally {
+    prepared.release();
+  }
 }
 
 /** Retain worker-prepared policy until its existing writer receipt invalidates the facts. */
@@ -117,7 +125,7 @@ export async function prepareSessionCapabilityRead<T>(read: () => T) {
 }
 
 async function prepareCapabilityReads<T>(read: () => T, retain: boolean) {
-  const entries = new Map<string, () => SessionCapabilityEntry | undefined>();
+  const entries = new Map(preparedReads.getStore());
   const releases: Array<() => void> = [];
   let active = true;
   const release = () => {

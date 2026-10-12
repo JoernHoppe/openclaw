@@ -655,6 +655,7 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
         connection.assertLegacyCurrent();
         runtime.nativeExecutionPolicy.assertCurrent();
       },
+      retainExecutionPolicy: runtime.nativeExecutionPolicy.retain,
       onPreToolUseFailure: (failure) => {
         const projector = projectorRef.current;
         if (projector) {

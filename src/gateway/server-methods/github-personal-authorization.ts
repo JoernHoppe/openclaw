@@ -308,6 +308,15 @@ async function bindPersonalGitHubSessionAction(
   const prepared = await prepareGitHubPublicationSession(target.sessionKey, {
     agentId: target.agentId,
     assertCurrent: action.assertCurrent,
+    fields: [
+      "sessionId",
+      "lifecycleRevision",
+      "archivedAt",
+      "owner",
+      "createdActor",
+      "visibility",
+      "incognito",
+    ],
   });
   let releaseAuthorization = () => {};
   try {

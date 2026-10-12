@@ -23,6 +23,16 @@ vi.mock("openclaw/plugin-sdk/conversation-binding-inspection-runtime", async (im
   };
 });
 
+// Queue revalidation is independent of sandbox policy, which has its own owner tests.
+vi.mock("./app-server/sandbox-guard.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./app-server/sandbox-guard.js")>()),
+  prepareCodexNativeSandboxBlock: async () => ({
+    block: undefined,
+    assertCurrent() {},
+    release() {},
+  }),
+}));
+
 describe("Codex node conversation bindings", () => {
   beforeEach(() => {
     publicBindingMocks.readBinding.mockReset().mockReturnValue({ bindingId: "binding-1" });

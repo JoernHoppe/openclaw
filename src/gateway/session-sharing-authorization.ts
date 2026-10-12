@@ -224,11 +224,11 @@ export function prepareAuthorizedSessionMutationFacts(params: {
         }
       : undefined;
   const expectedReadSource = original?.readSource ?? params.source;
-  // Transaction authority qualifies global/unknown too; the retained storage route does not.
+  // Compare qualified identities; chat retains logical global/unknown routes.
   if (
     !expectedRoute ||
     facts.agentId !== expectedRoute.agentId ||
-    facts.sessionKey !==
+    toAgentStoreSessionKey({ agentId: facts.agentId, requestKey: facts.sessionKey }) !==
       toAgentStoreSessionKey({
         agentId: expectedRoute.agentId,
         requestKey: expectedRoute.storeKey,

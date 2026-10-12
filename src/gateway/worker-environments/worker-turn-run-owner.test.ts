@@ -246,6 +246,11 @@ describe("cloud worker run ownership", () => {
           expect(isReplyRunEvidenceStale(operation)).toBe(true);
           heartbeatClock.setTime(Date.now());
           await heartbeatClock.wake();
+          // A delayed heartbeat defers recovery until the next healthy tick.
+          vi.setSystemTime(Date.now() + 30_000);
+          heartbeatClock.setTime(Date.now());
+          await heartbeatClock.wake();
+          expect(recovery).toBeDefined();
           await recovery;
           expect(operation.result).toMatchObject({ kind: "failed", code: "run_stalled" });
         }

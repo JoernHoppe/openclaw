@@ -369,7 +369,10 @@ describe("embedded run durable writer admission", () => {
           workspaceDir: "/tmp",
         });
         if (revoke) {
-          await expect(claiming).rejects.toBe(revoked);
+          await expect(claiming).rejects.toMatchObject({
+            message: "admitted run authority is no longer active",
+            cause: revoked,
+          });
         } else {
           await claiming;
         }

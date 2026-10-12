@@ -83,6 +83,7 @@ vi.mock("../../agents/bootstrap-files.js", () => ({
   })),
 }));
 
+// mock-isolation: Keep real runtime classification while preventing sandbox workspace startup.
 vi.mock("../../agents/sandbox.js", async () => {
   const { resolveSandboxRuntimeStatusAsync } = await vi.importActual<
     typeof import("../../agents/sandbox/runtime-status.js")
