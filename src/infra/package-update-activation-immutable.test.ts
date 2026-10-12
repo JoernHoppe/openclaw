@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createHotSqliteRollbackJournal } from "../../test/helpers/sqlite-hot-journal.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { resolveConfigStatMetadata } from "../config/io.write-safety.js";
 import { sha256Hex } from "./crypto-digest.js";
 import {
   publishImmutablePointer,
@@ -32,6 +33,7 @@ import type {
   ImmutablePreparedGeneration,
 } from "./update-immutable-install-schema.js";
 import { inspectImmutableInstall, projectImmutableInstall } from "./update-immutable-install.js";
+import { immutableProtectedFileIdentitySchema } from "./update-immutable-protection-schema.js";
 
 const dirs = useAutoCleanupTempDirTracker(afterEach);
 const sha = "a".repeat(40);
@@ -135,15 +137,10 @@ function beginActivation(): ImmutableInstallRecord {
   fs.writeFileSync(statePath, "synthetic state identity", { mode: 0o600 });
   fs.writeFileSync(descriptor.service.configPath, "{}", { mode: 0o600 });
   const fileIdentity = (file: string) => {
-    const stat = fs.lstatSync(file);
-    return {
-      dev: String(stat.dev),
-      ino: String(stat.ino),
-      mode: stat.mode,
-      nlink: 1 as const,
-      uid: stat.uid,
-      gid: stat.gid,
-    };
+    const { identityEncoding: _encoding, ...metadata } = resolveConfigStatMetadata(
+      fs.lstatSync(file, { bigint: true }),
+    );
+    return immutableProtectedFileIdentitySchema.parse(metadata);
   };
   const operation: ImmutableActivationOperation = {
     version: 1,

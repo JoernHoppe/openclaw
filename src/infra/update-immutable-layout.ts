@@ -141,7 +141,7 @@ export function refreshImmutableProtectionIdentities(
     const stored = file.identity;
     return stat?.isFile() &&
       stat.nlink === 1n &&
-      stat.mode === BigInt(stored.mode) &&
+      (stat.mode & 0o777n) === BigInt(stored.mode) &&
       stat.uid === BigInt(stored.uid) &&
       stat.gid === BigInt(stored.gid) &&
       immutableIdentityMatches(`${stat.dev}:${stat.ino}`, `${stored.dev}:${stored.ino}`, "legacy")

@@ -70,10 +70,12 @@ installed closure before adopting this version. Its edge-specific journals and
 rehearsal artifacts are not inputs to the generic update path.
 
 File identities in new controller receipts, journals, snapshots, and profiling
-intents use decimal strings captured from bigint filesystem stats. Readers retain
-safe numeric identities written by earlier controllers; already-rounded unsafe
-numbers are refused with the original recovery artifacts retained. A change to
-this representation requires adopting the matching complete controller closure.
+intents use decimal strings captured from bigint filesystem stats. Readers accept
+legacy numeric identities in their original rounded-number domain and upgrade
+them from validated exact observations on the next write. A replacement whose ID
+rounds to the same number is undetectable for legacy receipts only; exact receipts
+retain exact replacement detection. A change to this representation requires
+adopting the matching complete controller closure.
 
 ## Installed closure
 

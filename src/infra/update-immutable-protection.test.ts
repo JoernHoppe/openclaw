@@ -16,6 +16,7 @@ import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
+import { refreshImmutableProtectionIdentities } from "./update-immutable-layout.js";
 import { ImmutableProtectionSnapshotSchema } from "./update-immutable-protection-schema.js";
 import {
   assertImmutableProtectionUnchanged,
@@ -121,6 +122,42 @@ async function fixture() {
 }
 
 describe("immutable activation protected identities", () => {
+  it.each(["unchanged", "inode", "config bytes", "permissions"] as const)(
+    "upgrades a captured legacy snapshot only when its protected metadata and bytes remain unchanged (%s)",
+    async (change) => {
+      const test = await fixture();
+      const legacy = structuredClone(test.snapshot);
+      delete legacy.identityEncoding;
+      const originalMode = Number(fs.lstatSync(test.configPath, { bigint: true }).mode & 0o777n);
+      expect(legacy.config[0]!.identity.mode).toBe(originalMode);
+      try {
+        if (change === "inode") {
+          const replacement = `${test.configPath}.replacement`;
+          fs.copyFileSync(test.configPath, replacement);
+          fs.renameSync(replacement, test.configPath);
+        } else if (change === "config bytes") {
+          fs.appendFileSync(test.configPath, "\n");
+        } else if (change === "permissions") {
+          fs.chmodSync(test.configPath, 0o400);
+        }
+        const refreshed = refreshImmutableProtectionIdentities(legacy);
+        if (change === "unchanged") {
+          expect(refreshed).toEqual(test.snapshot);
+          expect(() => assertImmutableProtectionUnchanged(refreshed, test.context)).not.toThrow();
+        } else {
+          expect(refreshed).toEqual({ ...legacy, identityEncoding: "legacy" });
+          expect(() => assertImmutableProtectionUnchanged(refreshed, test.context)).toThrow(
+            "before immutable cutover",
+          );
+        }
+      } finally {
+        if (change === "permissions") {
+          fs.chmodSync(test.configPath, originalMode);
+        }
+      }
+    },
+  );
+
   it("accepts candidate-authored additive startup migration across config inode replacement while preserving policy and state", async () => {
     const test = await fixture();
     const durable = structuredClone(test.snapshot);
