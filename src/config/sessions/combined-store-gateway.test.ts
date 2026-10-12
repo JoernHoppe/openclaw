@@ -218,7 +218,7 @@ it("projects shared rows under their logical owner while retaining the physical 
       );
     }
     await persistSessionTranscriptTurn(
-      { agentId: "main", storePath, sessionKey: "global", sessionId: "session-global" },
+      { agentId: "ops", storePath, sessionKey: "global", sessionId: "session-global" },
       {
         messages: [{ message: { role: "user", content: "Shared physical global preview" } }],
         touchSessionEntry: false,

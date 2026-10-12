@@ -4,6 +4,10 @@ import "./dynamic-tool-build.test-support.js";
 import path from "node:path";
 import type { createOpenClawCodingTools } from "openclaw/plugin-sdk/agent-harness";
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shouldEnableCodexAppServerNativeToolSurface } from "./dynamic-tool-build.js";
 import { setCodexTestToolFactory } from "./host-capability.test-support.js";
@@ -32,6 +36,7 @@ describe("Codex app-server dynamic tool search policy", () => {
   let tempDir: string;
 
   beforeEach(async () => {
+    setRuntimeConfigSnapshot({});
     hoisted.loadNodeExecAvailability.mockResolvedValue({
       cacheKey: "eligible",
       isAvailable: () => true,
@@ -43,6 +48,7 @@ describe("Codex app-server dynamic tool search policy", () => {
 
   afterEach(async () => {
     await cleanupDynamicToolBuildFixture(tempDir, []);
+    clearRuntimeConfigSnapshot();
   });
 
   it.each<{
