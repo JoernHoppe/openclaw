@@ -116,10 +116,6 @@ let chromiumLaunchOptions: ReturnType<typeof resolveChromiumLaunchOptions> | nul
 
 // The accessibility-tree suite remains Chromium-only until its CDP probe is replaced.
 const webkitTestFiles = [
-  "src/components/overlay-anchor.browser.test.ts",
-  "src/components/overlay-lifecycle.browser.test.ts",
-  "src/components/overlay-shadow.browser.test.ts",
-  "src/components/solid/*.browser.test.tsx",
   "src/components/web-awesome-dropdown.browser.test.ts",
   "src/components/web-awesome-dropdown-owner.browser.test.ts",
   "src/components/web-awesome-select-controls.browser.test.ts",
@@ -127,16 +123,13 @@ const webkitTestFiles = [
   "src/components/web-awesome.test.ts",
   "src/components/web-awesome-theme.browser.test.ts",
   "src/components/menu-surface.browser.test.ts",
-  "src/components/image-lightbox.browser.test.ts",
+  "src/components/session-progress-hovercard.browser.test.ts",
   "src/components/modal-dialog.test.ts",
-  "src/components/modal-dialog.browser.test.ts",
   "src/components/tooltip.test.ts",
   "src/components/tooltip.browser.test.ts",
   "src/components/panel-tab-strip.test.ts",
   "src/components/panel-tab-strip.browser.test.ts",
-  "src/components/sessions-hub-header.browser.test.ts",
   "src/components/tooltip-title.browser.test.ts",
-  "src/components/transient-container.browser.test.ts",
   "src/pages/chat/chat-composer-context.browser.test.ts",
   "src/pages/chat/chat-composer-context.palette.browser.test.ts",
   "src/pages/chat/chat-composer-overflow.browser.test.tsx",
@@ -145,6 +138,14 @@ const webkitTestFiles = [
   "src/pages/chat/components/chat-model-picker.browser.test.tsx",
   "src/pages/chat/components/chat-pane-header.browser.test.ts",
   "src/pages/chat/components/chat-pane-versions-menu.browser.test.ts",
+  "src/components/overlay-anchor.browser.test.ts",
+  "src/components/overlay-lifecycle.browser.test.ts",
+  "src/components/overlay-shadow.browser.test.ts",
+  "src/components/solid/*.browser.test.tsx",
+  "src/components/image-lightbox.browser.test.ts",
+  "src/components/modal-dialog.browser.test.ts",
+  "src/components/sessions-hub-header.browser.test.ts",
+  "src/components/transient-container.browser.test.ts",
 ].map((file) => resolveUiTypeScriptPath(file, here));
 
 export function createUiBrowserVitestConfig(
