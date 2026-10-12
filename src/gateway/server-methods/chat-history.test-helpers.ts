@@ -8,8 +8,9 @@ export async function createHistoryReadContext(
 ) {
   const context = createDirectChatContext(overrides);
   await initializeSessionReadContext(context);
-  const projection = expectDefined(getSessionRowProjection(context), "history row projection");
-  context.ensureSessionRowProjection ??= () => projection.ensureMaterialized();
-  await projection.ensureMaterialized();
+  await expectDefined(
+    getSessionRowProjection(context),
+    "history row projection",
+  ).ensureMaterialized();
   return context;
 }
