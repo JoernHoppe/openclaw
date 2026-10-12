@@ -55,7 +55,7 @@ describe("Codex submitted prompt provenance", () => {
         idempotencyKey: `${params.runId}:user`,
         sender: { id: "profile-fork-test", name: "Fork test" },
       },
-      target: { ...target, sessionEntry: undefined },
+      target: { ...target, sessionEntry: undefined, config: params.config },
     });
     await recorder.persistApproved();
     params.userTurnTranscriptRecorder = recorder;
