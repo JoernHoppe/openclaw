@@ -37,15 +37,19 @@ async function seedSession(params: {
 }): Promise<string> {
   const sessionKey = `agent:${params.agentId}:${params.suffix}`;
   const sessionId = `${params.agentId}-${params.suffix}`;
-  await upsertSessionEntry({
-    agentId: params.agentId,
-    sessionKey,
-    entry: {
-      sessionId,
-      updatedAt: params.updatedAt,
-      ...(params.pluginOwnerId ? { pluginOwnerId: params.pluginOwnerId } : {}),
-    },
-  });
+  try {
+    await upsertSessionEntry({
+      agentId: params.agentId,
+      sessionKey,
+      entry: {
+        sessionId,
+        updatedAt: params.updatedAt,
+        ...(params.pluginOwnerId ? { pluginOwnerId: params.pluginOwnerId } : {}),
+      },
+    });
+  } catch (cause) {
+    throw new Error(`Could not seed session ${sessionKey}`, { cause });
+  }
   if (params.transcript) {
     await appendSqliteSessionTranscriptEventForTest({
       agentId: params.agentId,
@@ -128,6 +132,8 @@ describe("Gateway dreaming session restart cleanup", () => {
       // after it stops, so the next process admits them through startup.
       await disconnectGatewayClient(client);
       await instance.stopGateway();
+      // The child owned these databases; parent seeds cannot reuse pre-handoff admission proof.
+      closeOpenClawAgentDatabasesForTest(instance.state.root);
 
       const now = Date.now();
       const stale = await Promise.all([
