@@ -419,7 +419,7 @@ export function withSessionMutationCommitGuard(
   // account selection change cannot revoke custody already transferred to it.
   const assertAdmittedInputCurrent = composeSessionSourceAssertion([
     assertAdmittedSourceCurrent ?? assertCommitAllowed,
-    authorization?.assertCurrent,
+    authorization?.assertAdmittedInputCurrent ?? authorization?.assertCurrent,
   ]);
   const admitted = authorization?.admittedInputAuthority;
   const withCommitGuards = <T>(consume: () => T): T => {

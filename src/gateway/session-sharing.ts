@@ -402,6 +402,7 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
         ensuredSessionId?: string,
         prepared?: { target: SessionSharingTarget | null; members: readonly string[] },
         currentTalkTarget?: PreparedTalkSessionTarget,
+        bindSessionId = true,
       ): void => {
         if (!prepared && !consuming.sharing && params.preparedTargets) {
           const retained = findPreparedSharingTarget(params, targetRef);
@@ -418,6 +419,7 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
               ensuredSessionId,
               { target: read.target, members: read.members.map((member) => member.identityId) },
               currentTalkTarget,
+              bindSessionId,
             ),
           );
         }
@@ -496,7 +498,7 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
               current.canonicalKey === expectedResolved.canonicalKey &&
               current.storeKey === expectedResolved.storeKey &&
               isSameSessionSharingSource(current, expectedResolved) &&
-              (current.entry.sessionId?.trim() || null) === expectedSessionId &&
+              (!bindSessionId || (current.entry.sessionId?.trim() || null) === expectedSessionId) &&
               (!(bindsProgressLifecycle || bindsOwnProfile || expected.created) ||
                 current.entry.lifecycleRevision === expected.lifecycleRevision));
         if (!sameResolvedTarget) {
@@ -536,20 +538,71 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
         params.method === "chat.send" && authorizedTargets.length === 1 && !talkSessionTarget
           ? authorizedTargets[0]
           : undefined;
+      // Reply admission owns compaction lineage; custody rechecks access in the same store.
+      const assertAdmittedTargetCurrent = (
+        target: AuthorizedSessionMutationTarget,
+        cfg: OpenClawConfig,
+      ) =>
+        assertTargetCurrent(target, target, cfg, undefined, undefined, undefined, undefined, false);
+      const assertAdmittedInputCurrent =
+        chatTarget && !isIncognitoSessionKey(chatTarget.sessionKey)
+          ? () =>
+              withSelectedStorage(() =>
+                assertAdmittedTargetCurrent(chatTarget, params.context.getRuntimeConfig()),
+              )
+          : undefined;
       const withCurrentSessionSource = chatTarget
-        ? <T>(consume: () => T): Promise<T> =>
+        ? <T>(
+            consume: () => T,
+            assertCurrent = () =>
+              assertTargetCurrent(chatTarget, chatTarget, params.context.getRuntimeConfig()),
+          ): Promise<T> =>
             withSelectedStorage(() =>
               withCurrentSessionSharingSource({
                 request: params,
                 target: chatTarget,
                 changed: () => targetChanged(chatTarget.sessionKey),
                 consumeSharing,
-                assertCurrent: () =>
-                  assertTargetCurrent(chatTarget, chatTarget, params.context.getRuntimeConfig()),
+                assertCurrent,
                 consume,
               }),
             )
         : undefined;
+      const withPreparedCurrent = <T>(
+        facts: SessionPendingInputAuthorityFacts,
+        consume: () => T,
+        assertSourceCurrent: () => void,
+        assertCurrent = (target: AuthorizedSessionMutationTarget, cfg: OpenClawConfig) =>
+          assertTargetCurrent(target, target, cfg),
+      ): T => {
+        const expected = authorizedTargets[0]!;
+        assertSourceCurrent();
+        const prepared = prepareAuthorizedSessionMutationFacts({
+          expected,
+          facts,
+          targetChanged: () => targetChanged(expected.sessionKey),
+        });
+        const cfg = params.context.getRuntimeConfig();
+        const assertRoutingCurrent = captureSessionMutationRouting(
+          cfg,
+          () => targetChanged(expected.sessionKey),
+          [expected],
+        );
+        return consumeSharing(
+          {
+            ...prepared,
+            members: facts.members,
+            assertCurrent: () => {
+              assertSourceCurrent();
+              assertRoutingCurrent(params.context.getRuntimeConfig());
+            },
+          },
+          () => {
+            assertCurrent(expected, cfg);
+            return consume();
+          },
+        );
+      };
       const authorization: SessionMutationAuthorization = {
         ...(params.preparedTargets
           ? {
@@ -606,41 +659,10 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
                 }
                 return withCurrentSessionSource(consume);
               },
-              withPreparedCurrent: <T>(
-                facts: SessionPendingInputAuthorityFacts,
-                consume: () => T,
-                assertSourceCurrent: () => void,
-              ): T => {
-                const expected = authorizedTargets[0]!;
-                assertSourceCurrent();
-                const prepared = prepareAuthorizedSessionMutationFacts({
-                  expected,
-                  facts,
-                  targetChanged: () => targetChanged(expected.sessionKey),
-                });
-                const cfg = params.context.getRuntimeConfig();
-                const assertRoutingCurrent = captureSessionMutationRouting(
-                  cfg,
-                  () => targetChanged(expected.sessionKey),
-                  [expected],
-                );
-                return consumeSharing(
-                  {
-                    ...prepared,
-                    members: facts.members,
-                    assertCurrent: () => {
-                      assertSourceCurrent();
-                      assertRoutingCurrent(params.context.getRuntimeConfig());
-                    },
-                  },
-                  () => {
-                    assertTargetCurrent(expected, expected, cfg);
-                    return consume();
-                  },
-                );
-              },
+              withPreparedCurrent,
             }
           : {}),
+        ...(assertAdmittedInputCurrent ? { assertAdmittedInputCurrent } : {}),
         ...(talkSessionTarget ? { talkSessionTarget } : {}),
         ...(authorizedTargets.length === 1 &&
         authorizedTargets[0]?.resolved &&
@@ -693,7 +715,22 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
         params,
         // Durable input custody needs the source's full transaction facts; ordinary
         // admission segments can consume the projection's committed access facts.
-        { ...authorization, withCurrent: withCurrentSessionSource },
+        {
+          ...authorization,
+          withCurrent:
+            withCurrentSessionSource && assertAdmittedInputCurrent
+              ? (consume) => withCurrentSessionSource(consume, assertAdmittedInputCurrent)
+              : withCurrentSessionSource,
+          withPreparedCurrent: assertAdmittedInputCurrent
+            ? (facts, consume, assertSourceCurrent) =>
+                withPreparedCurrent(
+                  facts,
+                  consume,
+                  assertSourceCurrent,
+                  assertAdmittedTargetCurrent,
+                )
+            : authorization.withPreparedCurrent,
+        },
         () => consuming.sharing!,
         authorizedTargets,
       );
