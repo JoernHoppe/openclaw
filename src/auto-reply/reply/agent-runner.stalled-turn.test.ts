@@ -5,6 +5,10 @@ import {
   createAdmittedRunOperatorAuthority,
   type AdmittedRunOperatorAuthority,
 } from "../../agents/admitted-run-context.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { createChatSendLateFollowupDisposition } from "../../gateway/server-methods/chat-send-late-followup.js";
 import { createChatSendLateReplyFinalizer } from "../../gateway/server-methods/chat-send-source-finalization.js";
 import { createGatewayRequestContext } from "../../gateway/server-request-context.js";
@@ -34,6 +38,8 @@ import { createReplyOperation, type ReplyOperation } from "./reply-run-registry.
 import { expireStaleReplyOperation } from "./reply-run-registry.state.js";
 import { testing as replyRunTesting } from "./reply-run-registry.test-support.js";
 import { createMockTypingController } from "./test-helpers.js";
+
+afterEach(() => clearRuntimeConfigSnapshot());
 
 const mocks = vi.hoisted(() => ({
   executeAgentTurn: vi.fn(),
@@ -191,6 +197,7 @@ function createQueuedRequest(from: { senderId: string; to: string }): FollowupRu
 
 describe("runReplyAgent stalled turn continuation", () => {
   beforeEach(() => {
+    setRuntimeConfigSnapshot({});
     replyRunTesting.resetReplyRunRegistry();
     clearFollowupQueue(queueKey);
     clearFollowupDrainCallback(queueKey);

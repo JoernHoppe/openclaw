@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import type { AssistantMessage, Model } from "openclaw/plugin-sdk/llm";
 import { Type } from "typebox";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import {
   appendTranscriptMessages,
   appendTranscriptMessageSync,
@@ -70,7 +74,9 @@ afterEach(async () => {
   await drainSessionStateForTest({ stateDir: fixtureDir });
 });
 registerAgentSessionLoopTestLifecycle();
+beforeEach(() => setRuntimeConfigSnapshot({}));
 afterEach(() => {
+  clearRuntimeConfigSnapshot();
   resetDiagnosticEventsForTest();
   resetDiagnosticRunActivityForTest();
   resetGlobalHookRunner();
@@ -124,6 +130,7 @@ describe("AgentSession runtime and transcript projections", () => {
     async ({ args, outcome, label }) => {
       const { dir, scope } = createSessionScope("source-projection");
       const config = { logging: { redactPatterns: ["fixture-custom-source-value"] } };
+      setRuntimeConfigSnapshot(config);
       registerSecretValueForRedaction(registeredLiteral);
       await upsertSessionEntryCore(scope, { sessionId: scope.sessionId, updatedAt: 1 });
       const manager = SessionManager.open(scope, dir);
