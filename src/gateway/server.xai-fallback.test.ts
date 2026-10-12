@@ -336,7 +336,7 @@ it(
         requests = [];
         const rejection = rejections.get(scenario);
         const sessionKey = `agent:${scenario}:xai-fallback`;
-        const terminalReceived = createDeferred<void>();
+        const terminalReceived = createDeferred();
         terminalEvents.set(sessionKey, terminalReceived);
         await gateway.client.request("sessions.messages.subscribe", { key: sessionKey });
         const started = await gateway.client.request<{ runId: string }>("chat.send", {
