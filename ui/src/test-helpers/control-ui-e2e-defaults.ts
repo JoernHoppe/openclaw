@@ -7,6 +7,7 @@ import type {
   PluginsCatalogCategoriesResult,
 } from "../../../packages/gateway-protocol/src/schema/plugins.ts";
 import { BUILTIN_THEMES } from "../../../packages/gateway-protocol/src/theme.js";
+import type { DoctorMemoryStatusPayload } from "../../../src/gateway/server-methods/doctor.ts";
 import type { ChannelsPairingListResult } from "../api/types.ts";
 import type { ControlUiMockPresenceUser } from "./control-ui-e2e-contract.ts";
 
@@ -96,6 +97,11 @@ export function createControlUiDefaultResponses(scenario: {
     current: { id: "claw", mode: "system", scope: "gateway", overrides: {} },
   };
   return {
+    "doctor.memory.status": {
+      agentId: "main",
+      provider: "none",
+      embedding: { ok: false, checked: false },
+    } satisfies DoctorMemoryStatusPayload,
     "channels.status": {
       ts: 0,
       channelOrder: [],
