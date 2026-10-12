@@ -86,8 +86,9 @@ describe("repository workspace result ownership", () => {
           mutate: async (assertCurrent) => {
             assertCurrent();
             sql.expectIdle();
+            // Repository binding is write-once; rollover changes the live session owner.
             await patchSessionEntryCore(sessionTarget, () => ({
-              repositoryWorkspaceId: undefined,
+              sessionId: `${SESSION_ID}-replacement`,
             }));
             expect(assertCurrent).toThrow("lost its exact session placement owner");
             await expect(access.inspect("get", { path: "missing.txt", files: [] })).rejects.toThrow(

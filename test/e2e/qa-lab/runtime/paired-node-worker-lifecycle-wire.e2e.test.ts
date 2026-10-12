@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
+import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQaGatewayChild } from "../../../../extensions/qa-lab/api.js";
 import {
@@ -119,7 +120,11 @@ async function expectSuccessfulTurn(params: {
   marker: string;
 }): Promise<void> {
   const runId = await startTurn(params);
-  await expect(waitForTurn(params.operator, runId)).resolves.toMatchObject({ status: "ok" });
+  const completed = await waitForTurn(params.operator, runId);
+  expect(
+    completed,
+    `turn ${params.marker}: ${redactSensitiveText(JSON.stringify(completed)).slice(0, 8_000)}`,
+  ).toMatchObject({ status: "ok" });
   await vi.waitFor(
     async () => {
       const history = await params.operator.request<{ messages?: unknown[] }>("chat.history", {

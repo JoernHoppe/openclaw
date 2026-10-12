@@ -323,13 +323,24 @@ describe("node worker launch wire", () => {
             idempotencyKey: permissionRunId,
           }),
         ).resolves.toMatchObject({ runId: permissionRunId, status: "started" });
-        await expect(
-          operator.request<{ status?: string }>(
-            "agent.wait",
-            { runId: permissionRunId, timeoutMs: PROOF_TIMEOUT_MS },
-            { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
-          ),
-        ).resolves.toMatchObject({ status: "ok" });
+        const permissionCompleted = await operator.request<{ status?: string }>(
+          "agent.wait",
+          { runId: permissionRunId, timeoutMs: PROOF_TIMEOUT_MS },
+          { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
+        );
+        expect(
+          permissionCompleted,
+          redactSensitiveText(
+            JSON.stringify({
+              completed: permissionCompleted,
+              providerRequestCount: provider.requestCount,
+              outsideWriteOutput: provider.outsideWriteOutput,
+              execOutput: provider.execOutput,
+              nodeCommands: workerNode.commands.slice(-20),
+              invokeErrors: workerNode.invokeErrors.map(String),
+            }),
+          ).slice(0, 8_000),
+        ).toMatchObject({ status: "ok" });
         await workerNode.waitForInvokes();
         expect(workerNode.invokeErrors).toEqual([]);
 
