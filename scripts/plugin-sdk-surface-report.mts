@@ -196,8 +196,8 @@ const defaultPublicDeprecatedExportsByEntrypointBudget = Object.freeze({
   "security-runtime": 1,
   // +2: approved released upstream-link writes retained during worker migration.
   "session-catalog": 2,
-  // +1: readTranscriptStatsSync remains while plugins adopt readTranscriptStatsAsync.
-  "session-store-runtime": 8,
+  // +2: released synchronous transcript event/stat reads during the worker cutover.
+  "session-store-runtime": 9,
   // Released synchronous sandbox lookup remains while plugins adopt async or prepared reads.
   sandbox: 1,
   // +2: shipped Slack and Discord setup helpers retained through their package migration window.
@@ -252,8 +252,9 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +24: approved async approval-routing replacements and delivery facts across four public facades.
       // +2: async sandbox lookup and pure prepared-session classification.
       // +1: deprecated createSessionHeaderLink retained from shipped 2026.10.1.
-      // +2: readTranscriptStatsAsync and PreparedAgentRunStart replacements.
-      3725,
+      // +2: approved async transcript event/stat read replacements.
+      // +1: approved PreparedAgentRunStart contract.
+      3726,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -281,8 +282,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +22: the same async approval-routing functions; two delivery-fact exports are types.
       // +2: the same sandbox replacements.
       // +1: the same deprecated createSessionHeaderLink.
-      // +1: readTranscriptStatsAsync replaces the retained synchronous stats reader.
-      2183,
+      // +2: the same transcript read replacement pairs.
+      2184,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
@@ -298,8 +299,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +17: eleven synchronous approval-routing APIs retained across four public facades.
       // +1: released synchronous sandbox lookup retained until the next Plugin SDK major.
       // +1: createSessionHeaderLink from shipped 2026.10.1 until plugin-sdk-session-header-link expires.
-      // +1: readTranscriptStatsSync remains until the next Plugin SDK major.
-      203,
+      // +2: retained synchronous transcript event/stat reads until the next SDK major.
+      204,
       env,
     ),
     publicWildcardReexports: readPluginSdkSurfaceBudgetEnv(

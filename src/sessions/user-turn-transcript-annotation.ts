@@ -131,7 +131,7 @@ export function bindUserTurnTranscriptAnnotation(params: {
       ) {
         throw new Error("current user admission is no longer available for native annotation");
       }
-      const assertCurrent = () => {
+      const assertNativeCurrent = () => {
         assertLive();
         entryAuthority.assertCurrent();
         const { logicalTurnId: _logicalTurnId, role: _role, ...anchor } = admission;
@@ -139,7 +139,6 @@ export function bindUserTurnTranscriptAnnotation(params: {
           throw new Error("current user admission is no longer available for native annotation");
         }
       };
-      assertCurrent();
       let verified = false;
       const { logicalTurnId: _logicalTurnId, role: _role, ...anchor } = admission;
       const rewritten = await rewritePreparedTranscriptMessageAtAnchor(
@@ -169,10 +168,10 @@ export function bindUserTurnTranscriptAnnotation(params: {
           active: "exact",
           expectedEntry: {
             lifecycleRevision: expectedLifecycleRevision,
-            activeWriterRunId: selected.activeWriterRunId ?? null,
+            activeWriterRunId: expectedWriterRunId ?? selected.activeWriterRunId ?? null,
           },
           assertCurrent: assertLive,
-          assertNativeCurrent: assertCurrent,
+          assertNativeCurrent,
         },
       );
       if (!verified) {
@@ -185,14 +184,14 @@ export function bindUserTurnTranscriptAnnotation(params: {
         owner.refresh({ ...admission }, rewritten.message);
         await waitForSessionTranscriptProjection(admission, params.abortSignal);
       }
-      assertCurrent();
+      assertLive();
       if (rewritten) {
         await publishTranscriptUpdate(admission, {
           message: rewritten.message,
           messageId: admission.entryId,
           messageSeq: admission.activeMessagePosition + 1,
         });
-        assertCurrent();
+        assertLive();
       }
     } finally {
       entryAuthority.release();

@@ -3,10 +3,7 @@ import type { createHumanMentionPolicy } from "./human-mention-policy.js";
 import type { InboxState, StoredMention } from "./mention-inbox-projection.js";
 import type { SessionSharingTarget } from "./session-sharing-policy.js";
 import { prepareSessionSharingRead } from "./session-sharing-target-read.js";
-import {
-  resolveSessionSharingTarget,
-  resolveSessionSharingTargetAsync,
-} from "./session-sharing.js";
+import { resolveSessionSharingTargetAsync } from "./session-sharing.js";
 
 export type SharingTargets = Map<
   string,
@@ -124,21 +121,6 @@ export function createMentionSharingTargets(params: {
           targets.delete(key);
         }
       }
-    },
-    // Only the deprecated synchronous SDK methods use native target resolution.
-    legacy(projection: InboxState): SharingTargets {
-      const result: SharingTargets = new Map();
-      for (const item of projection.items.values()) {
-        const { sessionKey, agentId } = item.message.content;
-        result.set(JSON.stringify([agentId, sessionKey]), {
-          sessionKey,
-          storeKeys: [sessionKey],
-          readTarget: () =>
-            resolveSessionSharingTarget({ cfg: getRuntimeConfig(), sessionKey, agentId }),
-          release() {},
-        });
-      }
-      return result;
     },
   };
 }

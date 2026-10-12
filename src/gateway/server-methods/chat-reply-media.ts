@@ -36,6 +36,7 @@ import { loadGatewaySessionEntryReadOnlyInWorker, loadSessionEntry } from "../se
 import { resolveSessionWorkerPlacementContext } from "../session-worker-placement-context.js";
 import { resolveSessionWorkspaceRoots } from "../session-workspace-roots.js";
 import type { WorkerSessionPlacementRecord } from "../worker-environments/placement-record.js";
+import { readSessionWorkerPlacementAsync } from "../worker-environments/session-placement-lifecycle.js";
 import { formatForLog } from "../ws-log.js";
 import {
   buildAssistantReplyContentFromInputs,
@@ -136,7 +137,6 @@ export async function captureWebchatReplyMediaScope(
           .get(entry.sessionId)
       : undefined;
   let retained: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
-  let authority: ReturnType<typeof captureWebchatReplyMediaAuthority> | undefined;
   let active = true;
   const release = () => {
     active = false;
@@ -153,24 +153,29 @@ export async function captureWebchatReplyMediaScope(
         retained?.release();
         const selectedAuthority = captureWebchatReplyMediaAuthority(
           { ...params, sessionEntry: entry },
-          readPlacement(entry),
+          undefined,
         );
-        authority = selectedAuthority;
         const source = target.capturedReadSource;
         if (typeof source?.databaseIdentity === "string") {
           retained = retainPreparedSessionEntryPredicate({
             databaseIdentity: `file:${source.databaseIdentity}`,
             sessionKey: target.canonicalKey,
             entry,
-            matches: (_before, after) => selectedAuthority.matches(after, readPlacement(after)),
+            matches: (_before, after) => selectedAuthority.matches(after, undefined),
           });
         }
       },
     });
     const sessionEntry = loaded.entry;
     const scope = { ...params, sessionEntry, readSource: loaded.capturedReadSource };
-    authority ??= captureWebchatReplyMediaAuthority(scope, readPlacement(sessionEntry));
-    const selectedAuthority = authority;
+    const placement =
+      sessionEntry?.sessionId && !sessionEntry.execNode && !sessionEntry.repositoryWorkspaceId
+        ? await readSessionWorkerPlacementAsync({
+            context: resolveSessionWorkerPlacementContext(),
+            sessionId: sessionEntry.sessionId,
+          })
+        : undefined;
+    const selectedAuthority = captureWebchatReplyMediaAuthority(scope, placement);
     return {
       ...scope,
       workspace: selectedAuthority.workspace,

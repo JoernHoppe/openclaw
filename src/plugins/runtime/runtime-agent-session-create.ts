@@ -214,6 +214,7 @@ export async function createRuntimeSessionEntry(
                 sessionKey: captured.key,
                 storePath: captured.storePath,
               });
+              // This synchronous guard also runs immediately before external policy injection.
               const current = selected
                 ? "kind" in selected
                   ? undefined

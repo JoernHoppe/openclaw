@@ -281,13 +281,12 @@ export async function prepareAgentRunUserTurn(params: {
         pendingInputReplaySourceSessionKeys: settleWakeReplay?.sourceSessionKeys,
         input,
         target: async () => {
-          params.assertCurrent();
           const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
             cfg: params.cfgForAgent ?? params.cfg,
             key: params.resolvedSessionKey!,
             agentId: params.activeSessionAgentId,
-            excludeInternalEffects: true,
             assertActive: params.assertCurrent,
+            excludeInternalEffects: true,
           });
           const latestEntry = loaded.entry;
           const loadedSessionId = latestEntry?.sessionId?.trim();

@@ -10,7 +10,6 @@ import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-work
 import { freezeJsonSnapshot } from "../../shared/immutable-data.js";
 import { publishRetainedSessionEntryChange } from "./session-accessor.sqlite-entry-cache-publication-state.js";
 import { projectSessionSharingEntry } from "./session-accessor.sqlite-entry-cache.types.js";
-import { projectSessionActorAuthority } from "./session-actor-command.js";
 import type {
   SessionActorAuthority,
   SessionActorAuthorityFacts,
@@ -38,7 +37,6 @@ export type SessionActorTransport = {
   run<T>(
     operation: (scope: {
       execute: SqliteWorkerStore<SessionActorOperations>["execute"];
-      captureGeneration(): { assertCurrent(): void };
     }) => Promise<T>,
     authorize: (
       request: SqliteWorkerAdmissionRequest,
@@ -93,33 +91,13 @@ export function createSqliteSessionActorExecutor(
   } & SessionActorExecutorGuards,
 ): SessionActorExecutor {
   const { target } = params;
-  let generation: { assertCurrent(): void } | undefined;
   let fenced = false;
-  const checkGeneration = (scope: TransportScope) => {
-    try {
-      generation?.assertCurrent();
-    } catch {
-      params.replica.invalidate();
-    }
-    generation = scope.captureGeneration();
-    generation.assertCurrent();
-  };
-  const isInstalled = (snapshot: SessionActorHotState): boolean => {
-    try {
-      generation?.assertCurrent();
-    } catch {
-      params.replica.invalidate();
-      return false;
-    }
-    return params.replica.read() === snapshot;
-  };
   const authorize = (
     authority: SessionActorAuthority,
     observe?: (
       native: NativeAdmission,
       stage: "transaction" | "commit",
-      state: SessionActorAuthorityFacts,
-      final: boolean,
+      snapshot: SessionActorAuthorityFacts,
     ) => void,
   ) => {
     let actorAdmissionSeen = false;
@@ -148,7 +126,7 @@ export function createSqliteSessionActorExecutor(
         // SAFETY: The private MessagePort already detached this snapshot from the paired kernel.
         const snapshot = freezeJsonSnapshot(facts.snapshot as SessionActorAuthorityFacts);
         authority.authorize(request.stage, snapshot, facts.publication);
-        observe?.(native, request.stage, snapshot, facts.final === true);
+        observe?.(native, request.stage, snapshot);
       } else if (
         actorAdmissionSeen &&
         (request.stage === "commit" || (request.stage === "transaction" && facts !== undefined))
@@ -164,15 +142,13 @@ export function createSqliteSessionActorExecutor(
   };
   const read = (authority: SessionActorAuthority) =>
     params.transport.run(async (scope) => {
-      checkGeneration(scope);
       params.assertReadable();
       authority.assertCurrent();
       let snapshot = params.replica.read();
-      for (let attempt = 0; !snapshot && attempt < 2; attempt += 1) {
+      if (!snapshot) {
         const pending = params.replica.beginRead();
         try {
           snapshot = await scope.execute({ type: "session.actor.read", input: { target } });
-          generation?.assertCurrent();
           pending.install(snapshot);
           // Disclose the immutable installed revision, including a superseding receipt.
           snapshot = params.replica.read();
@@ -189,15 +165,8 @@ export function createSqliteSessionActorExecutor(
       authority.authorize("commit", snapshot);
       authority.assertCurrent();
       params.assertReadable();
-      if (!isInstalled(snapshot)) {
-        snapshot = params.replica.read();
-        if (!snapshot) {
-          throw new Error("Session actor changed before read disclosure");
-        }
-        authority.authorize("commit", snapshot);
-        authority.assertCurrent();
-        params.assertReadable();
-      }
+      // Policy callbacks do not write session state. A synchronous bookkeeping
+      // change during authorization is visible to the next read.
       return snapshot;
     }, authorize(authority));
   const command = async <Phase extends SessionActorPhase>(
@@ -208,11 +177,8 @@ export function createSqliteSessionActorExecutor(
   ): Promise<SessionActorOutcome<SessionActorPhaseResults[Phase]>> => {
     const captured = input;
     type Outcome = SessionActorOutcome<SessionActorPhaseResults[Phase]>;
-    const selected: {
-      native?: NativeAdmission;
-      transactionSnapshot?: SessionActorAuthorityFacts;
-      commitSnapshot?: SessionActorAuthorityFacts;
-    } = {};
+    let native: NativeAdmission | undefined;
+    let previousEntry: SessionActorAuthorityFacts["entry"];
     let running: Promise<Outcome> | undefined;
     let committed: Extract<Outcome, { kind: "committed" }> | undefined;
     const unknown = (error: unknown): Outcome => ({
@@ -242,7 +208,6 @@ export function createSqliteSessionActorExecutor(
       outcome = await params.transport.run(
         (scope) => {
           running = (async (): Promise<Outcome> => {
-            checkGeneration(scope);
             if (fenced) {
               return unknown(
                 new Error("Session actor requires reconciliation before another command"),
@@ -253,7 +218,6 @@ export function createSqliteSessionActorExecutor(
               (value) => ({ ok: true as const, value }),
               (error: unknown) => ({ ok: false as const, error }),
             );
-            const native = selected.native;
             let result: Outcome;
             if (native) {
               const settled = await native.retained.settled;
@@ -263,33 +227,12 @@ export function createSqliteSessionActorExecutor(
                 isRecord(evidence) &&
                 evidence.kind === "committed" &&
                 isRecord(receipt) &&
-                selected.transactionSnapshot !== undefined &&
-                selected.commitSnapshot !== undefined &&
                 receipt.kind === "session-actor-committed" &&
                 receipt.commandId === captured.commandId &&
                 receipt.phaseId === captured.phaseId &&
-                receipt.phase === name &&
-                isDeepStrictEqual(receipt.beforeVersion, selected.transactionSnapshot.version) &&
-                (captured.expected === undefined ||
-                  isDeepStrictEqual(receipt.beforeVersion, captured.expected)) &&
-                isDeepStrictEqual(receipt.afterVersion, selected.commitSnapshot.version) &&
-                selected.commitSnapshot.version.epoch ===
-                  selected.transactionSnapshot.version.epoch &&
-                selected.commitSnapshot.version.sequence ===
-                  selected.transactionSnapshot.version.sequence + 1 &&
-                isRecord(receipt.postimage) &&
-                isDeepStrictEqual(
-                  {
-                    target: receipt.postimage.target,
-                    version: receipt.postimage.version,
-                    entry: receipt.postimage.entry,
-                    writeToken: receipt.postimage.writeToken,
-                    dependencySessionIds: receipt.postimage.dependencySessionIds,
-                  },
-                  selected.commitSnapshot,
-                )
+                receipt.phase === name
               ) {
-                // SAFETY: The paired native receipt owns the result type; the checks above match its command and postimage.
+                // SAFETY: The paired worker constructs the typed result; native admission validates its settlement envelope.
                 committed = freezeJsonSnapshot(evidence) as Extract<Outcome, { kind: "committed" }>;
                 if (!reply.ok) {
                   preserveFailure(reply.error, "response");
@@ -305,7 +248,7 @@ export function createSqliteSessionActorExecutor(
                       target.database.physicalIdentity,
                       target.sessionKey,
                       entry ? projectSessionSharingEntry(entry) : undefined,
-                      selected.transactionSnapshot?.entry,
+                      previousEntry,
                       true,
                       entry,
                     );
@@ -317,15 +260,7 @@ export function createSqliteSessionActorExecutor(
               } else if (
                 evidence === undefined &&
                 reply.ok &&
-                (reply.value.kind === "rolled-back" ||
-                  (reply.value.kind === "stale-version" &&
-                    captured.expected !== undefined &&
-                    isDeepStrictEqual(reply.value.expected, captured.expected) &&
-                    isDeepStrictEqual(
-                      projectSessionActorAuthority(reply.value.postimage),
-                      selected.transactionSnapshot,
-                    ) &&
-                    !isDeepStrictEqual(reply.value.postimage.version, captured.expected))) &&
+                (reply.value.kind === "rolled-back" || reply.value.kind === "stale-version") &&
                 (settled.kind === "not-entered" ||
                   native.admission.settlement?.kind === "completed")
               ) {
@@ -380,13 +315,10 @@ export function createSqliteSessionActorExecutor(
           })();
           return running;
         },
-        authorize(authority, (native, stage, snapshot, final) => {
-          selected.native = native;
+        authorize(authority, (admission, stage, snapshot) => {
+          native = admission;
           if (stage === "transaction") {
-            selected.transactionSnapshot ??= snapshot;
-          }
-          if (stage === "commit" && final) {
-            selected.commitSnapshot = snapshot;
+            previousEntry = snapshot.entry;
           }
         }),
       );
@@ -400,8 +332,8 @@ export function createSqliteSessionActorExecutor(
             outcome = preserveFailure(error);
           }
         } catch (settlementError) {
-          if (selected.native) {
-            await selected.native.retained.settled;
+          if (native) {
+            await native.retained.settled;
           }
           outcome = preserveFailure(settlementError);
         }
@@ -435,20 +367,11 @@ export function createSqliteSessionActorExecutor(
   const snapshot = (authority: SessionActorAuthority): SessionActorHotState | undefined => {
     params.assertReadable();
     authority.assertCurrent();
-    try {
-      generation?.assertCurrent();
-    } catch {
-      params.replica.invalidate();
-      return undefined;
-    }
     const installed = fenced ? undefined : params.replica.read();
     if (installed) {
       authority.authorize("commit", installed);
       authority.assertCurrent();
       params.assertReadable();
-      if (!isInstalled(installed)) {
-        return undefined;
-      }
     }
     return installed;
   };

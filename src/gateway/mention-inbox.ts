@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import { ok, type Result } from "@openclaw/normalization-core/result";
-import type {
-  ErrorShape,
-  MentionInboxItem,
-  MentionsListResult,
+import { err, ok, type Result } from "@openclaw/normalization-core/result";
+import {
+  ErrorCodes,
+  errorShape,
+  type ErrorShape,
+  type MentionInboxItem,
+  type MentionsListResult,
 } from "../../packages/gateway-protocol/src/index.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { deferSqlitePostCommitPublication } from "../infra/sqlite-post-commit.js";
@@ -41,7 +43,6 @@ import {
 import { createMentionSharingTargets, type SharingTargets } from "./mention-inbox-sharing.js";
 import { MAX_MENTION_SOURCES } from "./mention-inbox-store.js";
 import { readMentionSnapshot, commitMentionChanges } from "./mention-inbox-worker.js";
-import { mutateNativeMentionSnapshot } from "./mention-inbox.native.js";
 import type {
   MentionCommittedInput,
   MentionInbox,
@@ -63,7 +64,6 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
   let tail: Promise<void> = Promise.resolve();
   let closing = false;
   let needsSynchronization = true;
-  let nativeRevision = 0;
   let sessionRevision = 0;
   const views = new WeakMap<GatewayClient, { signature: string; revision: number }>();
   const sharingTargets = createMentionSharingTargets({
@@ -78,7 +78,6 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
     currentTarget,
   } = sharingTargets;
   const prepareTargets = sharingTargets.prepare.bind(sharingTargets);
-  const legacyTargets = sharingTargets.legacy.bind(sharingTargets);
   let capacityReported = false;
   let profileInvalidationPending = false;
   const applyCommittedInput = createMentionInputRecorder({
@@ -120,23 +119,15 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
   }
 
   async function synchronize(): Promise<boolean> {
-    for (;;) {
-      context.admission.assertCurrent();
-      const revision = nativeRevision;
-      const snapshot = await readMentionSnapshot(
-        context,
-        needsSynchronization ? -1 : state.head.revision,
-      );
-      context.admission.assertCurrent();
-      if (revision !== nativeRevision) {
-        continue;
-      }
-      if (snapshot) {
-        state = createMentionProjection(snapshot);
-      }
-      needsSynchronization = false;
-      return Boolean(snapshot);
+    const snapshot = await readMentionSnapshot(
+      context,
+      needsSynchronization ? -1 : state.head.revision,
+    );
+    if (snapshot) {
+      state = createMentionProjection(snapshot);
     }
+    needsSynchronization = false;
+    return Boolean(snapshot);
   }
 
   async function mutate<T>(
@@ -150,7 +141,6 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
     try {
       await synchronize();
       for (;;) {
-        const revision = nativeRevision;
         const expectedHead = { ...state.head };
         const now = scheduler.now();
         const maintenance =
@@ -208,20 +198,12 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
         );
         if (receipt.kind === "conflict") {
           context.admission.assertCurrent();
-          if (revision === nativeRevision) {
-            state = createMentionProjection(receipt.snapshot);
-          } else {
-            await synchronize();
-          }
+          state = createMentionProjection(receipt.snapshot);
           continue;
         }
         context.admission.assertCurrent();
-        if (revision === nativeRevision) {
-          state = prepared.publish(receipt.head);
-          needsSynchronization = false;
-        } else {
-          await synchronize();
-        }
+        state = prepared.publish(receipt.head);
+        needsSynchronization = false;
         return result;
       }
     } catch (error) {
@@ -398,62 +380,14 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
     return mentionInboxUnavailable();
   }
 
-  function mutateNative(apply: (draft: InboxState) => void, notify?: () => void): InboxState {
-    nativeRevision++;
-    needsSynchronization = true;
-    return mutateNativeMentionSnapshot(context, {
-      now: scheduler.now,
-      canonicalProfileId: (id) => policy.readProfile(id)?.profileId ?? id,
-      apply: (current) => {
-        assertActive();
-        apply(current);
-      },
-      publish: (current) => {
-        if (!scheduler.signal.aborted && current.head.revision >= state.head.revision) {
-          state = current;
-          needsSynchronization = false;
-        }
-      },
-      notify: () => {
-        if (!scheduler.signal.aborted) {
-          // Deprecated synchronous callers retain post-commit publication timing.
-          publishConnectedViews(legacyTargets(state));
-          void refresh();
-          scheduleExpiry();
-          notify?.();
-        }
-      },
-    });
-  }
-
-  function legacy(
-    client: GatewayClient | null,
-    ids?: readonly string[],
-  ): Result<MentionsListResult, ErrorShape> {
-    warnMentionInboxDeprecation(ids ? "dismiss" : "list");
-    return readOperation(() => {
-      const draft = mutateNative((current) => {
-        if (ids) {
-          dismissItems(current, client, ids, legacyTargets(current));
-        }
-      });
-      return readView(client, params.getRuntimeConfig(), true, legacyTargets(draft), draft);
-    });
-  }
-
-  function invalidate(sessionKey?: string): void {
-    warnMentionInboxDeprecation("invalidate");
-    invalidateTargets(sessionKey);
-    policy.invalidateDirectory();
-    if (closing || scheduler.signal.aborted) {
-      return;
-    }
-    try {
-      mutateNative(() => {});
-    } catch {
-      log.warn("Unable to refresh the mention Inbox; current reads will retry.");
-      scheduleExpiry(60_000);
-    }
+  function legacyError(
+    method: "list" | "dismiss" | "recordCommittedInput" | "invalidate",
+  ): ErrorShape {
+    warnMentionInboxDeprecation(method);
+    return errorShape(
+      ErrorCodes.UNAVAILABLE,
+      `mentionInbox.${method} is unavailable; await mentionInbox.${method}Async instead.`,
+    );
   }
 
   function dismissItems(
@@ -639,8 +573,8 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
         return mentionInboxUnavailable(log);
       }
     },
-    list: (client) => legacy(client),
-    dismiss: (client, ids) => legacy(client, ids),
+    list: () => err(legacyError("list")),
+    dismiss: () => err(legacyError("dismiss")),
     async listAsync(client, publish) {
       let failure: Result<never, ErrorShape> | undefined;
       try {
@@ -723,7 +657,9 @@ export function createMentionInbox(params: MentionInboxOptions): MentionInbox {
       }
     },
     recordCommittedInputAsync,
-    invalidate,
+    invalidate(): never {
+      throw new Error(legacyError("invalidate").message);
+    },
     invalidateAsync,
     dispose,
   };

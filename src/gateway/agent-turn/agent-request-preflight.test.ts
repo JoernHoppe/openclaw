@@ -7,13 +7,13 @@ import {
   closeSwarmScheduler,
 } from "../../agents/subagents/swarm/swarm-scheduler.js";
 import { testing as swarmScheduler } from "../../agents/subagents/swarm/swarm-scheduler.test-support.js";
-import * as sessionEntryReader from "../../config/sessions/session-entry-read-runtime.js";
+import * as sessionEntryRead from "../../config/sessions/session-entry-read-runtime.js";
 import {
   createAgentDatabaseInspectionRefusal,
   inspectAgentDatabaseAdmission,
   recordAgentDatabaseAdmissions,
 } from "../../state/agent-database-admission.js";
-import * as sessionStoreWorker from "../session-utils-store-worker.js";
+import * as sessionStoreLookup from "../session-utils-store-lookup.js";
 import { prepareAgentRequestPreflight } from "./agent-request-preflight.js";
 import { createAgentTurnService } from "./agent-turn-service.js";
 import { createAgentTurnIo } from "./io.js";
@@ -174,8 +174,8 @@ describe("agent request Swarm preflight", () => {
   });
   beforeEach(() => {
     subagentRuns.clear();
-    vi.spyOn(sessionEntryReader, "readSessionEntryReadOnlyInWorker").mockResolvedValue(undefined);
-    vi.spyOn(acpSessionMeta, "readAcpSessionMetaForEntry").mockReturnValue(undefined);
+    vi.spyOn(sessionEntryRead, "readSessionEntryReadOnlyInWorker").mockResolvedValue(undefined);
+    vi.spyOn(acpSessionMeta, "readAcpSessionMetaForEntries").mockResolvedValue([null]);
   });
 
   it("carries the admitted scheduler group and cap without trusting saved launch settings", async () => {
@@ -231,14 +231,22 @@ describe("agent request Swarm preflight", () => {
     "derives coordination source role from canonical spawn lineage ($expectedRole)",
     async ({ entry, sourceAcp, expectedRole }) => {
       const sourceKey = "agent:main:visible-worker";
-      vi.spyOn(sessionStoreWorker, "resolveGatewaySessionStoreTargetInWorker").mockResolvedValue({
-        agentId: "main",
-        canonicalKey: sourceKey,
-        storePath: "/source-store",
-        storeKeys: [sourceKey],
-        store: { [sourceKey]: entry },
-      });
-      vi.mocked(acpSessionMeta.readAcpSessionMetaForEntry).mockReturnValue(sourceAcp);
+      vi.spyOn(sessionStoreLookup, "withGatewaySessionStoreTarget").mockImplementation(
+        async (_params, consume) =>
+          consume(
+            {
+              agentId: "main",
+              canonicalKey: sourceKey,
+              storePath: "/source-store",
+              storeKeys: [sourceKey],
+              store: { [sourceKey]: entry },
+            },
+            new Map(),
+            () => {},
+            [],
+          ),
+      );
+      vi.mocked(acpSessionMeta.readAcpSessionMetaForEntries).mockResolvedValue([sourceAcp ?? null]);
       const result = await prepareAgentRequestPreflight({
         request: {
           message: "Worker progress",
@@ -357,7 +365,7 @@ describe("agent request Swarm preflight", () => {
   });
 
   it("keeps a retained collector session reserved from its persisted marker", async () => {
-    vi.mocked(sessionEntryReader.readSessionEntryReadOnlyInWorker).mockResolvedValue({
+    vi.mocked(sessionEntryRead.readSessionEntryReadOnlyInWorker).mockResolvedValue({
       sessionId: "collector-session",
       updatedAt: 1,
       swarmCollector: true,
