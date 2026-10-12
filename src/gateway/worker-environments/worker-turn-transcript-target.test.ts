@@ -1,4 +1,5 @@
 import { AsyncResource } from "node:async_hooks";
+import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   isSessionEntryDataSql,
@@ -173,13 +174,13 @@ it("preadmits cloud transcript guards and retains their handle through turn sett
   });
 });
 
-it("refuses a worker transcript effect after a committed writer change without host SQL", async () => {
+it("retains a logical-store worker transcript and refuses writer changes without host SQL", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const target = {
       agentId: "main",
       sessionKey: "agent:main:writer-receipt",
       sessionId: "writer-receipt",
-      storePath: agentDatabase.resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env }),
+      storePath: path.join(state.sessionsDir(), "sessions.json"),
       expectedLifecycleRevision: "writer-lifecycle",
       expectedWriterRunId: "first-writer",
     };
@@ -215,6 +216,8 @@ it("refuses a worker transcript effect after a committed writer change without h
           );
         },
       );
+      await source.release();
+      expect(source).toThrow("Cloud worker transcript authority has been released");
       expect(observer.queries.filter(isSessionEntryDataSql)).toEqual([]);
     } finally {
       incomingRpc.emitDestroy();

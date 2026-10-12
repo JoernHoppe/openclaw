@@ -423,7 +423,9 @@ export async function prepareWorkerTurnTranscriptSource(
       : undefined;
   try {
     const captured = prepared
-      ? preparedWorkerTranscript.run(prepared, () => captureWorkerTurnTranscriptSource(...args))
+      ? preparedWorkerTranscript.run(prepared, () =>
+          captureWorkerTurnTranscriptSource(prepared.target, args[1]),
+        )
       : source;
     if (source.prepareSessionSource) {
       captured();
