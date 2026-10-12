@@ -454,7 +454,7 @@ describe("durable sandbox runtime generations", () => {
         }
         return id;
       },
-      factory: async (params) => {
+      factory: async (params: CreateReservedSandboxBackendParamsV1) => {
         const backend = handle(params);
         active++;
         maximumActive = Math.max(maximumActive, active);

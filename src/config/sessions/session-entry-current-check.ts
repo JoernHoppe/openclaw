@@ -55,7 +55,7 @@ type SessionEntryCurrentCheckParams = {
   isActive?: () => boolean;
   matchGeneration?: boolean;
   /** Exact policy fields retained alongside the returned entry. */
-  fields?: readonly (keyof SessionEntryCurrentFacts & keyof SessionEntry)[];
+  fields?: readonly (keyof SessionEntry)[];
   /** Refuse preparation when a previously selected entry no longer matches. */
   expected?: Partial<SessionEntry>;
   alternatives?: readonly {
@@ -63,6 +63,10 @@ type SessionEntryCurrentCheckParams = {
     isActive?: () => boolean;
   }[];
   errorMessage?: string;
+};
+
+type AsyncSessionEntryCurrentCheckParams = Omit<SessionEntryCurrentCheckParams, "fields"> & {
+  fields?: readonly (keyof SessionEntryCurrentFacts & keyof SessionEntry)[];
 };
 
 async function prepareSessionEntryCurrentCheck(
@@ -351,9 +355,6 @@ async function prepareSessionEntryCurrentCheck(
         }
       };
       const preparedSource = Object.assign(source, { assertScopeCurrent });
-      const matchesEntry = (current: Partial<SessionEntryCurrentFacts> | undefined) =>
-        (current === undefined) === (selected === undefined) &&
-        fields.every((field, index) => isDeepStrictEqual(current?.[field], selectedValues[index]));
       const entryCurrent: SessionEntryCurrentCheck | undefined =
         !incognito &&
         !native &&
@@ -369,7 +370,7 @@ async function prepareSessionEntryCurrentCheck(
               },
               assertCurrent(current) {
                 assertScopeCurrent();
-                if (!matchesEntry(current)) {
+                if (!matchesFields(current)) {
                   refuse();
                 }
               },
@@ -432,7 +433,7 @@ async function prepareSessionEntryCurrentCheck(
                 return currentRead.value;
               },
             );
-            if (!matchesEntry(current)) {
+            if (!matchesFields(current)) {
               return false;
             }
             const matching = await Promise.all(
@@ -508,7 +509,7 @@ export async function captureSessionEntryCurrentCheckInternal(
 
 /** Current rows are read in the existing worker; mutations carry the prepared source. */
 export async function captureSessionEntryCurrentCheckAsyncInternal(
-  params: SessionEntryCurrentCheckParams,
+  params: AsyncSessionEntryCurrentCheckParams,
 ) {
   const prepared = await prepareSessionEntryCurrentCheck(params, true);
   return {
