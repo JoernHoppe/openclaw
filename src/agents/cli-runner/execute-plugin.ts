@@ -533,13 +533,13 @@ export async function executePluginOwnedProcess(params: {
     } else {
       params.mcpCapture?.beginCapture(params.mcpCapture.captureKey, assertCaptureCurrent);
     }
-    await params.context.cliHistoryWriter?.assertReadable();
     const requestToolPermission = await createPluginToolPermissionHandler({
       context: params.context,
       abortSignal: signal,
       onPendingApproval: updatePendingApproval,
       env: params.env,
     });
+    await params.context.cliHistoryWriter?.assertReadable();
     assertCurrent();
     watchdog = createCliPluginWatchdog(
       {

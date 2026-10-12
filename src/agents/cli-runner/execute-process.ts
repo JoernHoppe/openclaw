@@ -349,7 +349,8 @@ export async function executeCliProcess(params: {
         );
         const managedRun = await supervisor.spawn({
           assertCurrent: params.assertCurrent,
-          prepareSpawn: context.cliHistoryWriter?.assertReadable,
+          prepareSpawn: params.argsPrompt ? context.cliHistoryWriter?.assertReadable : undefined,
+          prepareInput: params.stdin ? context.cliHistoryWriter?.assertReadable : undefined,
           runId: runParams.runId,
           scopeKey,
           replaceExistingScope: Boolean(params.useResume && scopeKey),

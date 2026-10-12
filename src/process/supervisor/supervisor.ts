@@ -414,6 +414,7 @@ export function createProcessSupervisor(): ProcessSupervisor & {
                 exactEnv: input.exactEnv,
                 windowsVerbatimArguments: input.windowsVerbatimArguments,
                 input: input.input,
+                prepareInput: input.prepareInput,
                 stdinMode: input.stdinMode,
                 secretInput: input.secretInput,
               });

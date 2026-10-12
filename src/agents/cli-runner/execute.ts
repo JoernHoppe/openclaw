@@ -121,8 +121,8 @@ export async function executePreparedCliRun(
   cliSessionIdToUse?: string,
   options?: ExecutePreparedCliRunOptions,
 ): Promise<CliOutput> {
-  // Resumed turns also carry durable reference context. Retain its account/read
-  // authority across awaits and process/plugin callbacks, not just fresh recovery.
+  // Reuse the writer's run authority; each transport checks private history
+  // separately at its disclosure boundary.
   const context = inputContext.cliHistoryWriter
     ? {
         ...inputContext,

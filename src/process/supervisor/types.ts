@@ -152,6 +152,8 @@ type SpawnChildInput = SpawnBaseInput & {
   exactEnv?: true;
   windowsVerbatimArguments?: boolean;
   input?: string;
+  /** Prepare input authority at the adapter's stdin delivery boundary. */
+  prepareInput?: () => void | Promise<void>;
   stdinMode?: "inherit" | "pipe-open" | "pipe-closed";
   secretInput?: SpawnSecretInput;
   onStdoutRaw?: (chunk: Buffer) => void;
