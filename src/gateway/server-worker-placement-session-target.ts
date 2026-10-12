@@ -194,7 +194,8 @@ export function createWorkerWorkspaceRecoveryPreparer(options: {
     );
     const assertCurrent = composeSessionSourceAssertion([source], (assertSources) => {
       assertOwnerCurrent();
-      resolved.assertCurrent(options.getConfig());
+      // Recovery publishes its own checkpoint revision while retaining the workspace binding.
+      resolved.assertBindingCurrent(options.getConfig());
       assertSources();
     });
     assertCurrent();
