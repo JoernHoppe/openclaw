@@ -575,6 +575,9 @@ export async function handleChatAbortRequestWithLifecycle(
   let aborted = false;
   const { sessionKey, sessionId, agentId, controlUiVisible } = active;
   const isActiveCurrent = captureAbortTargetIdentity(context.chatAbortControllers, runId, active);
+  const queued = queuedCandidate?.controller === active.controller ? queuedCandidate : undefined;
+  const isQueuedCurrent =
+    queued && captureAbortTargetIdentity(context.chatQueuedTurns, runId, queued);
   const ownsTarget = () =>
     isActiveCurrent() &&
     isChatAbortControllerEntryAbortable(active) &&
@@ -650,6 +653,15 @@ export async function handleChatAbortRequestWithLifecycle(
           if (!isActiveCurrent()) {
             if (inputWithdrawn) {
               return false;
+            }
+            // Detached dispatch can retire while its exact queued input keeps custody.
+            if (!context.chatAbortControllers.has(runId) && queued && isQueuedCurrent?.()) {
+              aborted = abortQueuedChatTurnById(context.chatQueuedTurns, {
+                runId,
+                sessionKey: queued.sessionKey,
+                stopReason: "rpc",
+              }).aborted;
+              return aborted;
             }
             throw new Error("Run changed before cancellation; retry Stop.");
           }

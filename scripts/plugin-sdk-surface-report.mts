@@ -149,7 +149,7 @@ const defaultPublicDeprecatedExportsByEntrypointBudget = Object.freeze({
   "approval-gateway-runtime": 1,
   "approval-handler-runtime": 1,
   "approval-reply-runtime": 0,
-  // Released synchronous approval routing remains until the next Plugin SDK major.
+  // Released synchronous approval routing remains until a later release after stable deprecation.
   "approval-client-runtime": 1,
   "approval-delivery-runtime": 1,
   "approval-native-runtime": 9,
@@ -195,7 +195,7 @@ const defaultPublicDeprecatedExportsByEntrypointBudget = Object.freeze({
   // Released synchronous allowlist compatibility during the approved worker-read migration.
   "channel-pairing": 1,
   "channel-policy": 7,
-  // Released synchronous conversation binding APIs remain until the next Plugin SDK major.
+  // Released synchronous conversation binding APIs remain until a later release after stable deprecation.
   "conversation-binding-inspection-runtime": 1,
   "conversation-runtime": 3,
   "channel-send-result": 1,
@@ -300,18 +300,18 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
       "OPENCLAW_PLUGIN_SDK_MAX_PUBLIC_DEPRECATED_EXPORTS",
-      // Remove deprecated sync channel envelope helpers and their compat records at the next Plugin SDK major.
-      // +2: approved synchronous upstream-link write compatibility until the next Plugin SDK major.
-      // +1: synchronous session entry getter remains until the next Plugin SDK major.
+      // Remove deprecated sync channel envelope helpers and their compat records in a later release after stable deprecation.
+      // +2: approved synchronous upstream-link write compatibility until a later release after stable deprecation.
+      // +1: synchronous session entry getter remains until a later release after stable deprecation.
       // +6: released session callbacks and provider replay contracts during async migration.
       // +4: released synchronous conversation binding contracts during V2 migration.
       // +3: released synchronous skill-command list helpers during async migration.
       // +15: retained synchronous auth, model, and TTS compatibility exports.
       // +7: retained synchronous session, command-menu, model-override, TTS-path, and list exports.
       // +17: eleven synchronous approval-routing APIs retained across four public facades.
-      // +1: released synchronous sandbox lookup retained until the next Plugin SDK major.
+      // +1: released synchronous sandbox lookup retained until a later release after stable deprecation.
       // +1: createSessionHeaderLink from shipped 2026.10.1 until plugin-sdk-session-header-link expires.
-      // +2: retained synchronous transcript event/stat reads until the next SDK major.
+      // +2: retained synchronous transcript event/stat reads until a later release after stable deprecation.
       // +4: the runtime config getter and three auth/store compatibility pairs named above.
       208,
       env,
