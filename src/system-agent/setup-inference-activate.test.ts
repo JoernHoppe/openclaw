@@ -196,6 +196,7 @@ describe("setup activation credentials and configuration", () => {
       });
       // Provider login can select a new model without an authored runtime override.
       setup.config.agents!.defaults!.models![modelRef] = {};
+      vi.mocked(setup.prompter.confirm).mockResolvedValue(true);
       await fs.writeFile(setup.configPath, JSON.stringify(setup.config));
       clearConfigCache();
       const result = await setup.activate(
