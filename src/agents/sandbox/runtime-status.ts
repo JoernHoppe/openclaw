@@ -243,8 +243,6 @@ export async function withSandboxRuntimeStatusInWorker<T>(
       return prepare(read.value);
     });
   }
-  const candidates = captureSessionStoreReadCandidates(scope.storePath);
-  const identities = captureSessionStoreCandidateIdentities(candidates);
   // Exact reads validate selected foreign row bytes without requiring a listing's writer proof.
   return withSessionEntriesFromStoreInWorker(
     {
@@ -267,13 +265,6 @@ export async function withSandboxRuntimeStatusInWorker<T>(
       assertCurrent();
       read.assertCurrent();
       return result;
-    },
-    false,
-    (database, identity) => {
-      const expected = identities.get(assertSessionStoreReadCandidate(database.path, candidates));
-      if (!expected || expected.key !== identity.key || expected.birthtime !== identity.birthtime) {
-        throw new Error("Sandbox classification source changed during preparation");
-      }
     },
   );
 }
