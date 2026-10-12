@@ -522,11 +522,14 @@ describe("forkSessionFromParentTranscript", () => {
     expect(records.at(-1)).toMatchObject({ type: "message", parentId: null });
   });
 
-  it("preserves supported current-version linear transcripts", async () => {
+  it("preserves supported current-version linear transcripts", async ({ onTestFailed }) => {
+    let phase = "create-fixture";
+    onTestFailed(() => console.error(JSON.stringify({ test: "parent-linear", phase })));
     const root = sessionDirs.make();
     const sessionsDir = path.join(root, "sessions");
     await fs.mkdir(sessionsDir);
     const storePath = path.join(sessionsDir, "sessions.json");
+    phase = "seed-parent";
     await seedParentTranscript({
       storePath,
       parentSessionId: "parent-linear",
@@ -559,7 +562,9 @@ describe("forkSessionFromParentTranscript", () => {
       ],
     });
 
+    phase = "fork";
     const fork = await forkChildTranscript(storePath, "parent-linear");
+    phase = "read-child";
     const records = (await loadTranscriptEvents({
       agentId: "main",
       sessionId: fork.sessionId,
@@ -571,13 +576,16 @@ describe("forkSessionFromParentTranscript", () => {
       { id: "linear-assistant", parentId: "linear-user" },
       { id: "linear-metadata", parentId: "linear-assistant" },
     ]);
+    phase = "open-child";
     const reopened = await openForkedChildSession(storePath, fork);
     expect(reopened.buildSessionContext().messages).toHaveLength(2);
+    phase = "append";
     await reopened.appendMessageAsync({
       role: "user",
       content: "continued",
       timestamp: Date.now(),
     });
+    phase = "read-continued";
     const continuedRecords = (await loadTranscriptEvents({
       agentId: "main",
       sessionId: fork.sessionId,
