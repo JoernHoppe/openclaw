@@ -17,7 +17,7 @@ type ConsentOptions = {
   state: Pick<RelayState, "approveGrant" | "assertGrantCurrent">;
   scheduler: Pick<PluginServiceSchedulerV1, "now" | "signal">;
   controlUiIngress?: GatewayControlUiIngressFactoryV1 | GatewayControlUiIngressFactoryV2;
-  config: PluginRuntime["config"]["current"];
+  config: () => ReturnType<PluginRuntime["config"]["current"]>;
   requireReady: () => void;
 };
 
