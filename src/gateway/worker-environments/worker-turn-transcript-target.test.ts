@@ -195,6 +195,10 @@ it("retains a logical-store worker transcript and refuses writer changes without
     try {
       await using source = await prepareWorkerTurnTranscriptSource(target);
       source();
+      await patchSessionEntryCore(target, () => ({ label: "same writer" }), {
+        workerGuard: { source },
+      });
+      source();
       await withWorkerTurnTranscriptDatabase(
         { ...target, sessionTarget: target },
         {

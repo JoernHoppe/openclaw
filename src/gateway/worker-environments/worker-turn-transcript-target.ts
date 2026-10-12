@@ -388,7 +388,7 @@ export function captureWorkerTurnTranscriptSource(
         };
         assertPrepared();
         return {
-          assertCurrent: assertPrepared,
+          assertCurrent: prepared.assertCurrent,
           checks: [
             {
               predicate: {
