@@ -3,6 +3,11 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { isInternalSessionEffectsKey } from "../../../config/sessions/internal-session-key.js";
 import { retainPreparedSessionEntryPredicate } from "../../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { readCommittedIncognitoSessionSharing } from "../../../config/sessions/session-accessor.sqlite-incognito-sharing.js";
+import {
+  captureSessionActorStorageOwner,
+  getSessionActorStorageBinding,
+  type SelectedSessionActorStorageBinding,
+} from "../../../config/sessions/session-actor-storage-binding.js";
 import { projectSessionEntryCapabilityFacts } from "../../../config/sessions/session-entry-capability-facts.js";
 import {
   captureIncognitoSessionSource,
@@ -13,6 +18,7 @@ import { SessionRowProjectionBinding } from "../../../gateway/session-row-projec
 import { getInProcessGatewayRequestContext } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   isIncognitoSessionKey,
+  parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "../../../routing/session-key.js";
 import { onSessionIdentityMutation } from "../../../sessions/session-lifecycle-events.js";
@@ -51,6 +57,49 @@ export type SessionCapabilityLookup = {
 export type SessionCapabilityStore =
   | Record<string, SessionCapabilityEntry>
   | SessionCapabilityLookup;
+
+/** Capture the selected memory owner while reading its current policy at each effect. */
+export function createMemorySessionCapabilityStore(
+  memory: SelectedSessionActorStorageBinding | undefined = getSessionActorStorageBinding({}),
+): SessionCapabilityLookup | undefined {
+  if (!memory) {
+    return undefined;
+  }
+  const storage = memory.actor.storage;
+  const owners = new Map<string, ReturnType<typeof captureSessionActorStorageOwner>>();
+  return {
+    authoritative: true,
+    get(sessionKey) {
+      const agentId = parseAgentSessionKey(sessionKey)?.agentId;
+      if (agentId === memory.agentId) {
+        const entry = storage.readCurrent(
+          { type: "session.entry.read", input: { sessionKey, projection: "list" } },
+          memory.authority,
+        );
+        return entry && projectSessionEntryCapabilityFacts(entry);
+      }
+      if (!agentId || !isIncognitoSessionKey(sessionKey)) {
+        throw new Error("Completion lineage requires its selected session actor owner");
+      }
+      if (!owners.has(agentId)) {
+        owners.set(agentId, captureSessionActorStorageOwner({ agentId, sessionActor: memory }));
+      }
+      const selected = owners.get(agentId);
+      const entry = selected?.owner?.readSession(sessionKey, selected.authority)?.entry;
+      return entry && projectSessionEntryCapabilityFacts(entry);
+    },
+    getById(sessionId) {
+      const row = storage.readCurrent(
+        {
+          type: "session.entry.readById",
+          input: { sessionId, projection: "list", currentOnly: true },
+        },
+        memory.authority,
+      );
+      return row && projectSessionEntryCapabilityFacts(row.entry);
+    },
+  };
+}
 
 /** Facts from an owning read in the same synchronous policy resolution. */
 export type PreparedSessionCapabilityEntry = {

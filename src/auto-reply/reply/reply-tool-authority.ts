@@ -21,7 +21,11 @@ import {
 } from "../../agents/harness/host-private-capabilities.js";
 import { readOperatorModelPolicyMembership } from "../../agents/operator-model-policy.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
-import { prepareSessionCapabilityRead } from "../../agents/subagents/spawn/subagent-session-store.js";
+import {
+  createMemorySessionCapabilityStore,
+  prepareSessionCapabilityRead,
+  type SessionCapabilityStore,
+} from "../../agents/subagents/spawn/subagent-session-store.js";
 import { isRuntimeToolAllowed, isToolAllowedByPolicies } from "../../agents/tool-policy-match.js";
 import {
   attachToolAllowlistIntersection,
@@ -159,6 +163,7 @@ export function resolveReplyToolAuthorityContext(
   snapshot: ReplyToolAuthorityInput,
   route: ReplyToolAuthorityRoute | undefined,
   preparedSandbox: ReturnType<typeof resolveSandboxRuntimeStatus>,
+  preparedSessionCapabilityStore?: SessionCapabilityStore,
 ) {
   const execution = snapshot.run;
   const provider = route?.provider ?? execution.provider;
@@ -170,6 +175,7 @@ export function resolveReplyToolAuthorityContext(
     sessionId: execution.sessionId,
     // Capability identity follows execution, not the independent sandbox policy owner.
     sessionKey: execution.sessionKey,
+    preparedSessionCapabilityStore,
     sandboxSessionKey: policySessionKey,
     agentId: execution.agentId,
     agentAccountId: execution.agentAccountId,
@@ -359,6 +365,7 @@ function resolvePreparedReplyToolAuthorityFingerprint(
   route: ReplyToolAuthorityRoute | undefined,
   entry: SessionEntry | undefined,
   narrow?: ReplyToolAuthorityNarrow,
+  preparedSessionCapabilityStore?: SessionCapabilityStore,
 ) {
   const sandbox = resolveSandboxRuntimeStatus({
     ...resolveReplyToolSandboxParams(input.run),
@@ -367,7 +374,7 @@ function resolvePreparedReplyToolAuthorityFingerprint(
   const preparedInput = narrow?.(input, sandbox) ?? input;
   return resolveFollowupRunToolAuthorityFingerprint(
     preparedInput,
-    resolveReplyToolAuthorityContext(preparedInput, route, sandbox),
+    resolveReplyToolAuthorityContext(preparedInput, route, sandbox, preparedSessionCapabilityStore),
   );
 }
 
@@ -423,6 +430,7 @@ export function prepareReplyToolAuthority(
   const env = { ...process.env };
   const sessionKey = snapshot.run.runtimePolicySessionKey ?? snapshot.run.sessionKey;
   const memory = sessionKey && getSessionActorStorageBinding({ sessionKey });
+  const memoryCapabilities = memory ? createMemorySessionCapabilityStore(memory) : undefined;
   let captured: CapturedReplyToolAuthoritySession | undefined;
   let capturedReadPlan: GatewaySessionEntryReadPlan | undefined;
   const releases = new Set<() => void>();
@@ -505,6 +513,7 @@ export function prepareReplyToolAuthority(
         selectedRoute,
         memory ? memory.actor.snapshot(memory.authority)?.entry : entry,
         narrow,
+        memoryCapabilities,
       );
     const prepared = await prepareSessionCapabilityRead(() => {
       assertOpen();
@@ -616,6 +625,8 @@ export function prepareReplyToolAuthority(
                 input,
                 route,
                 memory.actor.snapshot(memory.authority)?.entry,
+                undefined,
+                memoryCapabilities,
               ) === expected,
           ),
         );

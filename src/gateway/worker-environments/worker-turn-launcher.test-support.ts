@@ -36,6 +36,8 @@ import {
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import type { WorkerComputerLaunchDescriptor } from "../../worker/launch-descriptor.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "../session-utils-store.js";
 import type { MintedWorkerCredential } from "./credential.js";
 import { measureNodeWorkerLaunchBytes } from "./node-launch-adapter.js";
 import type {
@@ -226,12 +228,15 @@ export function abortWorkerTurnClaimWaitOnSignal(signal: AbortSignal) {
   );
 }
 
-export function createWorkerTurnSessionRuntimeLoader() {
-  const entry = {
-    sessionId: SESSION_ID,
-    updatedAt: 1,
-    worktree: { id: "workspace", branch: "fixture", repoRoot: root },
-  };
+export async function createWorkerTurnSessionRuntimeLoader() {
+  await patchSessionEntryCore(
+    sessionTarget,
+    (entry) => ({
+      ...entry,
+      worktree: { id: "workspace", branch: "fixture", repoRoot: root },
+    }),
+    { skipMaintenance: true },
+  );
   return async () => ({
     managedWorktrees: {
       findLiveByOwner: async () => ({
@@ -248,14 +253,8 @@ export function createWorkerTurnSessionRuntimeLoader() {
         lastActiveAt: 1,
       }),
     },
-    resolveGatewaySessionStoreTargetInWorker: async () => ({
-      storePath: sessionTarget.storePath,
-      canonicalKey: SESSION_KEY,
-      storeKeys: [SESSION_KEY],
-      agentId: "main",
-      store: { [SESSION_KEY]: entry },
-    }),
-    resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+    resolveGatewaySessionStoreTargetInWorker,
+    resolveCanonicalSessionEntryFromStoreKeys,
   });
 }
 

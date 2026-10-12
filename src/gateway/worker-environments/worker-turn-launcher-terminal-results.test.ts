@@ -699,7 +699,7 @@ describe("worker turn launcher terminal results", () => {
       expect(placements.get(SESSION_ID)).toMatchObject({ state: "draining", turnClaim: null });
       throw new Error("fixture: Move barrier complete");
     });
-    const loadSessionRuntime = createWorkerTurnSessionRuntimeLoader();
+    const loadSessionRuntime = await createWorkerTurnSessionRuntimeLoader();
     const moveBarrier = createGatewayWorkerPlacementMoveBarrier({
       placements,
       loadSessionRuntime,
