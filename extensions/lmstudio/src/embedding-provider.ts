@@ -2,9 +2,9 @@ import { createAsyncLock } from "openclaw/plugin-sdk/async-lock-runtime";
 import { toErrorObject } from "openclaw/plugin-sdk/error-runtime";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/logging-core";
 import {
-  buildRemoteBaseUrlPolicy,
   createRemoteEmbeddingProvider,
   embeddingProviderOwnsDestination,
+  resolveEmbeddingProviderSsrFPolicy,
   normalizeEmbeddingModelWithPrefixes,
   type MemoryEmbeddingProvider,
   type MemoryEmbeddingProviderCreateOptions,
@@ -25,6 +25,7 @@ import {
 } from "./models.fetch.js";
 import {
   normalizeLmstudioConfiguredCatalogEntries,
+  normalizeLmstudioProviderConfig,
   resolveLmstudioCanonicalModelKey,
   resolveLmstudioInferenceBase,
   resolveLmstudioServerBase,
@@ -198,7 +199,17 @@ export async function createLmstudioEmbeddingProvider(
       json: true,
       headers: headerOverrides,
     }) ?? {};
-  const ssrfPolicy = buildRemoteBaseUrlPolicy(baseUrl);
+  const request = normalizeLmstudioProviderConfig({
+    baseUrl,
+    models: [],
+    request: providerConfig?.request,
+  }).request;
+  const ssrfPolicy = resolveEmbeddingProviderSsrFPolicy({
+    provider: resolvedProvider?.providerId ?? LMSTUDIO_PROVIDER_ID,
+    api: providerConfig?.api ?? "openai-completions",
+    baseUrl,
+    allowPrivateNetwork: request?.allowPrivateNetwork,
+  });
   const client: LmstudioEmbeddingClient = {
     baseUrl,
     model,

@@ -208,11 +208,16 @@ Use `provider: "openai-compatible"` for a generic OpenAI-compatible
   Custom API base URL. Provider credentials and headers are inherited only when this resolves to the provider's configured destination.
 </ParamField>
 
-OpenAI-compatible embeddings use the same private-network policy as model inference.
+OpenAI-compatible, Gemini, and LM Studio embeddings use the same private-network policy as model inference.
 Configured custom and local origins are trusted by default, without extending that trust
 to redirects to another origin. The selected provider's
 `models.providers.<id>.request.allowPrivateNetwork` also applies: `false` blocks private
-destinations, while `true` explicitly permits private-network requests.
+destinations, while `true` explicitly permits private-network requests. Known provider hostnames
+that resolve to private addresses (for example, Azure OpenAI private endpoints or
+split-horizon DNS) require `models.providers.<id>.request.allowPrivateNetwork: true`
+after upgrading. Set this on the embedding provider's ID: `openai` for OpenAI,
+`google` for Gemini, or the configured LM Studio provider ID. A setting on a
+differently named chat provider does not carry over.
 
 <ParamField path="remote.apiKey" type="string">
   API key owned by the remote destination. Set this when `remote.baseUrl` points somewhere other than the provider's configured destination.
