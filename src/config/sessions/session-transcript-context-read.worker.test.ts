@@ -484,15 +484,11 @@ it.each(["worker", "native"] as const)(
           const admitted = await SessionManager.openModelContextAsync(readTarget, {
             admission: { ...receipt.anchor, role: "user", logicalTurnId: target.sessionId },
           });
-          expect(admitted.buildSessionContext().messages.map((message) => message.content)).toEqual(
-            ["earlier"],
-          );
+          expect(admitted.buildSessionContext().messages).toEqual([earlier]);
           const completed = await SessionManager.openModelContextAsync(readTarget, {
             through: receipt.anchor,
           });
-          expect(
-            completed.buildSessionContext().messages.map((message) => message.content),
-          ).toEqual(["earlier", "current"]);
+          expect(completed.buildSessionContext().messages).toEqual([earlier, current]);
         }
         if (mode === "native") {
           expect(receipt.anchor.storePath).toBe(target.storePath);
@@ -501,10 +497,7 @@ it.each(["worker", "native"] as const)(
           { ...target, storePath: receipt.anchor.storePath },
           { through: receipt.anchor },
         );
-        expect(native.buildSessionContext().messages.map((message) => message.content)).toEqual([
-          "earlier",
-          "current",
-        ]);
+        expect(native.buildSessionContext().messages).toEqual([earlier, current]);
       }
     });
   },
