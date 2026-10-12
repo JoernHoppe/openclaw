@@ -16,10 +16,8 @@ import {
   type SessionActivitySummary,
 } from "../config/sessions/activity-summary.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
-import {
-  loadSessionEntryReadOnly,
-  patchSessionEntryCore,
-} from "../config/sessions/session-accessor.js";
+import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
+import { applySessionEntryOperation } from "../config/sessions/session-accessor.sqlite-entry.js";
 import type { SessionEntryPatchCommitted } from "../config/sessions/session-entry-patch.types.js";
 import { readSessionTranscriptWatermarkAsync } from "../config/sessions/session-transcript-watermark.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -415,7 +413,7 @@ export function createSessionActivitySummaries(deps: {
           clearTimeout(timer);
         }
       }
-      assertCurrent(state, ref);
+      assertCurrentOwner(state, ref);
       if (omitted && text && !text.endsWith(OMISSION_NOTICE)) {
         text = `${truncateUtf16Safe(text, 449 - OMISSION_NOTICE.length)} ${OMISSION_NOTICE}`;
       }
@@ -434,12 +432,9 @@ export function createSessionActivitySummaries(deps: {
         omittedContent: omitted,
       };
       let committedTranscript: SessionEntryPatchCommitted["transcriptPredicate"];
-      const committed = await patchSessionEntryCore(
+      const committed = await applySessionEntryOperation(
         scope(state),
-        (fresh) => {
-          assertCurrentEntry(state, fresh);
-          return { activitySummary: summary };
-        },
+        { kind: "activity-summary", summary, sessionKey: state.key },
         {
           preserveActivity: true,
           onCommitted: (_entry, transcriptPredicate) => {
@@ -459,6 +454,9 @@ export function createSessionActivitySummaries(deps: {
       if (!committed || !current(state)) {
         state.dirty = true;
         return;
+      }
+      if (!committedTranscript) {
+        throw new ActivitySummaryCancelledError();
       }
       assertCurrentOwner(state, ref);
       if (committedTranscript?.sessionId !== state.sessionId) {
