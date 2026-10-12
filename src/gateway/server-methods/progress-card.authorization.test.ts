@@ -9,6 +9,7 @@ import {
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { ProgressCardStore } from "../../session-cards/progress-card-store.types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { progressCardStore } from "../progress-card-store.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
@@ -30,6 +31,8 @@ describe("progress card request authorization", () => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const cfg = rolePolicyConfig();
         setRuntimeConfigSnapshot(cfg, cfg);
+        using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+        void profileCatalog;
         const client = roleClient("view", "card-viewer");
         client.connect.scopes = [scope];
         const owner = roleClient("view", "other-card-owner");
@@ -113,6 +116,8 @@ describe("progress card request authorization", () => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const cfg = rolePolicyConfig();
         setRuntimeConfigSnapshot(cfg, cfg);
+        using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+        void profileCatalog;
         const client = roleClient("view", "delayed-card-viewer");
         client.connect.scopes = ["operator.sessions.read"];
         const owner = roleClient("view", "delayed-card-owner");
@@ -206,6 +211,8 @@ describe("progress card request authorization", () => {
           agents: { ownership: "explicit", entries: { main: {}, work: {} } },
         };
         setRuntimeConfigSnapshot(cfg, cfg);
+        using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+        void profileCatalog;
         const target = { sessionKey: "global", agentId: "work" };
         const client = { ...roleClient("view", "card-owner"), connId: "card-owner" };
         const entry = {
@@ -328,6 +335,8 @@ describe("progress card request authorization", () => {
           session: { scope: "per-sender" },
         };
         setRuntimeConfigSnapshot(cfg, cfg);
+        using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+        void profileCatalog;
         const target = { sessionKey: testCase.sessionKey, agentId: "work" };
         const client = { ...roleClient("view", "admitted-owner"), connId: "admitted-owner" };
         const successor = roleClient("view", "successor-owner");
@@ -520,6 +529,8 @@ it.each(
       agents: { ownership: "explicit", entries: { main: {}, work: {} } },
     };
     setRuntimeConfigSnapshot(cfg, cfg);
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const target = { sessionKey: "global", agentId: "work" };
     const client = { ...roleClient("view", "reset-card-owner"), connId: "reset-card-owner" };
     if (admin) {
