@@ -11,6 +11,47 @@ import { readAgentAssistantSource } from "../infra/agent-events.js";
 import { createWorkerLiveRuntime } from "./embedded-agent-live.runtime.js";
 
 describe("createWorkerLiveRuntime", () => {
+  it.each(["aborted", "error", "stop"] as const)(
+    "handles an empty %s final after checked text was streamed",
+    async (stopReason) => {
+      const emitted: WorkerLiveEvent[] = [];
+      const runtime = createWorkerLiveRuntime({
+        enqueuePreview: (event) => {
+          emitted.push(event);
+          return true;
+        },
+        emitTerminal: async (event) => void emitted.push(event),
+      });
+      const message = makeAgentAssistantMessage({
+        content: [{ type: "text", text: "Checked partial reply." }],
+      });
+      runtime.handleSessionEvent({ type: "message_start", message });
+      runtime.handleSessionEvent({
+        type: "message_update",
+        message,
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "Checked partial reply.",
+        },
+      });
+      const terminal = makeAgentAssistantMessage({ content: [], stopReason });
+      runtime.handleSessionEvent({ type: "message_end", message: terminal });
+      expect(
+        emitted.filter((event) => event.kind === "assistant").map((event) => event.payload),
+      ).toEqual([
+        expect.objectContaining({ text: "Checked partial reply." }),
+        ...(stopReason === "aborted" ? [] : [expect.objectContaining({ text: "", replace: true })]),
+      ]);
+      runtime.handleSessionEvent({ type: "agent_end", messages: [terminal], willRetry: false });
+      await runtime.emitTerminal();
+      expect(emitted.at(-1)).toMatchObject({
+        kind: "lifecycle",
+        payload: { phase: "finishing", stopReason },
+      });
+    },
+  );
+
   it("keeps distinct reasoning occurrences through bounded worker payloads", () => {
     const emitted: WorkerLiveEvent[] = [];
     const runtime = createWorkerLiveRuntime({

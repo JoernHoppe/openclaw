@@ -189,6 +189,10 @@ export function createWorkerLiveRuntime(client: WorkerLiveClient) {
   let streamedThinking = "";
   const emitAssistantSnapshot = (message: AgentMessage, complete = false) => {
     const { text, phase } = readAssistantSnapshot(message);
+    // Cancellation can synthesize an empty final after checked text was streamed.
+    if (complete && !text && message.role === "assistant" && message.stopReason === "aborted") {
+      return;
+    }
     const mediaUrls = complete ? parseReplyDirectives(text).mediaUrls : undefined;
     if (text === streamedText && phase === streamedPhase && !mediaUrls?.length) {
       return;
