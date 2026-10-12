@@ -28,16 +28,16 @@ vi.mock("./environments.session.js", () => ({
     },
   }),
 }));
-// mock-isolation: The synthetic retained session isolates execution authorization from database admission.
-vi.mock("../../config/sessions/session-entry-current-check.js", () => ({
-  captureSessionEntryCurrentCheckAsyncInternal: async () => ({
-    entry: { sessionId: "conversation" },
-    source: Object.assign(() => {}, {
+// mock-isolation: The synthetic full entry isolates execution authorization from database admission.
+vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
+  readSessionEntryReadOnlyInWorker: async () => ({ sessionId: "conversation" }),
+}));
+// mock-isolation: Source preparation is independent of the policy and transport checks below.
+vi.mock("../../config/sessions/session-entry-source-authority.js", () => ({
+  captureSessionEntrySourceAssertion: () =>
+    Object.assign(() => {}, {
       prepareSessionSource: async () => ({ assertCurrent() {}, checks: [] }),
     }),
-    async assertCurrent() {},
-    release() {},
-  }),
 }));
 // mock-isolation: This dispatch fixture injects policy resolution; canonical policy writes are covered by the exec-approval store tests.
 vi.mock("../../agents/exec-defaults.js", () => ({

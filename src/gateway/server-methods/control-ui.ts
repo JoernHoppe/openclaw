@@ -12,7 +12,8 @@ import {
   prepareSubagentSessionListReadCache,
 } from "../../agents/subagents/registry/subagent-registry-state.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
-import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
+import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
+import { captureSessionEntrySourceAssertion } from "../../config/sessions/session-entry-source-authority.js";
 import { captureIncognitoSessionSource } from "../../config/sessions/session-incognito-binding.js";
 import { prepareSessionSourceAuthority } from "../../config/sessions/session-source-authority.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../../secrets/runtime-state.js";
@@ -308,15 +309,12 @@ async function prepareCheckDetailsSession(
         agentId: sourceRequest.agentId,
       })
     : undefined;
-  let entryRead:
-    | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
-    | undefined;
+  let fullEntry: Awaited<ReturnType<typeof readSessionEntryReadOnlyInWorker>>;
   let entryAuthority: Awaited<ReturnType<typeof prepareSessionSourceAuthority>> | undefined;
   const release = async () => {
     try {
       await entryAuthority?.release?.();
     } finally {
-      entryRead?.release();
       facts?.release();
     }
   };
@@ -324,21 +322,35 @@ async function prepareCheckDetailsSession(
   try {
     if (facts) {
       const target = facts.readCurrent(sourceCfg).target;
-      entryRead = await captureSessionEntryCurrentCheckAsyncInternal({
+      const scope = {
         agentId: target.agentId,
         sessionKey: target.storeKey,
         storePath: target.readSource?.path ?? target.storePath,
-        fields: [
-          "repositoryWorkspaceId",
-          "worktree",
-          "spawnedCwd",
-          "spawnedWorkspaceDir",
-          "pendingWorktree",
-          "pendingProjectGitUrl",
-        ],
-        errorMessage: "Session pull-request target changed",
-      });
-      entryAuthority = await prepareSessionSourceAuthority(entryRead.source);
+      };
+      fullEntry = await readSessionEntryReadOnlyInWorker(scope);
+      entryAuthority = await prepareSessionSourceAuthority(
+        captureSessionEntrySourceAssertion({
+          scope,
+          readSource: target.readSource,
+          expected: fullEntry,
+          fields: [
+            "sessionId",
+            "lifecycleRevision",
+            "repositoryWorkspaceId",
+            "worktree",
+            "spawnedCwd",
+            "spawnedWorkspaceDir",
+            "pendingWorktree",
+            "pendingProjectGitUrl",
+          ],
+          assertCurrent() {
+            facts.readCurrent(context.getRuntimeConfig());
+          },
+          refuse() {
+            throw new Error("Session pull-request target changed");
+          },
+        }),
+      );
     }
     const claim = binding?.actor.sessions.captureCurrent(sessionKey);
     const assertRoutingCurrent = captureSessionMutationRouting(sourceCfg);
@@ -408,7 +420,7 @@ async function prepareCheckDetailsSession(
       entryAuthority!.assertCurrent();
       const current = facts!.readCurrent(cfg);
       const target = current.target;
-      const entry = entryRead!.entry;
+      const entry = fullEntry;
       const sharing = prepareProjectedSessionSharing({
         client,
         cfg,

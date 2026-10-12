@@ -19,7 +19,7 @@ vi.mock("./shared-client.js", async (importOriginal) => ({
   releaseLeasedSharedCodexAppServerClient: shared.release,
   retireSharedCodexAppServerClientIfCurrent: shared.retire,
 }));
-// Arbitrary diagnostic method labels must not start session-store I/O under the fake clock.
+// mock-isolation: Diagnostic method labels must not start session-store I/O under the fake clock.
 vi.mock("./sandbox-guard.js", () => ({
   prepareCodexAppServerDirectSandboxBypassBlock: async () => ({
     block: undefined,

@@ -5,8 +5,10 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { prepareExecDefaults } from "../../agents/exec-defaults.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
-import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
+import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
+import { captureSessionEntrySourceAssertion } from "../../config/sessions/session-entry-source-authority.js";
 import { prepareSessionSourceAuthority } from "../../config/sessions/session-source-authority.js";
+import { resolveSessionStorePathForScope } from "../../config/sessions/session-store-path.js";
 import { prepareExecApprovalsCurrentRead } from "../../infra/exec-approvals-store.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { approveSessionEnvironmentCommand } from "./environments.session-exec-approval.js";
@@ -22,23 +24,34 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
     async (options) => {
       const { params, respond, context } = options;
       const caller = await resolveSessionEnvironmentCaller(options, params);
-      let policyRead:
-        | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
-        | undefined;
       let policyAuthority: Awaited<ReturnType<typeof prepareSessionSourceAuthority>> | undefined;
       try {
-        policyRead = await captureSessionEntryCurrentCheckAsyncInternal({
+        const scope = {
           ...caller.identity,
-          fields: [
-            "execHost",
-            "execNode",
-            "permissionMode",
-            "sandbox",
-            "sandboxMode",
-            "createdActor",
-          ],
-        });
-        policyAuthority = await prepareSessionSourceAuthority(policyRead.source);
+          storePath: resolveSessionStorePathForScope(caller.identity, context.getRuntimeConfig()),
+        };
+        const policyEntry = await readSessionEntryReadOnlyInWorker(scope, caller.assertCurrent);
+        policyAuthority = await prepareSessionSourceAuthority(
+          captureSessionEntrySourceAssertion({
+            scope,
+            expected: policyEntry,
+            fields: [
+              "sessionId",
+              "lifecycleRevision",
+              "execHost",
+              "execNode",
+              "permissionMode",
+              "sandbox",
+              "sandboxMode",
+              "createdActor",
+            ],
+            assertCurrent: caller.assertCurrent,
+            assertHostCurrent: caller.assertCurrent,
+            refuse() {
+              throw new Error("The selected session changed before its operation committed.");
+            },
+          }),
+        );
         const service = context.workerEnvironmentService;
         const binding = service?.getSessionAttachment(caller.identity.sessionId);
         if (
@@ -71,12 +84,12 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
             {
               cfg,
               ...caller.identity,
-              sessionEntry: policyRead!.entry,
+              sessionEntry: policyEntry,
             },
             resolveSandboxRuntimeStatus({
               cfg,
               ...caller.identity,
-              preparedSessionEntry: policyRead!.entry ?? null,
+              preparedSessionEntry: policyEntry ?? null,
             }),
           );
           return preparation.kind === "resolved"
@@ -143,7 +156,6 @@ export const environmentsSessionExecHandlers: GatewayRequestHandlers = {
         try {
           await policyAuthority?.release?.();
         } finally {
-          policyRead?.release();
           caller.release();
         }
       }
