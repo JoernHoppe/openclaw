@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { recordCommittedSessionMetadataPublication } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { prepareGitHubPublicationOptionsRead } from "./github-personal-authorization.js";
 import type { GatewayClient, GatewayRequestContext } from "./types.js";
@@ -116,6 +117,7 @@ afterEach(() => {
 
 describe("GitHub publication request discovery", () => {
   beforeEach(() => {
+    setRuntimeConfigSnapshot({});
     mocks.roleScopes = undefined;
     mocks.loadSession.mockReset();
     mocks.loadSession.mockReturnValue(sessionRead());

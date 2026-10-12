@@ -244,6 +244,8 @@ beforeEach(async () => {
     storeKeys: [sessionKey],
     entry: { sessionId, repositoryWorkspaceId: source.workspaceId, lifecycleRevision, archivedAt },
   }));
+  context = requestContext();
+  setRuntimeConfigSnapshot(context.getRuntimeConfig());
   await persistSessionEntry();
   run = vi.fn(async (command: WorkerWorkspaceCommand) => {
     command.assertCurrent?.();
@@ -254,8 +256,6 @@ beforeEach(async () => {
     onResult?.();
     return result;
   });
-  context = requestContext();
-  setRuntimeConfigSnapshot(context.getRuntimeConfig());
 });
 
 afterEach(async () => {
