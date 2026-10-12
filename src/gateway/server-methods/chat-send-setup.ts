@@ -163,6 +163,7 @@ export async function prepareAndAdmitChatSend(
       onAdmissionOwned,
       hasCurrentClientAuthority,
       withPreparedCurrent: sessionMutationAuthorization?.withPreparedCurrent,
+      followRegistration: sessionMutationAuthorization?.followRegistration,
     });
     if (!admitted.ok) {
       return undefined;

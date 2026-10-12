@@ -630,6 +630,7 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
   });
   const retainedWork = createChatSendWorkAdmission({
     admission: acquiredGatewayWorkAdmission,
+    followRegistration: params.followRegistration,
     releaseCallerAuthority,
     releaseGatewayRootContinuation,
     logGateway: context.logGateway,

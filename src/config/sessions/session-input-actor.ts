@@ -4,6 +4,7 @@ import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.types.js";
 import { isIncognitoSessionKey } from "../../shared/incognito-session-key.js";
 import { isIncognitoOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
+import type { AgentDatabaseRequestExecutionSource } from "../../state/openclaw-agent-execution-admission-contract.js";
 import { captureSessionPendingInputWorkerCustody } from "./session-accessor.sqlite-pending-inputs.js";
 import { withSessionEntryWorker } from "./session-accessor.sqlite-replacement-worker.js";
 import { resolveSqliteSessionKey } from "./session-accessor.sqlite-scope-helpers.js";
@@ -57,6 +58,7 @@ export function bindUserTurnInputActor(
 export async function acquireSessionInputActor(
   requestedTarget: SessionEntryTargetPatchScope,
   lifetime: SessionActorLifetime,
+  followRegistration?: AgentDatabaseRequestExecutionSource["onRegistryChange"],
 ): Promise<SessionInputActorAcquisition | undefined> {
   const agentId = requestedTarget.readSource?.agentId ?? requestedTarget.agentId;
   if (!agentId) {
@@ -139,7 +141,7 @@ export async function acquireSessionInputActor(
     target.readSource?.databaseIdentity,
     () => lifetime.assertCurrent(),
     async (execution, source) => {
-      await execution.prepare(source);
+      await execution.prepare({ ...source, onRegistryChange: followRegistration });
       const identity = execution.fileIdentity;
       if (!identity) {
         throw new Error("Input actor has no admitted physical database");

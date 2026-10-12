@@ -8,6 +8,8 @@ import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js
 import { errorShapeFromError } from "./error-shape.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
+import { withReadySessionRows } from "./session-row-prepared-read.js";
+import { getSessionRowProjection } from "./session-row-projection-access.js";
 import {
   prepareSessionMutationAuthorizationRequest,
   sessionMutationTargetChanged,
@@ -165,12 +167,34 @@ export async function resolveSessionMutationAuthorizationAsync(
         },
       });
     }
-    params.assertInvocationCurrent?.();
-    const result = resolveSessionMutationAuthorization({
-      ...params,
-      preparedProfiles,
-      preparedTargets,
-    });
+    const authorize = (
+      sessionRowRead: SessionMutationAuthorizationParams["sessionRowRead"] = params.sessionRowRead,
+    ) => {
+      params.assertInvocationCurrent?.();
+      return resolveSessionMutationAuthorization({
+        ...params,
+        preparedProfiles,
+        preparedTargets,
+        sessionRowRead,
+      });
+    };
+    const projection =
+      params.method === "sessions.describe" ? getSessionRowProjection(params.context) : undefined;
+    const result = projection
+      ? await withReadySessionRows(
+          projection,
+          (currentCfg) =>
+            uniqueTargets.flatMap((target) => {
+              const agent = resolveRequestedSessionAgentId(
+                currentCfg,
+                target.sessionKey,
+                target.agentId,
+              );
+              return agent.ok ? [{ key: target.sessionKey, agentId: agent.agentId }] : [];
+            }),
+          authorize,
+        )
+      : authorize();
     if (!result.authorization) {
       release();
       return result;
