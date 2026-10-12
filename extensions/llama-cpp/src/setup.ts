@@ -89,6 +89,13 @@ async function configuredCandidates(
   if (!provider?.localService) {
     return [];
   }
+  const mediaModels = resolveLlamaCppMediaModels(provider);
+  const candidates = provider.models
+    .filter((model) => model.id !== mediaModels?.ocr && model.id !== mediaModels?.vision)
+    .map((model) => ({ model, provider }));
+  if (candidates.length < 2) {
+    return candidates;
+  }
   const { resolveDefaultModelForAgent } = await import("openclaw/plugin-sdk/agent-runtime");
   const primary = resolveDefaultModelForAgent({
     cfg: config,
@@ -96,11 +103,9 @@ async function configuredCandidates(
     allowPluginNormalization: false,
   });
   const primaryId = primary.provider === LLAMA_CPP_PROVIDER_ID ? primary.model : undefined;
-  const mediaModels = resolveLlamaCppMediaModels(provider);
-  return provider.models
-    .filter((model) => model.id !== mediaModels?.ocr && model.id !== mediaModels?.vision)
-    .map((model) => ({ model, provider }))
-    .toSorted((a, b) => Number(b.model.id === primaryId) - Number(a.model.id === primaryId));
+  return candidates.toSorted(
+    (a, b) => Number(b.model.id === primaryId) - Number(a.model.id === primaryId),
+  );
 }
 
 async function isFile(filePath: string): Promise<boolean> {
