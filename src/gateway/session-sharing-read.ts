@@ -1,4 +1,5 @@
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
+import { ErrorCodes, errorShape } from "../../packages/gateway-protocol/src/index.js";
 import { assertAdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
 import type { SessionEntry } from "../config/sessions.js";
 import { resolveSqliteSessionKey } from "../config/sessions/session-accessor.sqlite-scope-helpers.js";
@@ -266,6 +267,11 @@ export async function prepareSessionSharingProfiles(
   const unavailable = () => {
     throw new SessionMutationAuthorizationChangedError(authenticatedProfileUnavailableError());
   };
+  const requesterChanged = () => {
+    throw new SessionMutationAuthorizationChangedError(
+      errorShape(ErrorCodes.FORBIDDEN, "Gateway requester authority changed"),
+    );
+  };
   const prepare = async (profileId: string | undefined) => {
     if (!profileId) {
       return () => undefined;
@@ -275,11 +281,14 @@ export async function prepareSessionSharingProfiles(
       const canonicalProfileId = retained.profileId;
       return () => {
         const current = client?.preparedSessionProfile;
+        if (!current) {
+          return unavailable();
+        }
         if (
-          !current?.aliases.has(profileId) ||
+          !current.aliases.has(profileId) ||
           (mode === "selection" && current.profileId !== canonicalProfileId)
         ) {
-          return unavailable();
+          return requesterChanged();
         }
         return current;
       };
@@ -307,7 +316,7 @@ export async function prepareSessionSharingProfiles(
       sharingIdentity(client, currentActor)?.id !== identityId ||
       client?.internal?.operatorRunAuthority !== runAuthority
     ) {
-      return unavailable();
+      return requesterChanged();
     }
     if (runAuthority) {
       assertAdmittedRunOperatorAuthority(runAuthority);
