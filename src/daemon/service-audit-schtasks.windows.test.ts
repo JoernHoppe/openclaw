@@ -12,6 +12,39 @@ const nativeWindows = process.platform === "win32";
 const { execFileUtf8: nativeExecFile } =
   await vi.importActual<typeof import("./exec-file.js")>("./exec-file.js");
 
+it.each([true, false])("checks retained task authors by SID (same account: %s)", async (same) => {
+  const f = await fixture("win32");
+  f.env.USERDOMAIN = "WORKGROUP";
+  const sid = "S-1-5-21-1-2-3-1001";
+  const alias = "FIXTURE\\operator";
+  const xml = buildScheduledTaskXml({
+    taskDescription: "OpenClaw Gateway",
+    taskUser: "operator",
+    launchPath: f.sourcePath,
+  })
+    .replaceAll("<UserId>operator</UserId>", `<UserId>${sid}</UserId>`)
+    .replace("</RegistrationInfo>", `<Author>${alias}</Author></RegistrationInfo>`);
+  f.setTask(xml);
+  native.identity.mockClear();
+  native.identity.mockImplementation(async (_executable, args) => {
+    const encoded = /FromBase64String\('([^']+)'\)/u.exec(args.join(" "))?.[1];
+    const name = Buffer.from(encoded!, "base64").toString();
+    return {
+      code: 0,
+      stderr: "",
+      termination: "exit",
+      stdout: name === "operator" || same ? sid : "S-1-5-21-9-9-9-1001",
+    };
+  });
+  const findings: ServiceDefinitionDrift[] = [];
+  await auditScheduledTaskDefinition(f.env, findings, 10_000, f.command);
+  expect(findings.filter(({ kind }) => kind === "unknown-edit")).toEqual(
+    same ? [] : [expect.objectContaining({ key: "RegistrationInfo.Author" })],
+  );
+  expect(native.identity).toHaveBeenCalledTimes(2);
+  expect(f.task()).toBe(xml);
+});
+
 // Task Scheduler may omit these default-valued fields when exporting a registered task.
 function omitDefaults(xml: string): string {
   return xml.replaceAll(

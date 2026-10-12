@@ -185,7 +185,7 @@ Startup and app updates never change an existing Gateway service or runtime pin.
 After an app update, the current service keeps its existing runtime until you
 choose **Use bundled runtime…** again. Immutable app runtime directories are
 retained, so updates never remove a runtime referenced by a service. These actions
-are Linux-only; macOS Tauri keeps its existing behavior, separate from the
+are available on Linux and Windows; macOS Tauri keeps its existing behavior, separate from the
 [native macOS app](/platforms/mac/bundled-gateway).
 
 ### Desktop sharing

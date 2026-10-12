@@ -99,6 +99,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   native.clock = 0;
   vi.spyOn(Date, "now").mockImplementation(() => native.clock);
+  vi.spyOn(performance, "now").mockImplementation(() => native.clock);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -312,6 +313,23 @@ it("keeps cold Startup observations pending until HTTP and process ownership agr
   await withAuthority(() => verifyWindowsRegistrationReadiness(f.context));
   expect(native.clock).toBe(1_000);
   expect(native.terminate).not.toHaveBeenCalled();
+});
+
+it("shares a monotonic deadline with HTTP readiness and rejects a late healthy result", async () => {
+  const f = fixture();
+  f.state.command = f.candidate;
+  f.state.process = "candidate";
+  native.clock = 10_000;
+  vi.mocked(Date.now).mockReturnValue(1_800_000_000_000);
+  native.ready.mockImplementation(async ({ deadlineAt }) => {
+    expect(deadlineAt).toBe(610_000);
+    native.clock = deadlineAt;
+    return { healthz: 200, readyz: 200 };
+  });
+  await expect(withAuthority(() => verifyWindowsRegistrationReadiness(f.context))).rejects.toThrow(
+    "Windows service readiness could not be verified",
+  );
+  expect(native.ready).toHaveBeenCalledOnce();
 });
 
 it.each(["kind", "command", "authority"] as const)(

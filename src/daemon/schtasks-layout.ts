@@ -371,6 +371,36 @@ async function readWindowsTaskCommand(
       (registered && !directExecutable) || startupEntryPath !== undefined
         ? await captureLaunchers(options?.onLauncherContent)
         : undefined;
+    const assertRegistrationCurrent = async (source?: { path: string; content: string }) => {
+      if (!registered && !launchers) {
+        return;
+      }
+      if (
+        (launchers && !isDeepStrictEqual(await captureLaunchers(), launchers)) ||
+        (source && (await readTaskFile(source.path, deadline)) !== source.content)
+      ) {
+        throw new Error("Task launcher changed during inspection");
+      }
+      assertInspectionDeadline();
+      if (!registered) {
+        return;
+      }
+      const current = probeScheduledTaskState(taskName, remainingTimeout());
+      if (current.status === "unknown") {
+        throw new ScheduledTaskInspectionError(current);
+      }
+      assertInspectionDeadline();
+      if (
+        current.status !== registered.status ||
+        (registered.status === "found" &&
+          (current.status !== "found" ||
+            normalizeWindowsTaskIdentity(current.taskPath ?? "") !==
+              normalizeWindowsTaskIdentity(registered.taskPath ?? "") ||
+            !isDeepStrictEqual(current.actions, registered.actions)))
+      ) {
+        throw new Error("Scheduled Task registration changed during inspection");
+      }
+    };
     if (directExecutable) {
       assertStaticTaskPath(action.path);
       const argumentsText = action.arguments.trim();
@@ -383,7 +413,7 @@ async function readWindowsTaskCommand(
       ) {
         throw new Error("Scheduled Task executable arguments cannot be inspected");
       }
-      assertInspectionDeadline();
+      await assertRegistrationCurrent();
       const command = {
         programArguments: [action.path, ...splitArgsPreservingQuotes(argumentsText)],
         ...(action.workingDirectory ? { workingDirectory: action.workingDirectory } : {}),
@@ -392,7 +422,7 @@ async function readWindowsTaskCommand(
       return command;
     }
     if (launchers?.length === 0) {
-      assertInspectionDeadline();
+      await assertRegistrationCurrent();
       return null;
     }
     const scriptPath = launchers?.[0]?.scriptPath ?? resolveTaskScriptPath(env);
@@ -464,7 +494,7 @@ async function readWindowsTaskCommand(
     if (requireEffective && programArguments.length === 0) {
       throw new Error("Missing Scheduled Task command");
     }
-    assertInspectionDeadline();
+    await assertRegistrationCurrent({ path: scriptPath, content });
     assertCommandProfile({ programArguments, environment });
     if (
       (registered || startupEntryPath !== undefined) &&

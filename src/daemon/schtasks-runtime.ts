@@ -1,5 +1,6 @@
 import { spawnSync, type SpawnOptions } from "node:child_process";
 import fs from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { hasErrnoCode } from "../infra/errno.js";
 import { findVerifiedGatewayListenerPidsOnPortSync } from "../infra/gateway-processes.js";
 import { inspectPortUsage } from "../infra/ports-inspect.js";
@@ -284,40 +285,57 @@ export async function readStartupEntryState(
   args: ReadGatewayServiceStateArgs,
 ): Promise<GatewayServiceState> {
   const deadline = args.timeoutMs === undefined ? undefined : performance.now() + args.timeoutMs;
+  const capture = async () => {
+    const contents: string[] = [];
+    const command = await readStartupEntryCommand(startupEntryPath, {
+      deadline,
+      onLauncherContent: (content) => contents.push(content),
+    });
+    return { command, contents };
+  };
   let command: GatewayServiceCommandConfig | null = null;
   let env = args.env ?? process.env;
-  let runtime: GatewayServiceRuntime;
-  let loadState: GatewayServiceState["loadState"] = { status: "loaded" };
   try {
-    command = await readStartupEntryCommand(startupEntryPath, { deadline });
+    const captured = await capture();
+    command = captured.command;
     env = mergeGatewayServiceEnv(env, command);
     args.validateEnvBeforeStatusRead?.(env);
-    runtime = await resolveFallbackRuntime(env, command, "control", deadline).catch(
+    let runtime = await resolveFallbackRuntime(env, command, "control", deadline).catch(
       (error: unknown) => createServiceRuntimeInspectionFailure(error, args.timeoutMs),
     );
+    if (!isDeepStrictEqual(await capture(), captured)) {
+      throw new Error("Startup launcher changed during runtime inspection.");
+    }
     if (deadline !== undefined && performance.now() >= deadline) {
       runtime = createServiceRuntimeInspectionFailure(
         "Startup runtime inspection timed out.",
         args.timeoutMs,
       );
     }
+    return {
+      installed: true,
+      loadState: { status: "loaded" },
+      running: runtime.status === "running",
+      env,
+      command,
+      runtime,
+      ...(runtime.inspectionReason ? { inspectionReason: runtime.inspectionReason } : {}),
+    };
   } catch (error) {
     if (!(error instanceof ScheduledTaskInspectionError) || error.timeoutMs === undefined) {
       throw error;
     }
-    const failed = createServiceRuntimeInspectionFailure(error, args.timeoutMs);
-    runtime = failed;
-    loadState = { status: "unknown", detail: failed.inspectionFailure.detail };
+    const runtime = createServiceRuntimeInspectionFailure(error, args.timeoutMs);
+    return {
+      installed: command !== null,
+      loadState: { status: "unknown", detail: runtime.inspectionFailure.detail },
+      running: false,
+      env,
+      command,
+      runtime,
+      ...(runtime.inspectionReason ? { inspectionReason: runtime.inspectionReason } : {}),
+    };
   }
-  return {
-    installed: command !== null,
-    loadState,
-    running: runtime.status === "running",
-    env,
-    command,
-    runtime,
-    ...(runtime.inspectionReason ? { inspectionReason: runtime.inspectionReason } : {}),
-  };
 }
 
 export async function resolveFallbackRuntime(
@@ -641,6 +659,12 @@ export async function readScheduledTaskRuntime(
     deadlineMs,
     installedCommand,
   );
+  if (!isDeepStrictEqual(installedCommand, await readCommand())) {
+    return createServiceRuntimeInspectionFailure(
+      "Scheduled Task definition changed during runtime inspection.",
+      opts?.timeoutMs,
+    );
+  }
   return {
     ...observedRuntime,
     status:

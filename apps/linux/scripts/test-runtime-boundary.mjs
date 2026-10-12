@@ -74,12 +74,12 @@ test("bundled-runtime mutations belong only to the two explicit user actions", (
   );
 });
 
-test("bundled runtime supports Linux and Windows while confirmation stays Linux-only", () => {
+test("bundled runtime supports Linux and Windows with explicit confirmation on both", () => {
   for (const module of ["bundled_runtime", "runtime_action"]) {
     assert.match(main, new RegExp(`#\\[cfg\\(any\\(target_os = "linux", target_os = "windows", test\\)\\)\\]\\s*mod ${module};`));
   }
   assert.match(
     source("tray"),
-    /#\[cfg\(target_os = "linux"\)\]\s*fn confirm_runtime_action\b/,
+    /#\[cfg\(any\(target_os = "linux", target_os = "windows"\)\)\]\s*fn confirm_runtime_action\b/,
   );
 });

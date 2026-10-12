@@ -551,8 +551,8 @@ jobs:
           path: dist/linux-app
           if-no-files-found: error
 
-  # TEST-ONLY bundles: no Apple codesigning/notarization or Authenticode.
-  # Users must bypass Gatekeeper or SmartScreen before running them.
+  # macOS TEST-ONLY bundles have no Apple codesigning/notarization.
+  # Users must bypass Gatekeeper before running them.
   build_macos:
     name: Build unsigned macOS test bundles
     if: ${{ needs.validate_release.outputs.desktop_test_bundles == 'true' }}
@@ -704,7 +704,8 @@ jobs:
           if ($signatures.Count -ne 0) {
             throw "Expected no updater signatures from the keyless build; found $($signatures.Count)"
           }
-          if (-not $installer.VersionInfo.ProductVersion.StartsWith($version)) {
+          # Tauri writes its exact version string to ProductVersion, separately from the numeric version field.
+          if ($installer.VersionInfo.ProductVersion -cne $version) {
             throw "Windows bundle version '$($installer.VersionInfo.ProductVersion)' does not match release version '$version'"
           }
           New-Item -ItemType Directory -Force -Path "dist/windows-app/unsigned" | Out-Null
@@ -718,12 +719,12 @@ jobs:
           path: dist/windows-app/unsigned/*.exe
           if-no-files-found: error
 
-  # Authenticode is opt-in until Foundation signing is configured in this repository.
-  # A configured signer must succeed; updater signing never falls back to unsigned bytes.
+  # Selected release code stays in the secretless builder. Only the protected
+  # main workflow signs finalized installers before the updater signs those bytes.
   sign_windows:
     name: Authenticode-sign Windows installer
     needs: [validate_release, build_windows]
-    if: ${{ vars.OPENCLAW_RELEASE_WINDOWS_SIGNED == 'true' && needs.build_windows.result == 'success' }}
+    if: ${{ always() && github.repository == 'openclaw/openclaw' && github.ref == 'refs/heads/main' && needs.validate_release.result == 'success' && (needs.build_windows.result == 'success' || needs.validate_release.outputs.already_published == 'true') }}
     runs-on: windows-2025
     timeout-minutes: 15
     environment: release-signing
@@ -732,12 +733,26 @@ jobs:
       id-token: write
     outputs:
       signed_installer_artifact_id: ${{ steps.upload_signed.outputs.artifact-id }}
+      installer_sha256: ${{ steps.verify.outputs.installer_sha256 }}
     steps:
       - name: Download unsigned Windows installer
+        if: ${{ needs.build_windows.result == 'success' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.build_windows.outputs.unsigned_updater_artifact_id }}
           path: dist/windows
+
+      - name: Download previously published Windows installer
+        if: ${{ needs.validate_release.outputs.already_published == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = $env:RELEASE_TAG.Substring(1)
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern "OpenClaw-$version-windows-x86_64.exe" --dir dist/windows
+          if ($LASTEXITCODE -ne 0) { throw "Cannot verify the previously published Windows installer" }
 
       - name: Validate Windows signing input
         shell: pwsh
@@ -746,12 +761,18 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $version = $env:RELEASE_TAG.Substring(1)
-          $files = @(Get-ChildItem dist/windows -File -Recurse)
-          if ($files.Count -ne 1 -or $files[0].FullName -cne (Join-Path (Resolve-Path dist/windows).Path "OpenClaw-$version-windows-x86_64.exe")) {
+          $files = @(Get-ChildItem -LiteralPath dist/windows -Force -Recurse)
+          if ($files.Count -ne 1 -or $files[0].PSIsContainer -or
+              ($files[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              $files[0].FullName -cne (Join-Path (Resolve-Path dist/windows).Path "OpenClaw-$version-windows-x86_64.exe")) {
             throw "Expected exactly the selected Windows installer before signing"
+          }
+          if ($files[0].VersionInfo.ProductVersion -cne $version) {
+            throw "Windows installer version does not match the validated release"
           }
 
       - name: Azure OIDC login
+        if: ${{ needs.build_windows.result == 'success' }}
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -759,6 +780,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installer
+        if: ${{ needs.build_windows.result == 'success' }}
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: https://eus.codesigning.azure.net/
@@ -772,6 +794,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Verify Foundation Authenticode signature
+        id: verify
         shell: pwsh
         env:
           RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
@@ -782,6 +805,8 @@ jobs:
           if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -cne 'CN=OpenClaw Foundation, O=OpenClaw Foundation, L=Mill Valley, S=California, C=US' -or -not $signature.TimeStamperCertificate) {
             throw "Expected a valid OpenClaw Foundation Authenticode signature"
           }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "dist/windows/OpenClaw-$version-windows-x86_64.exe").Hash.ToLowerInvariant()
+          "installer_sha256=$hash" >> $env:GITHUB_OUTPUT
 
       - name: Upload Authenticode-signed installer
         id: upload_signed
@@ -798,7 +823,7 @@ jobs:
     if: >-
       ${{ always() && needs.build_windows.result == 'success' &&
           (needs.validate_release.outputs.desktop_test_bundles != 'true' || needs.build_macos.result == 'success') &&
-          (vars.OPENCLAW_RELEASE_WINDOWS_SIGNED != 'true' || needs.sign_windows.result == 'success') }}
+          needs.sign_windows.result == 'success' }}
     needs:
       - validate_release
       - build_macos
@@ -842,15 +867,7 @@ jobs:
           artifact-ids: ${{ needs.build_macos.outputs.unsigned_updater_artifact_id }}
           path: dist/signing-input/macos
 
-      - name: Download finalized Windows updater installer
-        if: ${{ vars.OPENCLAW_RELEASE_WINDOWS_SIGNED != 'true' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ needs.build_windows.outputs.unsigned_updater_artifact_id }}
-          path: dist/signing-input/windows
-
       - name: Download Authenticode-signed Windows updater installer
-        if: ${{ vars.OPENCLAW_RELEASE_WINDOWS_SIGNED == 'true' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.sign_windows.outputs.signed_installer_artifact_id }}
@@ -917,6 +934,7 @@ jobs:
     if: >-
       ${{
         always() &&
+        needs.sign_windows.result == 'success' &&
         (needs.validate_release.outputs.already_published == 'true' ||
           (needs.build_linux.result == 'success' &&
             needs.sign_linux.result == 'success')) &&
@@ -931,6 +949,7 @@ jobs:
       - sign_linux
       - build_macos
       - build_windows
+      - sign_windows
       - sign_desktop
     # Core activation and Linux updates share this short publication queue.
     concurrency:
@@ -1071,6 +1090,7 @@ jobs:
           WORKFLOW_FULL_REF: ${{ github.ref }}
           REQUEST_RUN_ID: ${{ github.event.workflow_run.id }}
           REQUEST_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WINDOWS_INSTALLER_SHA256: ${{ needs.sign_windows.outputs.installer_sha256 }}
         run: |
           set -euo pipefail
           input_args=()
@@ -1101,6 +1121,7 @@ jobs:
             --request-run-id "$REQUEST_RUN_ID" --request-run-attempt "$REQUEST_RUN_ATTEMPT" \
             "${input_args[@]}" --public-key-config apps/linux/src-tauri/tauri.conf.json \
             --desktop-test "$DESKTOP_TEST_BUNDLES" --windows true \
+            --windows-installer-sha256 "$WINDOWS_INSTALLER_SHA256" \
             2> >(tee "$RUNNER_TEMP/linux-publication.log" >&2) | tee "$RUNNER_TEMP/linux-publication.json"
 
       - name: Record incomplete Linux publication

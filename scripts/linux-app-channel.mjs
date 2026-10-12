@@ -1041,6 +1041,18 @@ function publish(github, options, publicKey) {
     );
     return { name, path, size: stat.size, sha256: fileDigest(path) };
   });
+  const windowsInstaller = inputs.find((entry) => entry.name === names.windows);
+  if (windowsInstaller) {
+    assert(
+      /^[a-f0-9]{64}$/u.test(options["windows-installer-sha256"] ?? ""),
+      "Windows publication requires the Authenticode-verified installer digest",
+    );
+    assert.equal(
+      windowsInstaller.sha256,
+      options["windows-installer-sha256"],
+      "Windows installer differs from Authenticode-verified bytes",
+    );
+  }
   const checksums = inputs
     .filter((entry) => entry.name !== names.checksums)
     .map((entry) => `${entry.sha256}  ./${entry.name}`)
@@ -1328,6 +1340,7 @@ function main(args = process.argv.slice(2)) {
         "public-key-config",
         "desktop-test",
         "windows",
+        "windows-installer-sha256",
         "latest",
       ].map((name) => [name, { type: "string" }]),
     ),

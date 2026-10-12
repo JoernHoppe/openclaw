@@ -56,6 +56,35 @@ it("shares one allowance across XML, account identity and command inspection", a
   expect(vi.mocked(layout.readScheduledTaskCommand).mock.calls.at(-1)?.[1]?.deadline).toBe(100);
 });
 
+it("charges qualified-account translation to the same identity allowance", async () => {
+  const f = await timedFixture();
+  f.setTask(
+    buildScheduledTaskXml({
+      taskDescription: "OpenClaw Gateway",
+      taskUser: "operator",
+      launchPath: f.sourcePath,
+    })
+      .replace("<UserId>operator</UserId>", "<UserId>FIXTURE\\operator</UserId>")
+      .replace("<UserId>operator</UserId>", "<UserId>S-1-5-21-1-2-3-1001</UserId>"),
+  );
+  const query = native.task.getMockImplementation()!;
+  native.task.mockImplementation(async (args) => {
+    f.advance(20);
+    return query(args);
+  });
+  native.identity.mockImplementation(async () => {
+    f.advance(native.identity.mock.calls.length === 1 ? 30 : 50);
+    return { code: 0, stdout: "S-1-5-21-1-2-3-1001\n", stderr: "", termination: "exit" };
+  });
+  vi.mocked(layout.readScheduledTaskCommand).mockClear();
+  await expect(auditScheduledTaskDefinition(f.env, [], 100, f.command)).rejects.toMatchObject({
+    reason: "windows-task-inspection-failed",
+    timeoutMs: 0,
+  });
+  expect(native.identity.mock.calls.map(([, , options]) => options?.timeout)).toEqual([80, 50]);
+  expect(layout.readScheduledTaskCommand).not.toHaveBeenCalled();
+});
+
 it.each(["xml", "identity", "launcher"] as const)(
   "rejects a late %s observation before admitting later inspection work",
   async (stage) => {

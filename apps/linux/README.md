@@ -92,9 +92,19 @@ for installation, app handoff, shortcuts, and troubleshooting.
 
 Windows x64 NSIS installers ship beside Linux bundles in regular OpenClaw
 releases. The Windows updater uses the `windows-stable` channel and verifies
-Tauri updater signatures. Installer Authenticode signing is opt-in through the
-release workflow's Foundation Azure signing job; no credentials are needed for
-non-publishing builds.
+Tauri updater signatures. The release workflow requires a timestamped OpenClaw
+Foundation Authenticode signature on each NSIS installer before signing its
+updater bytes. Only the protected main workflow can use the `release-signing`
+environment; a missing or failed signer cannot publish an unsigned installer.
+No credentials are needed for non-publishing builds.
+
+Release retries verify the existing public installer's Authenticode signature
+without re-signing or replacing it. The publication owner accepts only the exact
+installer hash verified by the Windows signing job, including reused assets.
+
+The installer signature does not sign the enclosed app executable or NSIS
+uninstaller. The bundled Windows Bun executable retains its separately verified
+Foundation signature and pinned hash.
 
 Local setup seeds the private Windows Bun runtime, installs the CLI with its
 package manager, and delegates service installation and health checks to
@@ -105,9 +115,11 @@ packages; Windows source development uses `OPENCLAW_DESKTOP_CLI`.
 
 Production runtime admission requires a matching Windows entry in the pinned
 OpenClaw Bun release with `authenticodeSigned: true` and `testOnly: false`.
+The shared release pin includes signed x64 and ARM64 artifacts. Each target
+uses its matching executable; ARM64 never falls back to an x64 payload.
 When a pin has no Windows entry, local setup reports an actionable missing-runtime
-error while remote Gateways remain available. The pin must include the signed
-Windows fork release before shipping local setup. Unsigned dry-run binaries
+error while remote Gateways remain available. The fork release manifest and
+pin must agree on the release identity and executable hashes. Unsigned proof binaries
 are never admitted by production builds.
 
 Build on Windows with Rust's MSVC toolchain, Visual Studio C++ build tools, and
@@ -413,7 +425,7 @@ guard with `definition: null`, so it refuses if a service has appeared since
 setup observed no service. The app records an informational marker; it never uses
 that marker as permission to change a service automatically.
 
-On Linux, **Use bundled runtime…** appears in the tray whenever the existing Gateway uses
+On Linux and Windows, **Use bundled runtime…** appears in the tray whenever the existing Gateway uses
 another runtime, including Node, an older bundled Bun, or an operator-selected
 runtime. The action shows the current runtime and asks for confirmation. It
 passes that observation's service definition and runtime pin to the CLI's
@@ -421,6 +433,17 @@ passes that observation's service definition and runtime pin to the CLI's
 change. The CLI also rechecks that an existing service is running after acquiring
 its mutation lock. A paused or stopped Gateway stays stopped; choose **Start
 Gateway** before switching runtimes.
+
+On Windows, adoption preserves a per-user Startup registration without UAC.
+Protected Scheduled Tasks use one `ShellExecuteExW("runas")` request for the
+installed canonical CLI after confirmation; the app stays unelevated. The CLI
+owns the complete stop, replace, start, readiness, and guarded recovery
+transaction under the same `--expected-runtime-pin` check. A short-lived,
+nonce-bound result file under the account's `.openclaw/desktop-runtime-actions`
+reports the outcome without granting service authority. The app retains its
+file and directory handles until the CLI exits, then removes the request.
+Cancellation and non-admin accounts leave the service alone and show the exact
+manual command. No privileged listener or resident helper is installed.
 
 After the install, the app checks Gateway health. A failed health check shows
 the error and a CLI command to return to the previous runtime; it does not
@@ -430,7 +453,7 @@ a particular previous executable, use
 `openclaw gateway install --force --runtime-path /absolute/path/to/node-or-bun`.
 
 Startup and desktop updates leave existing Gateway services and runtime pins
-unchanged, including services previously installed by the app. On Linux, after an
+unchanged, including services previously installed by the app. On Linux and Windows, after an
 app update provides a newer Bun, choose **Use bundled runtime…** again to switch.
 The CLI owns service installation on both Linux and Windows; macOS Tauri keeps
 its existing behavior, separate from the native macOS app.

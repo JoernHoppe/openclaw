@@ -93,6 +93,20 @@ function resolveScheduledTaskRenderEnv(
   return merged;
 }
 
+function resolveScheduledTaskScriptEnvironment(
+  taskEnv: GatewayServiceEnv,
+  environment: GatewayServiceEnv | undefined,
+): GatewayServiceEnv | undefined {
+  const scriptEnv = environment ? { ...environment } : {};
+  for (const key of CALLER_OWNED_SERVICE_IDENTITY_KEYS) {
+    const value = taskEnv[key]?.trim();
+    if (value) {
+      scriptEnv[key] = value;
+    }
+  }
+  return Object.keys(scriptEnv).length > 0 ? scriptEnv : undefined;
+}
+
 const SCHEDULED_TASK_ACTIVATION_KEYS = [
   "OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER",
   "OPENCLAW_TASK_SCRIPT_NAME",
@@ -145,18 +159,11 @@ async function writeScheduledTaskScript(
     env: taskEnv,
     description,
   });
-  const scriptEnv = environment ? { ...environment } : {};
-  for (const key of CALLER_OWNED_SERVICE_IDENTITY_KEYS) {
-    const value = taskEnv[key]?.trim();
-    if (value) {
-      scriptEnv[key] = value;
-    }
-  }
   const script = buildTaskScript({
     description: taskDescription,
     programArguments,
     workingDirectory,
-    environment: Object.keys(scriptEnv).length > 0 ? scriptEnv : undefined,
+    environment: resolveScheduledTaskScriptEnvironment(taskEnv, environment),
   });
   const files = [
     { path: scriptPath, contents: encodeWindowsLauncherScript({ format: "cmd", content: script }) },

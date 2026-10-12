@@ -6910,28 +6910,74 @@ it("isolates release credentials and verifies trusted AppImage and signing tools
   expect(azureSigning.uses).toBe(
     "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82",
   );
-  for (const [enabled, result, expected] of [
-    ["true", "success", true],
-    ["true", "failure", false],
-    ["false", "success", false],
+  expect(azureSigning.with).toMatchObject({
+    endpoint: "https://eus.codesigning.azure.net/",
+    "signing-account-name": "openclaw",
+    "certificate-profile-name": "openclaw",
+    "file-digest": "SHA256",
+    "timestamp-rfc3161": "http://timestamp.acs.microsoft.com",
+    "timestamp-digest": "SHA256",
+  });
+  expect(JSON.stringify(linux)).not.toContain("OPENCLAW_RELEASE_WINDOWS_SIGNED");
+  for (const [repository, ref, result, expected] of [
+    ["openclaw/openclaw", "refs/heads/main", "success", true],
+    ["openclaw/openclaw", "refs/heads/main", "failure", false],
+    ["openclaw/openclaw", "refs/pull/123/merge", "success", false],
+    ["openclaw/openclaw", "refs/heads/topic", "success", false],
+    ["untrusted/openclaw", "refs/heads/main", "success", false],
   ]) {
     expect(
       runInNewContext(windowsSigner.if.replace(/^\$\{\{|\}\}$/gu, ""), {
-        vars: { OPENCLAW_RELEASE_WINDOWS_SIGNED: enabled },
-        needs: { build_windows: { result } },
+        always: () => true,
+        github: { repository, ref },
+        needs: {
+          build_windows: { result },
+          validate_release: { result: "success", outputs: { already_published: "false" } },
+        },
       }),
     ).toBe(expected);
   }
-  for (const [enabled, signed, expected] of [
-    ["true", "failure", false],
-    ["true", "skipped", false],
-    ["true", "success", true],
-    ["false", "skipped", true],
+  expect(
+    runInNewContext(windowsSigner.if.replace(/^\$\{\{|\}\}$/gu, ""), {
+      always: () => true,
+      github: { repository: "openclaw/openclaw", ref: "refs/heads/main" },
+      needs: {
+        build_windows: { result: "skipped" },
+        validate_release: { result: "success", outputs: { already_published: "true" } },
+      },
+    }),
+  ).toBe(true);
+  const windowsSigningSteps = windowsSigner.steps as WorkflowStep[];
+  const windowsBuildSteps = linux.jobs.build_windows.steps as WorkflowStep[];
+  expect(
+    windowsBuildSteps.find(({ name }) => name === "Verify and stage unsigned Windows bundle")?.run,
+  ).toContain("$installer.VersionInfo.ProductVersion -cne $version");
+  expect(
+    windowsSigningSteps.find(({ name }) => name === "Validate Windows signing input")?.run,
+  ).toContain("$files[0].VersionInfo.ProductVersion -cne $version");
+  expect(JSON.stringify([windowsBuildSteps, windowsSigningSteps])).not.toContain(
+    "ProductVersion.StartsWith",
+  );
+  expect(windowsSigningSteps.find(({ name }) => name === "Azure OIDC login")?.if).toBe(
+    "${{ needs.build_windows.result == 'success' }}",
+  );
+  expect(windowsSigningSteps.find(({ name }) => name === "Sign Windows installer")?.if).toBe(
+    "${{ needs.build_windows.result == 'success' }}",
+  );
+  expect(
+    windowsSigningSteps.find(
+      ({ name }) => name === "Download previously published Windows installer",
+    )?.if,
+  ).toBe("${{ needs.validate_release.outputs.already_published == 'true' }}");
+  for (const [signed, expected] of [
+    ["failure", false],
+    ["skipped", false],
+    ["cancelled", false],
+    ["success", true],
   ]) {
     expect(
       runInNewContext(linux.jobs.sign_desktop.if.replace(/^\$\{\{|\}\}$/gu, ""), {
         always: () => true,
-        vars: { OPENCLAW_RELEASE_WINDOWS_SIGNED: enabled },
         needs: {
           validate_release: { outputs: { desktop_test_bundles: "false" } },
           build_windows: { result: "success" },
@@ -6953,7 +6999,7 @@ it("isolates release credentials and verifies trusted AppImage and signing tools
     desktopSigningSteps
       .map(({ uses }) => uses)
       .filter((uses): uses is string => uses !== undefined),
-  ).toEqual([DOWNLOAD_ARTIFACT_V8, DOWNLOAD_ARTIFACT_V8, DOWNLOAD_ARTIFACT_V8, UPLOAD_ARTIFACT_V7]);
+  ).toEqual([DOWNLOAD_ARTIFACT_V8, DOWNLOAD_ARTIFACT_V8, UPLOAD_ARTIFACT_V7]);
   expect(desktopSigningSteps.some((step) => step["working-directory"] !== undefined)).toBe(false);
   const desktopSigningBodies = desktopSigningSteps.map(({ run }) => run ?? "").join("\n");
   expect(desktopSigningBodies).not.toMatch(
@@ -6968,28 +7014,21 @@ it("isolates release credentials and verifies trusted AppImage and signing tools
     path: "dist/signing-input/macos",
   });
   expect(
-    desktopSigningSteps.find(({ name }) => name === "Download finalized Windows updater installer")
-      ?.with,
+    desktopSigningSteps.find(
+      ({ name }) => name === "Download Authenticode-signed Windows updater installer",
+    )?.with,
   ).toEqual({
-    "artifact-ids": "${{ needs.build_windows.outputs.unsigned_updater_artifact_id }}",
+    "artifact-ids": "${{ needs.sign_windows.outputs.signed_installer_artifact_id }}",
     path: "dist/signing-input/windows",
   });
-  for (const enabled of ["true", "false"]) {
-    const downloads = desktopSigningSteps.filter((step) =>
-      step.name?.endsWith("Windows updater installer"),
-    );
-    const selected = downloads.filter((step) =>
-      runInNewContext((step.if ?? "").replace(/^\$\{\{|\}\}$/gu, ""), {
-        vars: { OPENCLAW_RELEASE_WINDOWS_SIGNED: enabled },
-      }),
-    );
-    expect(selected).toHaveLength(1);
-    expect(selected[0]?.with?.["artifact-ids"]).toBe(
-      enabled === "true"
-        ? "${{ needs.sign_windows.outputs.signed_installer_artifact_id }}"
-        : "${{ needs.build_windows.outputs.unsigned_updater_artifact_id }}",
-    );
-  }
+  expect(
+    desktopSigningSteps.filter((step) => step.name?.endsWith("Windows updater installer")),
+  ).toHaveLength(1);
+  expect(
+    desktopSigningSteps.find(
+      ({ name }) => name === "Download Authenticode-signed Windows updater installer",
+    )?.if,
+  ).toBeUndefined();
   const signDesktop = expectDefined(
     desktopSigningSteps.find(({ name }) => name === "Sign finalized desktop updater bundles"),
     "desktop updater signing step",
@@ -7015,8 +7054,10 @@ it("isolates release credentials and verifies trusted AppImage and signing tools
 
   expect(linux.jobs.publish.needs).toContain("sign_linux");
   expect(linux.jobs.publish.needs).toContain("sign_desktop");
+  expect(linux.jobs.publish.needs).toContain("sign_windows");
   expect(linux.jobs.publish.if).toContain("needs.sign_linux.result == 'success'");
   expect(linux.jobs.publish.if).toContain("needs.sign_desktop.result == 'success'");
+  expect(linux.jobs.publish.if).toContain("needs.sign_windows.result == 'success'");
   expect(linux.jobs.publish.if).not.toContain("inputs.");
   expect(
     (linux.jobs.publish.steps as WorkflowStep[]).find(
@@ -7056,6 +7097,12 @@ it("isolates release credentials and verifies trusted AppImage and signing tools
         name === "Publish immutable bundles, canonical Linux channel, and legacy mirror",
     ),
     "Linux publication owner",
+  );
+  expect(publishLinuxMetadata.env?.WINDOWS_INSTALLER_SHA256).toBe(
+    "${{ needs.sign_windows.outputs.installer_sha256 }}",
+  );
+  expect(publishLinuxMetadata.run).toContain(
+    '--windows-installer-sha256 "$WINDOWS_INSTALLER_SHA256"',
   );
   expect(publishLinuxMetadata.run).toContain(
     '--assets dist/release --signature "dist/input/linux/signatures/OpenClaw-${RELEASE_TAG#v}-amd64.AppImage.sig"',

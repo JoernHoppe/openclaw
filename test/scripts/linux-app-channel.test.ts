@@ -685,6 +685,7 @@ function fixture(workflowRef = toolingRef, desktop = false, windows = false) {
     releaseTag = tag,
     latest?: string,
     publicOnly = false,
+    verifiedWindowsSha256?: string | null,
   ) => {
     const args = [mode, "--tag", releaseTag, "--source-sha", sourceSha(releaseTag)];
     args.push("--tooling-sha", toolingSha);
@@ -736,6 +737,13 @@ function fixture(workflowRef = toolingRef, desktop = false, windows = false) {
     }
     if (mode === "publish") {
       args.push("--desktop-test", String(desktop), "--windows", String(windows));
+      if ((desktop || windows) && verifiedWindowsSha256 !== null) {
+        const installer = `OpenClaw-${releaseTag.slice(1)}-windows-x86_64.exe`;
+        args.push(
+          "--windows-installer-sha256",
+          verifiedWindowsSha256 ?? hash(Buffer.from(`fixture bytes: ${installer}\n`)),
+        );
+      }
       if (!publicOnly) {
         args.push("--assets", inputs(releaseTag), "--signature", signaturePath);
       }
@@ -1003,6 +1011,30 @@ it("rejects an invalid Windows updater signature before publishing bundles", () 
   });
   failed(f.run("publish"), "fixture signature verification refused");
   expect(f.mutations()).toEqual([]);
+});
+
+it.each([null, "0".repeat(64)])(
+  "refuses Windows publication without matching Authenticode evidence (%s)",
+  (verifiedWindowsSha256) => {
+    const f = fixture(toolingRef, false, true);
+    const message =
+      verifiedWindowsSha256 === null
+        ? "Windows publication requires the Authenticode-verified installer digest"
+        : "Windows installer differs from Authenticode-verified bytes";
+    failed(f.run("publish", tag, undefined, false, verifiedWindowsSha256), message);
+    expect(f.mutations()).toEqual([]);
+  },
+);
+
+it("refuses different public Windows bytes before replaying channel publication", () => {
+  const f = fixture(toolingRef, false, true);
+  succeeded(f.run("publish"));
+  const writes = f.mutations().length;
+  failed(
+    f.run("publish", tag, undefined, true, "0".repeat(64)),
+    "Windows installer differs from Authenticode-verified bytes",
+  );
+  expect(f.mutations()).toHaveLength(writes);
 });
 
 it("publishes opt-in desktop metadata only after successful Linux and legacy readback", () => {

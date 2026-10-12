@@ -136,7 +136,7 @@ async function inspectRuntime(context: RegistrationContext, allowPending = false
 
 /** The native command and process must still be ours on both sides of HTTP readiness. */
 export async function verifyWindowsRegistrationReadiness(context: RegistrationContext) {
-  const deadlineAt = Date.now() + WINDOWS_REGISTRATION_READINESS_MS;
+  const deadlineAt = performance.now() + WINDOWS_REGISTRATION_READINESS_MS;
   const gateway = shouldManageGatewayListenerPort(context.env);
   const port = resolveScheduledTaskCommandPort(context.env, context.command);
   if (gateway && !port) {
@@ -153,7 +153,7 @@ export async function verifyWindowsRegistrationReadiness(context: RegistrationCo
     healthz: null,
     readyz: null,
   };
-  while (Date.now() < deadlineAt) {
+  while (performance.now() < deadlineAt) {
     // Cold Startup processes can precede their listener or a usable CIM observation.
     const initial = await inspectRuntime(context, true);
     if (gateway && port) {
@@ -173,11 +173,15 @@ export async function verifyWindowsRegistrationReadiness(context: RegistrationCo
       initial.pid
     ) {
       const final = await inspectRuntime(context, true);
-      if (final.status === "running" && final.pid === initial.pid && Date.now() < deadlineAt) {
+      if (
+        final.status === "running" &&
+        final.pid === initial.pid &&
+        performance.now() < deadlineAt
+      ) {
         return;
       }
     }
-    const remaining = deadlineAt - Date.now();
+    const remaining = deadlineAt - performance.now();
     if (remaining > 0) {
       await sleep(Math.min(DEFAULT_RESTART_HEALTH_DELAY_MS, remaining));
     }
