@@ -3,6 +3,7 @@ import { resolveConfiguredAgentId } from "../../agents/agent-scope-config.js";
 import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveTalkSessionAgentId } from "../../talk/agent-target.js";
+import { captureSessionMutationRouting } from "../session-sharing-preparation.js";
 import { resolveSessionStoreIdentity } from "../session-store-key.js";
 import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
 import type { PreparedTalkSessionTarget } from "./session-target.types.js";
@@ -24,12 +25,17 @@ export async function prepareTalkSessionTarget(
   const requestedKey = normalizeOptionalString(requestedSessionKey);
   const owner = resolveTalkSessionAgentId(cfg, requestedKey ?? "main");
   const sessionKey = requestedKey ?? resolveAgentMainSessionKey({ cfg, agentId: owner });
+  const assertCurrent = captureSessionMutationRouting(
+    cfg,
+    () => new Error("Talk session storage target changed; retry the request"),
+    [{ sessionKey, agentId: owner }],
+  );
   const { agentId, canonicalKey, storePath } = await resolveTalkSessionStorageTarget(
     cfg,
     sessionKey,
     owner,
   );
-  return Object.freeze({ agentId, sessionKey, canonicalKey, storePath });
+  return Object.freeze({ agentId, sessionKey, canonicalKey, storePath, assertCurrent });
 }
 
 /** Revalidate a retained owner without consulting the current ambient Talk default. */
@@ -37,14 +43,7 @@ export function assertTalkSessionStorageTarget(
   cfg: OpenClawConfig,
   target: PreparedTalkSessionTarget,
 ): void {
-  const current = resolveSessionStoreIdentity({
-    cfg,
-    sessionKey: target.canonicalKey,
-    agentId: resolveConfiguredAgentId(cfg, target.agentId),
-  });
-  if (current.agentId !== target.agentId || current.canonicalKey !== target.canonicalKey) {
-    throw new Error("Talk session storage target changed; retry the request");
-  }
+  target.assertCurrent(cfg);
 }
 
 async function resolveTalkSessionStorageTarget(

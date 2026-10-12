@@ -1,8 +1,9 @@
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { assertAdmittedRunOperatorAuthority } from "../agents/admitted-run-context.js";
 import type { SessionEntry } from "../config/sessions.js";
+import { resolveSqliteSessionKey } from "../config/sessions/session-accessor.sqlite-scope-helpers.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { isIncognitoSessionKey, toAgentStoreSessionKey } from "../routing/session-key.js";
+import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { operatorScopeSatisfied } from "../shared/operator-scope-compat.js";
 import type { OpenClawStateDatabaseOptions } from "../state/openclaw-state-db.js";
 import { prepareUserProfileRoleAuthority } from "../state/user-channel-identity-operations.js";
@@ -365,10 +366,10 @@ export function createSessionSharingInputAuthority(
             {
               agentId: read.storageTarget.agentId,
               storePath: read.storageTarget.storePath,
-              sessionKey: toAgentStoreSessionKey({
-                agentId: read.storageTarget.agentId,
-                requestKey: read.target?.storeKey ?? read.storageTarget.canonicalKey,
-              }),
+              sessionKey: resolveSqliteSessionKey(
+                read.target?.storeKey ?? read.storageTarget.canonicalKey,
+                read.storageTarget.agentId,
+              ),
               entry: read.target?.entry,
               readSource: read.target?.readSource,
               members: read.members,

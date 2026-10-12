@@ -261,10 +261,7 @@ const formatQueueDetails = (queue?: QueueStatus) => {
   return detailParts.length ? ` (${detailParts.join(" · ")})` : "";
 };
 
-const resolveTranscriptUsage = (snapshot?: SessionTranscriptUsageSnapshot | null) => {
-  if (!snapshot) {
-    return undefined;
-  }
+const formatTranscriptUsage = (snapshot: SessionTranscriptUsageSnapshot) => {
   const input = snapshot.inputTokens ?? 0;
   const output = snapshot.outputTokens ?? 0;
   const cacheRead = snapshot.cacheRead;
@@ -551,7 +548,7 @@ export function buildStatusMessageParts(args: StatusArgs) {
   // Explicitly stale session/cache usage can still hydrate Tokens/Cache lines
   // but must not become Context.
   if (args.transcriptUsage) {
-    const logUsage = resolveTranscriptUsage(args.transcriptUsage);
+    const logUsage = formatTranscriptUsage(args.transcriptUsage);
     if (logUsage) {
       const candidate = logUsage.totalTokensFresh
         ? logUsage.promptTokens || logUsage.total

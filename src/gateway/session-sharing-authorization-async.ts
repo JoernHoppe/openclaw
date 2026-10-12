@@ -131,17 +131,7 @@ export async function resolveSessionMutationAuthorizationAsync(
           throw error;
         }
       };
-      const sourcePath = initialFacts.sourcePath;
-      const sourceIdentity = sourcePath && readDatabasePathIdentitySync(sourcePath);
-      const readSource =
-        sourcePath && sourceIdentity
-          ? {
-              agentId: initialFacts.sourceAgentId ?? input.agentId,
-              path: sourcePath,
-              databaseIdentity: sourceIdentity.key.slice("file:".length),
-              databaseBirthtime: sourceIdentity.birthtime,
-            }
-          : undefined;
+      const readSource = initialFacts.readSource;
       preparedTargets.push({
         ...target,
         storageTarget: retained.storageTarget,

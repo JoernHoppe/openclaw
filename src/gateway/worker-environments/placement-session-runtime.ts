@@ -14,6 +14,7 @@ import type { SessionEntry } from "../../config/sessions.js";
 import { withSessionEntriesFromStoresInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { withPluginMetadataSnapshotScope } from "../../plugins/current-plugin-metadata-snapshot.js";
 import { resolvePluginMetadataSnapshotAsync } from "../../plugins/plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import { getActivePluginRegistryWorkspaceDirFromState } from "../../plugins/runtime-state.js";
@@ -66,36 +67,46 @@ export async function resolveWorkerPlacementSessionRuntimeAsync(
     allowWorkspaceScopedCurrent: true,
   });
   params.assertCurrent?.();
-  const ownership = await readSessionRuntimeOwnershipAsync({
-    config: params.cfg,
-    agentId: params.agentId,
-    sessionKey: params.sessionKey,
-    sessionEntry: params.entry,
-    assertCurrent: params.assertCurrent,
-    readPreparedPreviousSessionId: () => params.entry.previousSessionId,
-  });
-  params.assertCurrent?.();
-  const configured =
-    ownership?.modelRef ?? resolveSessionConfiguredDefault(params.cfg, params.agentId);
-  const storedOverride = ownership?.modelRef
-    ? null
-    : await resolveStoredModelOverrideAsync({
-        sessionEntry: params.entry,
-        sessionKey: params.sessionKey,
-        parentSessionKey: params.entry.parentSessionKey,
-        defaultProvider: configured.provider,
-        loadSessionEntry:
-          params.readSourceEntry ?? ((key) => readWorkerPlacementModelSource(params, key)),
-      });
-  params.assertCurrent?.();
-  return resolveWorkerPlacementModelRuntime({
-    ...params,
-    provider: storedOverride?.provider ?? configured.provider,
-    model: storedOverride?.model ?? configured.model,
-    preparedRuntimeOwnership: ownership ?? null,
-    preparedEnvironment,
+  return withPluginMetadataSnapshotScope(
     metadataSnapshot,
-  });
+    async () => {
+      const ownership = await readSessionRuntimeOwnershipAsync({
+        config: params.cfg,
+        agentId: params.agentId,
+        sessionKey: params.sessionKey,
+        sessionEntry: params.entry,
+        assertCurrent: params.assertCurrent,
+        readPreparedPreviousSessionId: () => params.entry.previousSessionId,
+      });
+      params.assertCurrent?.();
+      const configured =
+        ownership?.modelRef ?? resolveSessionConfiguredDefault(params.cfg, params.agentId);
+      const storedOverride = ownership?.modelRef
+        ? null
+        : await resolveStoredModelOverrideAsync({
+            sessionEntry: params.entry,
+            sessionKey: params.sessionKey,
+            parentSessionKey: params.entry.parentSessionKey,
+            defaultProvider: configured.provider,
+            loadSessionEntry:
+              params.readSourceEntry ?? ((key) => readWorkerPlacementModelSource(params, key)),
+          });
+      params.assertCurrent?.();
+      return resolveWorkerPlacementModelRuntime({
+        ...params,
+        provider: storedOverride?.provider ?? configured.provider,
+        model: storedOverride?.model ?? configured.model,
+        preparedRuntimeOwnership: ownership ?? null,
+        preparedEnvironment,
+        metadataSnapshot,
+      });
+    },
+    {
+      config: params.cfg,
+      env: preparedEnvironment,
+      ...(workspaceDir ? { workspaceDir } : {}),
+    },
+  );
 }
 
 /** Preserve qualified parent precedence and sentinel physical ownership during async selection. */

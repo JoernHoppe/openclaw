@@ -117,6 +117,7 @@ it.each([
   { kind: "alias", agentId: "main" },
   { kind: "global", agentId: "main" },
   { kind: "global", agentId: "work" },
+  { kind: "unknown", agentId: "main" },
 ])(
   "admits missing $agentId $kind session authority without caller-thread SQL",
   async ({ kind, agentId }) => {
@@ -132,7 +133,12 @@ it.each([
       const client = roleClient("write", "new-session-owner");
       const scope = {
         agentId,
-        sessionKey: kind === "qualified" ? "agent:main:new-worker-session" : "global",
+        sessionKey:
+          kind === "qualified"
+            ? "agent:main:new-worker-session"
+            : kind === "unknown"
+              ? "unknown"
+              : "global",
       };
       const route = resolveGatewaySessionStoreTarget({
         cfg,
@@ -172,14 +178,14 @@ it.each([
                 members: membership.get(latest.legacyKey ?? latest.canonicalKey) ?? [],
               },
               () => {
-                if (kind === "global") {
+                if (kind === "global" || kind === "unknown") {
                   const wrongOwnerEffect = vi.fn();
                   expect(() =>
                     result.authorization!.withPreparedCurrent!(
                       {
                         agentId: latest.agentId,
                         storePath: latest.storePath,
-                        sessionKey: "agent:other:global",
+                        sessionKey: `agent:other:${kind}`,
                         entry: latest.entry,
                         readSource: latest.capturedReadSource,
                         members: [],
@@ -200,6 +206,7 @@ it.each([
           },
         });
         await result.authorization!.admittedInputAuthority!.withCurrent((facts, assertCurrent) => {
+          expect(facts.sessionKey).toBe(route.canonicalKey);
           expect(facts.entry).toBeUndefined();
           expect(facts.members).toEqual([]);
           assertCurrent();

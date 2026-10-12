@@ -358,7 +358,7 @@ describe("embedded run durable writer admission", () => {
         }
       });
       try {
-        const result = claimAgentSessionWriter({
+        const claiming = claimAgentSessionWriter({
           ...scope,
           admittedRunContext,
           prompt: "completion turn",
@@ -369,9 +369,9 @@ describe("embedded run durable writer admission", () => {
           workspaceDir: "/tmp",
         });
         if (revoke) {
-          await expect(result).rejects.toThrow("admitted run authority is no longer active");
+          await expect(claiming).rejects.toBe(revoked);
         } else {
-          await result;
+          await claiming;
         }
         expect(loadSessionEntry(scope)).toMatchObject({
           activeWriterRunId: revoke ? "run-a" : "run-b",

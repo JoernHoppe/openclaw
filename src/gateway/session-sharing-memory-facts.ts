@@ -41,7 +41,7 @@ export function prepareMemorySessionMutationFacts(
         throw new SessionMutationFactsUnavailableError();
       }
       assertRoutingCurrent(cfg);
-      return memory.readCurrent();
+      return { ...memory.readCurrent(), readSource: memory.source };
     },
     release() {
       active = false;

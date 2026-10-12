@@ -1,6 +1,6 @@
 import path from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import { ok } from "@openclaw/normalization-core/result";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { readPreparedSessionSharingChange } from "../config/sessions/session-accessor.sqlite-entry-cache-publication.js";
 import {
   assertSessionEntryCreationPublication,
@@ -13,6 +13,7 @@ import {
 import type { SessionEntryCreationOperation } from "../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { readCommittedIncognitoSessionSharing } from "../config/sessions/session-accessor.sqlite-incognito-sharing.js";
 import { readSessionEntriesFromStoreInWorker } from "../config/sessions/session-entry-read-runtime.js";
+import type { CapturedSessionEntryReadSource } from "../config/sessions/session-entry-read-source.types.js";
 import { captureIncognitoSessionBinding } from "../config/sessions/session-incognito-binding.js";
 import type { SessionStoreReadCandidate } from "../config/sessions/session-store-read-candidates.js";
 import {
@@ -32,6 +33,7 @@ import {
   sessionChanges,
   type SessionRowChange,
 } from "../sessions/session-row-changes.js";
+import { readOpenClawAgentDatabaseIdentity } from "../state/openclaw-agent-db-identity.js";
 import { getOpenIncognitoAgentDatabase } from "../state/openclaw-agent-db-lifecycle.js";
 import { isOpenClawAgentDatabaseRegistryChange } from "../state/openclaw-agent-db-registry-listing.js";
 import {
@@ -46,11 +48,8 @@ import {
 } from "./session-sharing-incognito.js";
 import { prepareMemorySessionMutationFacts } from "./session-sharing-memory-facts.js";
 import type { PreparedSessionMutationFacts } from "./session-sharing-policy.js";
-import {
-  readSessionRoutingFacts,
-  resolveSessionStoreIdentity,
-  type SessionRoutingTarget,
-} from "./session-store-key.js";
+import { captureSessionMutationRouting } from "./session-sharing-routing.js";
+import { resolveSessionStoreIdentity } from "./session-store-key.js";
 import type { GatewaySessionStoreDiscoveryCache } from "./session-utils-store-candidates.js";
 import { prepareGatewaySessionStoreTargetReadOnly } from "./session-utils-store-lookup.js";
 import { findCanonicalStoreMatch } from "./session-utils-store-selection.js";
@@ -60,6 +59,7 @@ export type PreparedSessionSourceFacts = PreparedSessionMutationFacts & {
   /** Physical source retained by the same read custody as the sharing facts. */
   sourcePath?: string;
   sourceAgentId?: string;
+  readSource?: CapturedSessionEntryReadSource;
 };
 
 type ExistingSessionMutationFacts = PreparedSessionSourceFacts & {
@@ -67,26 +67,7 @@ type ExistingSessionMutationFacts = PreparedSessionSourceFacts & {
 };
 
 export { SessionMutationFactsUnavailableError } from "./session-sharing-incognito.js";
-
-export function captureSessionMutationRouting(
-  cfg: OpenClawConfig,
-  changed: () => Error = () => new SessionMutationFactsUnavailableError(),
-  targets?: readonly SessionRoutingTarget[],
-) {
-  const capturedTargets = targets?.length
-    ? targets.map(({ sessionKey, agentId, preserveQualifiedAddress }) => ({
-        sessionKey,
-        agentId,
-        preserveQualifiedAddress,
-      }))
-    : undefined;
-  const route = readSessionRoutingFacts(cfg, capturedTargets);
-  return (current: OpenClawConfig) => {
-    if (!isDeepStrictEqual(readSessionRoutingFacts(current, capturedTargets), route)) {
-      throw changed();
-    }
-  };
-}
+export { captureSessionMutationRouting } from "./session-sharing-routing.js";
 
 type SessionFactsRequest = {
   cfg: OpenClawConfig;
@@ -123,7 +104,11 @@ export async function prepareSessionMutationFacts(
   }
   const initialStoreKeys = [params.sessionKey.trim(), canonicalKey];
   const incognito = isIncognitoSessionKey(canonicalKey);
-  const binding = captureIncognitoSessionBinding({ agentId, sessionKey: canonicalKey });
+  const binding = captureIncognitoSessionBinding({
+    agentId,
+    sessionKey: canonicalKey,
+    storePath: resolveSessionStorePathCore(params.cfg.session?.store, { agentId }),
+  });
   const actorRead =
     binding &&
     captureIncognitoSessionMutationFacts(binding, canonicalKey, Boolean(params.allowMissing));
@@ -358,12 +343,24 @@ export async function prepareSessionMutationFacts(
       selectedPaths.add(path.resolve(actor.path));
       selectedDatabaseIdentity = actor.identity.incarnation;
       assertSource = actorRead!.assertCurrent;
-      readFacts = actorRead!.readCurrent;
+      const readSource = {
+        agentId: actor.agentId,
+        path: actor.path,
+        databaseIdentity: actor.identity.incarnation,
+      };
+      readFacts = () => ({ ...actorRead!.readCurrent(), readSource });
       facts = readFacts();
     } else if (!discoveryInventory) {
       const storePath = resolveIncognitoOpenClawAgentSqlitePath({ agentId });
       storageTarget = Object.freeze({ agentId, canonicalKey, storePath });
       let database = getOpenIncognitoAgentDatabase(agentId, storePath);
+      const identity = database && readOpenClawAgentDatabaseIdentity(database);
+      const readSource = identity && {
+        agentId,
+        path: storePath,
+        databaseIdentity: identity.identity,
+        databaseBirthtime: identity.birthtime,
+      };
       const initial = database && readCommittedIncognitoSessionSharing(database.db, canonicalKey);
       if (!initial?.entry && !params.allowMissing) {
         throw new SessionMutationFactsUnavailableError();
@@ -400,17 +397,19 @@ export async function prepareSessionMutationFacts(
           throw new SessionMutationFactsUnavailableError();
         }
         if (!current?.entry) {
-          return { target: null, membership: new Set<string>() };
+          return { target: null, membership: new Set<string>(), readSource };
         }
         return {
           sourcePath: storePath,
           sourceAgentId: agentId,
+          readSource,
           target: {
             agentId,
             canonicalKey,
             storeKey: canonicalKey,
             storeKeys: [canonicalKey],
             storePath,
+            readSource,
             entry: current.entry,
           },
           membership: current.membership,
@@ -442,7 +441,12 @@ export async function prepareSessionMutationFacts(
       };
       const members = new Map<
         string,
-        NonNullable<Awaited<ReturnType<typeof readSessionEntriesFromStoreInWorker>>["sharing"]>
+        {
+          facts: NonNullable<
+            Awaited<ReturnType<typeof readSessionEntriesFromStoreInWorker>>["sharing"]
+          >;
+          source: CapturedSessionEntryReadSource;
+        }
       >();
       const retainedReads = new Map<string, ReturnType<typeof retainPreparedSessionSharingFacts>>();
       const selected = await inventoryRead.withRead(async (sources, assertDiscoveryCurrent) => {
@@ -514,7 +518,14 @@ export async function prepareSessionMutationFacts(
                   birthtime: source.birthtime,
                 });
                 read.readSource = loaded.sharing.source;
-                members.set(read.storePath, loaded.sharing);
+                members.set(read.storePath, {
+                  facts: loaded.sharing,
+                  source: {
+                    ...loaded.sharing.source,
+                    databaseIdentity: source.identity,
+                    databaseBirthtime: source.birthtime,
+                  },
+                });
                 for (const sessionKey of read.options.exactKeys!) {
                   const key = `${loaded.sharing.databaseIdentity}\0${sessionKey}`;
                   const retained = acquiringReads.get(key);
@@ -559,7 +570,9 @@ export async function prepareSessionMutationFacts(
         storePath: selected.storePath,
       });
       const match = findCanonicalStoreMatch(selected.store, selected.storeKeys);
-      const sharing = members.get(selected.storePath);
+      const selectedSharing = members.get(selected.storePath);
+      const sharing = selectedSharing?.facts;
+      const readSource = selectedSharing?.source;
       selectedPaths.add(path.resolve(selected.storePath));
       if (sharing) {
         selectedPaths.add(path.resolve(sharing.source.path));
@@ -588,6 +601,7 @@ export async function prepareSessionMutationFacts(
           membership: new Set(),
           sourcePath: sharing?.source.path,
           sourceAgentId: sharing?.source.agentId,
+          readSource,
         };
         const retained =
           sharing && retainedReads.get(`${sharing.databaseIdentity}\0${canonicalKey}`);
@@ -611,6 +625,7 @@ export async function prepareSessionMutationFacts(
           agentId: selected.agentId,
           canonicalKey: selected.canonicalKey,
           storePath: selected.storePath,
+          readSource,
           storeKeys: selected.storeKeys,
           entry: projectSessionSharingEntry(match.entry),
           storeKey: match.key,
@@ -618,6 +633,7 @@ export async function prepareSessionMutationFacts(
         facts = {
           sourcePath: sharing.source.path,
           sourceAgentId: sharing.source.agentId,
+          readSource,
           target,
           membership: new Set(
             sharing.members.find((member) => member.sessionKey === match.key)?.identityIds,
@@ -635,6 +651,7 @@ export async function prepareSessionMutationFacts(
           return {
             sourcePath: sharing.source.path,
             sourceAgentId: sharing.source.agentId,
+            readSource,
             target: { ...target, entry: current.entry },
             membership: current.membership,
           };

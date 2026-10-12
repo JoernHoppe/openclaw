@@ -629,6 +629,7 @@ export function createPersonalGitHubPublicationCoordinator(
     ): SessionGitHubStatusResult {
       warnPluginSdkDeprecation({
         family: "github-publication",
+        compatibility: "This method no longer performs publication work; use its replacement.",
         method: "personalStatus",
         replacement: "personalStatusAsync",
       });
@@ -641,6 +642,7 @@ export function createPersonalGitHubPublicationCoordinator(
     ): Promise<SessionGitHubPublicationResult> {
       warnPluginSdkDeprecation({
         family: "github-publication",
+        compatibility: "This method no longer performs publication work; use its replacement.",
         method: "requestPersonalForSession",
         replacement: "requestPersonalForSessionV2",
       });
@@ -655,6 +657,7 @@ export function createPersonalGitHubPublicationCoordinator(
     ): Promise<SessionGitHubPublicationResult> {
       warnPluginSdkDeprecation({
         family: "github-publication",
+        compatibility: "This method no longer performs publication work; use its replacement.",
         method: "confirmPersonal",
         replacement: "confirmPersonalV2",
       });

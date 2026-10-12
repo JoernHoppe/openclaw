@@ -59,6 +59,7 @@ import { isSessionPermissionChangePending } from "./session-permission-change.js
 import { projectSessionProviderReview } from "./session-provider-review-projection.js";
 import { readSessionRowModelFacts } from "./session-row-model-facts.js";
 import { buildSessionSwarmSummary } from "./session-swarm-summary.js";
+import type { SessionTranscriptUsageSnapshot } from "./session-transcript-derived-readers.js";
 import { readSessionTitleFieldsFromTranscript as readScopedSessionTitleFieldsFromTranscript } from "./session-transcript-title-reader.js";
 import type {
   GatewaySessionModelSource,
@@ -78,7 +79,10 @@ import {
   resolveGatewaySessionKind,
   resolveGatewaySessionGoal,
 } from "./session-utils-display.js";
-import { buildSessionListRowMetadataContext } from "./session-utils-projection.js";
+import {
+  buildSessionListRowMetadataContext,
+  resolveTranscriptUsageFallbacks,
+} from "./session-utils-projection.js";
 import { parseGroupKey } from "./session-utils-store.js";
 import type { GatewaySessionRow, SessionListModelCatalog } from "./session-utils.types.js";
 import { projectWorkerPlacementAgentRuntime } from "./worker-environments/placement-session-runtime.js";
@@ -108,6 +112,8 @@ export function readSessionRowInputs(params: {
   rowContext?: SessionListRowContext;
   configuredAgentIds?: ReadonlySet<string>;
   agentId: string;
+  skipTranscriptUsageFallback?: boolean;
+  transcriptUsage?: SessionTranscriptUsageSnapshot | null;
   lightweightListRow?: boolean;
   includeSwarmChildren?: boolean;
 }) {
@@ -133,6 +139,25 @@ export function readSessionRowInputs(params: {
       lightweightListRow: lightweight,
     });
   const freshSessionTotalTokens = resolveFreshSessionTotalTokens(entry);
+  const usageByFallbackModel =
+    params.skipTranscriptUsageFallback !== true
+      ? resolveTranscriptUsageFallbacks({
+          cfg,
+          key,
+          entry,
+          storePath,
+          freshTotalTokens: freshSessionTotalTokens,
+          fallbackModelRefs: [
+            undefined,
+            ...(rowContext.subagentRunsByChildSessionKey.get(key) ?? []).map((run) => run.model),
+          ],
+          allowPluginNormalization: !lightweight,
+          rowContext,
+          agentId,
+          storeAgentId: params.storeAgentId,
+          transcriptUsage: params.transcriptUsage,
+        })
+      : undefined;
   const { provider, model } = selectedModel;
   // Display aliases do not change the selected route's catalog or runtime policy.
   const activeModel = resolveGatewaySessionActiveModel({
@@ -256,6 +281,7 @@ export function readSessionRowInputs(params: {
           key,
           subagentRunsByChildSessionKey: rowContext.subagentRunsByChildSessionKey,
         }),
+      usageByFallbackModel,
       freshSessionTotalTokens,
       estimatedCostUsd: lightweight
         ? asNonNegativeFiniteNumber(entry?.estimatedCostUsd)
@@ -320,7 +346,7 @@ export function resolveGatewaySessionActiveModel(params: {
           selectedModel: selectedModel.model,
           sessionEntry: params.entry,
           config: params.cfg,
-          terminalModel: params.terminalModel,
+          terminalModel: params.terminalModel ?? null,
           sessionScope: {
             agentId: params.storeAgentId ?? params.agentId,
             sessionKey: params.sessionKey,
@@ -615,6 +641,8 @@ export function materializeSessionRow(input: ReturnType<typeof readSessionRowInp
       userProfileIdentityById: input.userProfileIdentityById,
       identityProjection: input.identityProjection,
       configuredAgentIds: input.configuredAgentIds,
+      lightweight: input.lightweight,
+      usageByFallbackModel: input.usageByFallbackModel,
       freshSessionTotalTokens: input.freshSessionTotalTokens,
       estimatedCostUsd: input.estimatedCostUsd,
       subagentRunInputs: input.subagentRunInputs,
@@ -637,7 +665,7 @@ export function presentSessionRow(
   row.snapshotAt = now;
   const subagentRuns =
     options.subagentRuns ?? buildSubagentRunReadIndexFromRuns({ ...source.subagentRunInputs, now });
-  const { subagentOwner, fields } = projectGatewaySessionRunState({
+  const { subagentRun, subagentOwner, fields } = projectGatewaySessionRunState({
     key: row.key,
     entry,
     now,
@@ -648,8 +676,12 @@ export function presentSessionRow(
     },
   });
   Object.assign(row, fields);
-  row.totalTokens = freshSessionTotalTokens;
-  row.totalTokensFresh = freshSessionTotalTokens !== undefined;
+  const usage = source.usageByFallbackModel?.get(subagentRun?.model);
+  row.totalTokens = freshSessionTotalTokens ?? asNonNegativeFiniteNumber(usage?.totalTokens);
+  row.totalTokensFresh =
+    freshSessionTotalTokens !== undefined ||
+    (typeof row.totalTokens === "number" && row.totalTokens > 0) ||
+    usage?.totalTokensFresh === true;
   row.agentStatus = resolveActiveSessionAgentStatus(entry?.agentStatus, now);
   row.spawnedBy = row.controlOwnerSessionKey = subagentOwner || entry?.spawnedBy;
   row.goal = resolveGatewaySessionGoal(entry, now, {
@@ -657,7 +689,9 @@ export function presentSessionRow(
     totalTokensFresh: row.totalTokensFresh,
     totalTokensVersion: row.totalTokensFresh ? SESSION_TOTAL_TOKENS_VERSION : undefined,
   });
-  row.estimatedCostUsd = source.estimatedCostUsd;
+  row.estimatedCostUsd =
+    source.estimatedCostUsd ??
+    asNonNegativeFiniteNumber(source.lightweight ? undefined : usage?.estimatedCostUsd);
   const children = source.childLinks?.flatMap(({ key, entry: childEntry }) => {
     if (options.excludedChildKeys?.has(key)) {
       return [];
