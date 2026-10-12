@@ -242,6 +242,7 @@ async function forgetWorkspaceMemory(
     readMemoryPreimages(workspaceDir),
     listMemoryArtifactProvenance({ workspaceDir }),
     listSessionTranscriptCorpusEntriesForAgent(params.agentId, {
+      config: params.cfg,
       readOnly: true,
       includeContentRevision: false,
     }),

@@ -45,12 +45,6 @@ const providerId = "background-reload-fixture";
 const { createOpenClawTestState } = loadHost(
   path.join(repository, "src/test-utils/openclaw-test-state.ts"),
 ) as typeof import("../test-utils/openclaw-test-state.js");
-const {
-  clearRuntimeConfigSnapshot: clearHostRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot: setHostRuntimeConfigSnapshot,
-} = loadHost(
-  path.join(repository, "src/config/runtime-snapshot.ts"),
-) as typeof import("../config/runtime-snapshot.js");
 // Match the SDK's native host so its module-local workspace bindings are shared.
 const workspaceSdk = tryNativeRequireModule(
   path.join(repository, "src/plugin-sdk/agent-workspace-runtime.ts"),
@@ -289,7 +283,6 @@ it("retires Memory Core while session startup discovery is in flight", async ({ 
   };
   setRuntimeConfigSnapshot(config, config);
   setFixtureRuntimeConfigSnapshot(config, config);
-  setHostRuntimeConfigSnapshot(config, config);
   const memory = loadMemory(registryHost(), config);
   try {
     // A transient manager exposes the shared prototype without scheduling startup work.
@@ -342,7 +335,6 @@ it("retires Memory Core while session startup discovery is in flight", async ({ 
     await state.cleanup().finally(() => {
       clearRuntimeConfigSnapshot();
       clearFixtureRuntimeConfigSnapshot();
-      clearHostRuntimeConfigSnapshot();
     });
   }
 });
@@ -553,7 +545,6 @@ it.for([false, true])(
         const cfg = config(agentId, reason);
         setRuntimeConfigSnapshot(cfg, cfg);
         setFixtureRuntimeConfigSnapshot(cfg, cfg);
-        setHostRuntimeConfigSnapshot(cfg, cfg);
         const workspace = path.join(state.workspaceDir, agentId);
         await fs.mkdir(workspace, { recursive: true });
         await fs.writeFile(
@@ -642,7 +633,6 @@ it.for([false, true])(
         state.cleanup().finally(() => {
           clearRuntimeConfigSnapshot();
           clearFixtureRuntimeConfigSnapshot();
-          clearHostRuntimeConfigSnapshot();
         }),
       ]);
       signal.removeEventListener("abort", reportInterruptedStage);

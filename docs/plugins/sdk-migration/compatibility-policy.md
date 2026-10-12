@@ -517,9 +517,13 @@ published in `v2026.9.8`: `buildSessionEntry(path, options?)`,
 `onTranscriptMessage(message, observedAt)` observer remain unchanged. Internal
 incognito actor sources are not plugin arguments.
 
+Corpus discovery accepts `options.config` to use the caller's prepared config
+and session store without reading the host's global runtime snapshot. Memory
+Core passes its manager or dreaming config through this option. Callers that
+omit it continue to use the prepared host runtime config.
+
 The `memory-session-released-signatures` compatibility record is active. These
-APIs remain supported without warnings or a required migration; changing their
-released contracts requires an explicitly approved Plugin SDK major release.
+APIs remain supported without warnings or a required migration.
 
 ### Session upstream-link writes
 

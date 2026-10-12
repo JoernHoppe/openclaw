@@ -36,12 +36,6 @@ const loadHost = createPluginModuleLoader({
 const { createOpenClawTestState } = loadHost(
   path.join(repository, "src/test-utils/openclaw-test-state.ts"),
 ) as typeof import("../test-utils/openclaw-test-state.js");
-const {
-  clearRuntimeConfigSnapshot: clearHostRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot: setHostRuntimeConfigSnapshot,
-} = loadHost(
-  path.join(repository, "src/config/runtime-snapshot.ts"),
-) as typeof import("../config/runtime-snapshot.js");
 const { MEMORY_DREAMING_SYSTEM_EVENT_TEXT } = loadHost(
   path.join(repository, "src/plugin-sdk/memory-core-host-status.ts"),
 ) as typeof import("../plugin-sdk/memory-core-host-status.js");
@@ -74,7 +68,6 @@ it("keeps successor sweeps and diary publication owned after another registratio
   setRuntimeConfigSnapshot(config, config);
   // The host-owned runtime facade uses Vitest's config graph; SDK modules use the native graph.
   setFixtureRuntimeConfigSnapshot(config, config);
-  setHostRuntimeConfigSnapshot(config, config);
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const load = () => {
     const subagent = {
@@ -199,7 +192,6 @@ it("keeps successor sweeps and diary publication owned after another registratio
     await state.cleanup().finally(() => {
       clearRuntimeConfigSnapshot();
       clearFixtureRuntimeConfigSnapshot();
-      clearHostRuntimeConfigSnapshot();
     });
   }
 });
