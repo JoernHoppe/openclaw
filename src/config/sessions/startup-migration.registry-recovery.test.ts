@@ -87,8 +87,8 @@ it.each(["cold", "preexisting"] as const)(
     } finally {
       statements.restore();
     }
+    // Final close retires admission facts; only a retained handle reuses the stored policy.
     if (lifetime === "preexisting") {
-      // Retained handles keep policy admission; closing every handle retires it.
       expect(
         statements.queries.filter((sql) =>
           /select "main_key" from "session_key_contract"/iu.test(sql),
