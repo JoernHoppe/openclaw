@@ -678,7 +678,12 @@ describe("worker turn launcher failure recovery", () => {
           "Worker failure did not preserve its partial reply",
         );
         expect(persistAbandonedPartial).toHaveBeenCalledExactlyOnceWith(
-          expect.objectContaining({ sessionId: SESSION_ID, runId: "run-process-failed" }),
+          expect.objectContaining({
+            sessionId: SESSION_ID,
+            sessionKey: SESSION_KEY,
+            agentId: "main",
+            runId: "run-process-failed",
+          }),
         );
         expect(stopTunnel).not.toHaveBeenCalled();
         expect(destroy).not.toHaveBeenCalled();

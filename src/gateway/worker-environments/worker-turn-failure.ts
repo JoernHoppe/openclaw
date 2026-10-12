@@ -32,6 +32,8 @@ export type WorkerTurnEnvironmentService = Pick<
   >;
 
 export type ActiveWorkerPlacement = Extract<WorkerSessionPlacementRecord, { state: "active" }>;
+export type WorkerTurnPartialIdentity = WorkerSessionTurnClaim &
+  Pick<ActiveWorkerPlacement, "sessionKey" | "agentId">;
 
 export class WorkerTurnExecutionError extends Error {}
 
@@ -49,7 +51,7 @@ export async function failHandedOffTurn(params: {
   placement: ActiveWorkerPlacement;
   turnClaim: WorkerSessionTurnClaim;
   error: unknown;
-  persistAbandonedPartial?: (claim: WorkerSessionTurnClaim) => Promise<void>;
+  persistAbandonedPartial?: (claim: WorkerTurnPartialIdentity) => Promise<void>;
   terminal?: {
     observedAtMs: number;
     registerRecovery(recover: (assertCurrent?: () => void) => Promise<string | undefined>): void;
@@ -59,7 +61,11 @@ export async function failHandedOffTurn(params: {
   if (params.placement.executionMode === "worker-turn" && params.persistAbandonedPartial) {
     try {
       if (params.placements.validateTurnClaim(params.turnClaim)) {
-        await params.persistAbandonedPartial(params.turnClaim);
+        await params.persistAbandonedPartial({
+          ...params.turnClaim,
+          sessionKey: params.placement.sessionKey,
+          agentId: params.placement.agentId,
+        });
       }
     } catch (error) {
       logWarn(`Cloud worker partial reply could not be saved: ${boundedWorkerError(error)}`);
