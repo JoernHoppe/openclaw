@@ -156,7 +156,7 @@ function normalizeAssistantMediaSource(source: string): string | null {
   return trimmed;
 }
 
-type AssistantMediaPolicy = NonNullable<ReturnType<typeof resolveAssistantMediaPolicy>>;
+type AssistantMediaPolicy = NonNullable<Awaited<ReturnType<typeof resolveAssistantMediaPolicy>>>;
 type AssistantMediaFile = NonNullable<AssistantMediaTicketPayload["file"]>;
 
 function sameAssistantMediaFile(actual: AssistantMediaFile, expected: AssistantMediaFile) {
@@ -349,7 +349,7 @@ export async function handleControlUiAssistantMediaRequest(
     }
   }
   const policyParams = { config: opts?.config ?? {}, sessionKey, agentId };
-  const policy = resolveAssistantMediaPolicy({
+  const policy = await resolveAssistantMediaPolicy({
     ...policyParams,
     requestAuth: requestAuth ?? undefined,
     reader: isMetaRequest ? undefined : ticketCandidate?.reader,
@@ -358,6 +358,7 @@ export async function handleControlUiAssistantMediaRequest(
     respondControlUiNotFound(res);
     return true;
   }
+  using mediaPolicy = { ...policy, [Symbol.dispose]: () => policy.placementRead?.release() };
   if (relativeSource) {
     if (policy.remote || !policy.executionCwd || !path.isAbsolute(policy.executionCwd)) {
       respondControlUiNotFound(res);
@@ -387,7 +388,7 @@ export async function handleControlUiAssistantMediaRequest(
   const assertCurrentPolicy = () =>
     assertAssistantMediaPolicyCurrent(
       policyParams,
-      policy,
+      mediaPolicy,
       Boolean(allowance),
       requestAuth ?? undefined,
     );
