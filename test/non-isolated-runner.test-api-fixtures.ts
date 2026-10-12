@@ -105,9 +105,15 @@ const { existsSync } = require("node:fs");
 const { registerHooks } = require("node:module");
 const { pathToFileURL } = require("node:url");
 const sourceRoot = pathToFileURL(${JSON.stringify(`${repoRoot}${path.sep}`)}).href;
+const sourcePaths = require(${JSON.stringify(path.join(repoRoot, "tsconfig.json"))}).compilerOptions.paths;
 // Keep Node's native cache identity; the hook only resolves this synchronous source load.
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (context.parentURL?.startsWith(sourceRoot)) {
+      // Workspace packages are source aliases in this fixture, not built dependencies.
+      const source = sourcePaths[specifier]?.[0];
+      if (source) return nextResolve(new URL(source, sourceRoot).href, context);
+    }
     if (context.parentURL?.startsWith(sourceRoot) && specifier.startsWith(".") && specifier.endsWith(".js")) {
       const source = new URL(specifier.slice(0, -3) + ".ts", context.parentURL);
       if (existsSync(source)) return nextResolve(source.href, context);
