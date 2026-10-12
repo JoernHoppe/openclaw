@@ -43,6 +43,7 @@ import { appendTranscriptEventSync } from "./session-accessor.sqlite-transcript-
 import { captureSessionEntryMetadataReceipts } from "./session-entry-metadata-receipt.js";
 import { updateSessionGroupCategoriesInWorker } from "./session-group-categories.js";
 import { readPreparedSessionParticipants } from "./session-participant-prepared-read.js";
+import { recordSessionParticipantInWorker } from "./session-sharing-store.async.js";
 import { listSessionMembersInDatabase } from "./session-sharing-store.kernel.js";
 import { addSessionMember, removeSessionMember } from "./session-sharing-store.native.js";
 import type { SessionEntry } from "./types.js";
@@ -319,6 +320,74 @@ it.each(["native", "worker"] as const)(
     });
   },
 );
+
+it("keeps unrelated predicates current through participant publication", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const database = openOpenClawAgentDatabase({ agentId: "main" });
+    const scope = {
+      agentId: "main",
+      storePath: database.path,
+      sessionKey: "agent:main:participant-authority",
+    };
+    const entry = { sessionId: "participant-authority", updatedAt: 1, sandboxMode: "off" } as const;
+    replaceSessionEntrySync(scope, entry);
+    const identity = readOpenClawAgentDatabaseIdentity(database).identity;
+    if (typeof identity !== "string") {
+      throw new Error("Expected durable participant fixture");
+    }
+    const retained = { databaseIdentity: `file:${identity}`, sessionKey: scope.sessionKey, entry };
+    const policy = retainPreparedSessionEntryPredicate({
+      ...retained,
+      matches: (before, after) =>
+        before?.sessionId === after?.sessionId && before?.sandboxMode === after?.sandboxMode,
+    });
+    const participants = retainPreparedSessionEntryPredicate({
+      ...retained,
+      matches: (before, after) => before?.participantCount === after?.participantCount,
+    });
+    const publication = retainSessionEntryWorkerPublication({
+      ...scope,
+      databaseIdentity: identity,
+    });
+    publication.beginChanges(
+      [scope.sessionKey],
+      new Map(),
+      [scope.sessionKey],
+      new Map([
+        [
+          scope.sessionKey,
+          { participants: [{ identity: { type: "agent", id: "other" } }], participantCount: 1 },
+        ],
+      ]),
+    );
+    const observations: boolean[] = [];
+    const stop = sessionChanges.subscribe((change) => {
+      if ("sessionKey" in change && change.sessionKey === scope.sessionKey) {
+        observations.push(policy.isCurrent() && !participants.isCurrent());
+      }
+    });
+    try {
+      expect(policy.isCurrent()).toBe(true);
+      expect(participants.isCurrent()).toBe(false);
+      expect(
+        await recordSessionParticipantInWorker(scope, {
+          identity: { type: "agent", id: "other" },
+          promptedAt: 1,
+        }),
+      ).toBe("inserted");
+      expect(policy.isCurrent()).toBe(true);
+      expect(participants.canRefresh()).toBe(false);
+      expect(observations.length).toBeGreaterThan(0);
+      expect(observations.every(Boolean)).toBe(true);
+      expect(readExactSessionEntryRow(database, scope.sessionKey)?.entry.participantCount).toBe(1);
+    } finally {
+      stop();
+      publication.settle(undefined, false);
+      policy.release();
+      participants.release();
+    }
+  });
+});
 
 it.each([
   { successor: "metadata", authorityChanged: false },

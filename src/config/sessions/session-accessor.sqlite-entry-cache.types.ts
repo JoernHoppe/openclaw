@@ -224,6 +224,11 @@ export type PendingSessionEntryPublication = {
   superseded: Set<string>;
   membershipInvalidated: Set<string>;
   sharingUnchanged: Set<string>;
+  /** An undefined value records a participant command with no projection change. */
+  participantProjections?: ReadonlyMap<
+    string,
+    Pick<InternalSessionEntry, "participants" | "participantCount"> | undefined
+  >;
   /** Keys whose committed sessionId and lifecycleRevision are unchanged by this publication. */
   generationUnchanged: Set<string>;
   settled: boolean;

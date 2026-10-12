@@ -171,10 +171,12 @@ export function retainSessionEntryWorkerPublication(params: {
       sessionKeys: readonly string[],
       memberships: ReadonlyMap<string, string> = new Map(),
       generationUnchangedKeys: readonly string[] = sessionKeys,
+      participantProjections?: PendingSessionEntryPublication["participantProjections"],
     ): void {
       if (pending) {
         return;
       }
+      owner.participantProjections = participantProjections;
       publication.begin(sessionKeys, [...memberships.keys()], [], generationUnchangedKeys);
     },
     settleChanges<T>(
