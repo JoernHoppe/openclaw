@@ -613,6 +613,7 @@ export default defineConfig({
   resolve: sharedVitestConfig.resolve,
   test: {
     name: "non-isolated-runner",
+    execArgv: ["--experimental-transform-types"],
     isolate: false,
     fileParallelism: false,
     maxWorkers: 1,
