@@ -286,7 +286,7 @@ export function captureSessionEntrySourceAssertion(params: {
       const retained = retainSessionHistoryWorkerDatabase(database);
       // Join receipt publication before dispatch so a newer write cannot certify an older read.
       const predicate = retainPreparedSessionEntryPredicate({
-        databaseIdentity: `file:${source.databaseIdentity}`,
+        databaseIdentity: identity.key,
         sessionKey: scope.sessionKey,
         entry: undefined,
         matches: (_before, current) =>
