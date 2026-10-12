@@ -198,15 +198,57 @@ export async function prepareCachedPlacementPreservationRead(
   captured: PlacementReadObservation,
   read: () => Promise<WorkerSessionPlacementRecord[]>,
 ) {
-  return await preparePlacementRead(
-    captured,
-    undefined,
-    async (owner) => owner.preservation ?? (await read()),
-    (value, { owner, authority }) => {
-      owner.preservation = freezeJsonSnapshot(value);
-      return { placements: structuredClone(value), ...authority };
-    },
+  const { owner, observation, authority, assertUsable } = captured;
+  const sequence = Math.min(
+    owner.sequence + 1,
+    ...Array.from(owner.pending, (change) => change.sequence ?? owner.sequence + 1),
   );
+  const signal = getAsyncWorkSignal();
+  try {
+    signal?.throwIfAborted();
+    assertUsable();
+    const baseline = owner.preservation ?? (await read());
+    signal?.throwIfAborted();
+    assertUsable();
+    if (!observation.revoked && !hasPendingPublication(owner)) {
+      owner.preservation = freezeJsonSnapshot(baseline);
+    }
+    return {
+      get placements() {
+        assertUsable();
+        const placements = new Map(baseline.map((placement) => [placement.sessionId, placement]));
+        for (const [sessionId, published] of owner.placements) {
+          if (published.sequence < sequence) {
+            continue;
+          }
+          const placement = published.placement;
+          if (placement && placement.state !== "local" && placement.state !== "reclaimed") {
+            placements.set(sessionId, placement);
+          } else {
+            placements.delete(sessionId);
+          }
+        }
+        // Pending postimages can add protection, but cannot withdraw committed protection.
+        const pending = Array.from(owner.pending).flatMap((change) => {
+          const placement =
+            change.kind === "claim"
+              ? change.workspacePlacement
+              : change.kind === "workspace-result"
+                ? change.facts?.placement
+                : undefined;
+          return placement && placement.state !== "local" && placement.state !== "reclaimed"
+            ? [placement]
+            : [];
+        });
+        return structuredClone([...placements.values(), ...pending]);
+      },
+      assertCurrent: assertUsable,
+      release: authority.release,
+    };
+  } catch (error) {
+    authority.release();
+    throw error;
+  }
 }
 
 /** Recovery work stays live; empty inventories sleep until a placement writer commits. */

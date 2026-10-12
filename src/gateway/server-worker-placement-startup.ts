@@ -438,12 +438,7 @@ export function createGatewayWorkerPlacementRuntime(
       async () => {
         const prepared = await params.placements.prepareMaintenancePlacements();
         return {
-          capture() {
-            prepared.assertCurrent();
-            const keys = preservationKeys(prepared.placements);
-            prepared.assertCurrent();
-            return keys;
-          },
+          capture: () => preservationKeys(prepared.placements),
           dispose: prepared.release,
         };
       },
