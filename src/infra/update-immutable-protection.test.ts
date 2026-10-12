@@ -1,7 +1,7 @@
 import "../test-utils/prepare-compiled-subprocesses.js";
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { fingerprintConfigSnapshotAuthoredConfig } from "../config/config-journal-snapshot.js";
 import {
@@ -25,6 +25,7 @@ import {
 
 const temporary = useAutoCleanupTempDirTracker(afterEach);
 afterEach(async () => {
+  vi.restoreAllMocks();
   await closeOpenClawStateDatabaseAsync();
 });
 
@@ -133,14 +134,35 @@ describe("immutable activation protected identities", () => {
     expect(fs.readFileSync(test.configPath, "utf8")).toContain("legacyWebhook");
   });
 
-  it("preserves legacy receipts while refusing ambiguous large identities", async () => {
+  it("accepts rounded legacy config identities but keeps exact identities and path proofs strict", async () => {
     const test = await fixture();
     const legacy = structuredClone(test.snapshot);
     delete legacy.identityEncoding;
     legacy.config[0]!.identity.ino = "9007199254740992";
+    const lstat = fs.lstatSync;
+    vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+      const stat = lstat(...args);
+      if (stat && String(args[0]) === test.configPath) {
+        Object.defineProperty(stat, "ino", {
+          value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
+        });
+      }
+      return stat;
+    });
     expect(ImmutableProtectionSnapshotSchema.parse(legacy)).toEqual(legacy);
+    expect(() => assertImmutableProtectionUnchanged(legacy, test.context)).not.toThrow();
+    legacy.identityEncoding = "exact";
     expect(() => assertImmutableProtectionUnchanged(legacy, test.context)).toThrow(
-      "Legacy immutable receipt contains an imprecise file identity",
+      "before immutable cutover",
+    );
+    legacy.identityEncoding = "legacy";
+    const parent = legacy.config[0]!.pathProof.entries.find((entry) => entry.kind === "existing");
+    if (!parent || parent.kind !== "existing") {
+      throw new Error("Missing fixture path proof");
+    }
+    parent.ino = "9007199254740992";
+    expect(() => assertImmutableProtectionUnchanged(legacy, test.context)).toThrow(
+      "target changed",
     );
   });
 

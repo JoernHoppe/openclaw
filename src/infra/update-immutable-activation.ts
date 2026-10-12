@@ -4,9 +4,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { captureUpdateCommandExecutorAuthority } from "../cli/update-cli/update-command-executor.js";
 import { withGatewayMaintenanceDrain } from "../cli/update-cli/update-command-service-drain.js";
-import { createConfigIO } from "../config/io.factory.js";
 import { withGatewayServiceOperationLock } from "../daemon/service-operation-lock.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
 import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import {
@@ -21,8 +19,8 @@ import {
 import { updateImmutableInstallRecord } from "./package-update-activation-immutable.js";
 import { resolveImmutableRecoveryCommand } from "./package-update-activation-paths.js";
 import { resolveGatewayRestartDeferralTimeoutMs } from "./restart-budget.js";
-import { validateUpdateCandidateCanary } from "./update-candidate-canary.js";
 import { resolveUpdateFinalizationTimeoutMs } from "./update-finalization-budget.js";
+import { rehearseImmutableGeneration as rehearse } from "./update-immutable-canary.js";
 import {
   readImmutableSchemaContracts,
   assertImmutableGenerationControlVersion,
@@ -35,7 +33,11 @@ import type {
   ImmutableInstallRecord,
 } from "./update-immutable-install-schema.js";
 import { inspectImmutableInstall, projectImmutableInstall } from "./update-immutable-install.js";
-import { assertImmutableDescriptorCurrent } from "./update-immutable-layout.js";
+import {
+  assertImmutableDescriptorCurrent,
+  immutableIdentityMatches,
+  type ImmutableIdentityEncoding,
+} from "./update-immutable-layout.js";
 import { withImmutableUpdateOwner } from "./update-immutable-owner.js";
 import {
   assertImmutableProtectionUnchanged,
@@ -92,63 +94,28 @@ async function requireRecord(root: string) {
 }
 
 async function verifyGeneration(
-  generation: ImmutableActivationOperation["candidate"] | ImmutableActivationOperation["previous"],
+  generation: (
+    | ImmutableActivationOperation["candidate"]
+    | ImmutableActivationOperation["previous"]
+  ) & { identityEncoding?: ImmutableIdentityEncoding },
   assertCurrent: () => void,
   controlVersion: number,
+  encoding: ImmutableIdentityEncoding = "exact",
 ) {
   const verified = await verifyImmutableGeneration(generation.path, generation.sha);
   assertCurrent();
   if (
-    verified.identity !== generation.identity ||
+    !immutableIdentityMatches(
+      verified.identity,
+      generation.identity,
+      generation.identityEncoding ?? encoding,
+    ) ||
     verified.buildDigest !== generation.buildDigest
   ) {
     throw new Error("Sealed immutable generation no longer matches its recorded preparation.");
   }
   await assertImmutableGenerationControlVersion(generation.path, controlVersion);
   assertCurrent();
-}
-
-/** Same-schema activation never migrates or rewinds live databases. Doctor rehearses private copies. */
-async function rehearse(
-  record: ImmutableInstallRecord,
-  root: string,
-  service: ImmutableServiceObservation,
-  options: Options,
-  assertCurrent: () => void,
-) {
-  const env = service.state.env;
-  const { sourceConfig: config } = await createConfigIO({
-    env,
-    configPath: record.descriptor.service.configPath,
-    observe: false,
-    pluginValidation: "skip",
-  }).readBestEffortConfigSnapshot();
-  assertCurrent();
-  const result = await validateUpdateCandidateCanary({
-    root,
-    sourceBundledPlugins: {
-      packageRoot: record.descriptor.current.path,
-      directory: resolveBundledPluginsDir(env),
-    },
-    config,
-    stateDir: record.descriptor.service.stateDir,
-    env,
-    nodeRunner: record.descriptor.runtime.path,
-    timeoutMs: options.timeoutMs,
-    migrationPolicy: "startup-only",
-    assertCurrent,
-    onStep: () => options.onReceipt?.("immutable:canary-step"),
-  });
-  assertCurrent();
-  if (
-    result.status !== "ok" ||
-    result.phase !== "readiness" ||
-    result.steps.find((step) => step.name === "candidate-gateway-startup")?.exitCode !== 0
-  ) {
-    throw new Error(
-      "Immutable candidate canary did not verify Doctor, plugins, startup and readiness; current is unchanged.",
-    );
-  }
 }
 
 function activationOwner(
@@ -262,6 +229,10 @@ function activationOwner(
             sha: retained.sha,
             path: retained.path,
             identity: retained.identity,
+            identityEncoding:
+              retained === op.previous
+                ? (op.previous.identityEncoding ?? record.descriptor.identityEncoding ?? "legacy")
+                : "exact",
             buildDigest: retained.buildDigest,
           },
           ...(!retire ? { operation: { ...op, phase: "rolled-back" as const } } : {}),
@@ -498,7 +469,12 @@ function activationOwner(
     async recover(): Promise<ImmutableActivationResult> {
       record = reconcileImmutablePointer(record, assertCurrent);
       const op = operation();
-      await verifyGeneration(record.descriptor.current, assertCurrent, record.descriptor.version);
+      await verifyGeneration(
+        record.descriptor.current,
+        assertCurrent,
+        record.descriptor.version,
+        record.descriptor.identityEncoding ?? "legacy",
+      );
       const observed = await observe();
       if (observed.outcome === "verified" && observed.service) {
         return complete(
@@ -516,7 +492,12 @@ function activationOwner(
         const rollingBack =
           op.phase.startsWith("rollback-") || op.pointerIntent?.targetSha === op.previous.sha;
         if (rollingBack) {
-          await verifyGeneration(op.previous, assertCurrent, record.descriptor.version);
+          await verifyGeneration(
+            op.previous,
+            assertCurrent,
+            record.descriptor.version,
+            record.descriptor.identityEncoding ?? "legacy",
+          );
           assertStopped();
           save({ phase: "rollback-publishing" });
           record = publishImmutablePointer(record, "previous", assertStopped);
@@ -577,7 +558,12 @@ export async function activateImmutableUpdate(
         assertCurrent,
       });
     const service = await inspectService();
-    await verifyGeneration(record.descriptor.current, assertCurrent, record.descriptor.version);
+    await verifyGeneration(
+      record.descriptor.current,
+      assertCurrent,
+      record.descriptor.version,
+      record.descriptor.identityEncoding ?? "legacy",
+    );
     await verifyGeneration(candidate, assertCurrent, record.descriptor.version);
     const contracts = await readImmutableSchemaContracts(record);
     assertCurrent();

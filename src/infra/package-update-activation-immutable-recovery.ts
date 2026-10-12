@@ -33,6 +33,7 @@ import type {
 import {
   assertImmutableDescriptorIdentityEncoding,
   directoryIdentity,
+  immutableIdentityMatches,
 } from "./update-immutable-layout.js";
 
 /** Cold CLI recovery stays outside the control record's read-worker dependency graph. */
@@ -151,7 +152,13 @@ export async function prepareImmutableRecoveryRuntime(params: {
   await assertImmutableGenerationControlVersion(source, descriptor.version);
   assertCurrent();
   if (
-    sourceFacts.identity !== generation.identity ||
+    !immutableIdentityMatches(
+      sourceFacts.identity,
+      generation.identity,
+      generation === descriptor.current
+        ? (descriptor.current.identityEncoding ?? descriptor.identityEncoding)
+        : "exact",
+    ) ||
     sourceFacts.buildDigest !== generation.buildDigest
   ) {
     throw new Error("The invoking sealed generation no longer matches its preparation receipt.");
@@ -281,7 +288,11 @@ export async function verifyImmutableRecoveryRuntime(params: {
     if (
       fsSync.realpathSync(control) !== control ||
       directoryIdentity(control) !== controlIdentity ||
-      directoryIdentity(descriptor.root) !== descriptor.rootIdentity ||
+      !immutableIdentityMatches(
+        directoryIdentity(descriptor.root),
+        descriptor.rootIdentity,
+        descriptor.identityEncoding,
+      ) ||
       packageActivationRuntimeIdentity(descriptor.runtime.path) !== descriptor.runtime.identity ||
       helperIdentity(reference.helperPath) !== reference.helperIdentity ||
       sha256Hex(fsSync.readFileSync(reference.helperPath)) !== reference.helperDigest ||

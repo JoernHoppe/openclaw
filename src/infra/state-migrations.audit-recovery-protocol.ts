@@ -38,26 +38,28 @@ export function serializeAuditRecoveryRestoreJournal(params: {
     schemaVersion: 7,
     rawBase64: params.rawBytes.toString("base64"),
     scrubPatternBase64: params.scrubPattern.toString("base64"),
-    target: { ...params.target, dev: String(params.target.dev), ino: String(params.target.ino) },
+    target: params.target,
   };
   return `${JSON.stringify(journal)}\n`;
 }
 
-function isExactJournalIdentity(value: unknown): value is string | number {
-  return typeof value === "number"
-    ? Number.isSafeInteger(value)
-    : typeof value === "string" && /^(0|-?[1-9][0-9]*)$/u.test(value);
+function isExactJournalIdentity(value: unknown): value is string {
+  return typeof value === "string" && /^(0|-?[1-9][0-9]*)$/u.test(value);
 }
 
 export function parseAuditRecoveryRestoreJournal(raw: string): ParsedAuditRecoveryRestoreJournal {
   const parsed = JSON.parse(raw) as Partial<AuditRecoveryRestoreJournal>;
+  const isPersistedIdentity = (value: unknown) =>
+    parsed.schemaVersion === 6
+      ? typeof value === "number" && Number.isInteger(value)
+      : isExactJournalIdentity(value);
   if (
     (parsed.schemaVersion !== 6 && parsed.schemaVersion !== 7) ||
     typeof parsed.rawBase64 !== "string" ||
     typeof parsed.scrubPatternBase64 !== "string" ||
     !parsed.target ||
-    !isExactJournalIdentity(parsed.target.dev) ||
-    !isExactJournalIdentity(parsed.target.ino) ||
+    !isPersistedIdentity(parsed.target.dev) ||
+    !isPersistedIdentity(parsed.target.ino) ||
     typeof parsed.target.size !== "number"
   ) {
     throw new Error("invalid legacy audit recovery restore journal");
@@ -76,7 +78,7 @@ export function parseAuditRecoveryRestoreJournal(raw: string): ParsedAuditRecove
   return {
     sourceRaw,
     scrubPattern,
-    target: { ...parsed.target, dev: String(parsed.target.dev), ino: String(parsed.target.ino) },
+    target: parsed.target,
     journalHash: createHash("sha256").update(raw).digest("hex"),
   };
 }

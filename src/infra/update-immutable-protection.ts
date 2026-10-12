@@ -14,7 +14,11 @@ import {
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { sha256Hex } from "./crypto-digest.js";
 import { readDatabasePathIdentitySync } from "./sqlite-worker-identity.js";
-import { assertImmutableIdentityEncoding } from "./update-immutable-layout.js";
+import {
+  assertImmutableIdentityEncoding,
+  immutableIdentityMatches,
+  type ImmutableIdentityEncoding,
+} from "./update-immutable-layout.js";
 import {
   immutableConfigFingerprintSchema,
   immutableProtectedFileIdentitySchema,
@@ -23,6 +27,23 @@ import {
 } from "./update-immutable-protection-schema.js";
 
 type ProtectionContext = { env: NodeJS.ProcessEnv; assertCurrent: () => void };
+function sameFileIdentity(
+  observed: ImmutableProtectionSnapshot["state"]["identity"],
+  recorded: ImmutableProtectionSnapshot["state"]["identity"],
+  observedEncoding: ImmutableIdentityEncoding | undefined,
+  recordedEncoding: ImmutableIdentityEncoding | undefined,
+): boolean {
+  const { dev, ino, ...metadata } = observed;
+  const { dev: recordedDev, ino: recordedIno, ...recordedMetadata } = recorded;
+  return (
+    isDeepStrictEqual(metadata, recordedMetadata) &&
+    immutableIdentityMatches(
+      `${dev}:${ino}`,
+      `${recordedDev}:${recordedIno}`,
+      observedEncoding === "exact" && recordedEncoding === "exact" ? "exact" : "legacy",
+    )
+  );
+}
 export type ImmutableProtectionCandidate = {
   pid: number;
   generationPath: string;
@@ -167,7 +188,12 @@ function assertState(snapshot: ImmutableProtectionSnapshot): void {
   if (
     current.key !== state.key ||
     current.birthtime !== state.birthtime ||
-    !isDeepStrictEqual(fileIdentity(state.pathProof.targetPath), state.identity)
+    !sameFileIdentity(
+      fileIdentity(state.pathProof.targetPath),
+      state.identity,
+      "exact",
+      snapshot.identityEncoding,
+    )
   ) {
     throw new Error(
       "Protected state database identity changed; automatic activation or rollback was refused.",
@@ -242,7 +268,10 @@ export function assertImmutableProtectionUnchanged(
   assertState(snapshot);
   for (const file of snapshot.config) {
     const current = readFile(file, context.env);
-    if (current.hash !== file.hash || !isDeepStrictEqual(current.identity, file.identity)) {
+    if (
+      current.hash !== file.hash ||
+      !sameFileIdentity(current.identity, file.identity, "exact", snapshot.identityEncoding)
+    ) {
       throw new Error(
         "Protected configuration changed before immutable cutover; the Gateway remains on its previous generation.",
       );
@@ -270,7 +299,10 @@ export function verifyImmutableProtection(
   const records = (boundary < 0 ? recent : recent.slice(0, boundary)).toReversed();
   for (const file of snapshot.config) {
     const current = readFile(file, context.env);
-    if (current.hash === file.hash && isDeepStrictEqual(current.identity, file.identity)) {
+    if (
+      current.hash === file.hash &&
+      sameFileIdentity(current.identity, file.identity, "exact", snapshot.identityEncoding)
+    ) {
       continue;
     }
     if (
@@ -286,6 +318,7 @@ export function verifyImmutableProtection(
     }
     let expectedHash = file.hash;
     let expectedIdentity = file.identity;
+    let expectedEncoding = snapshot.identityEncoding;
     let writes = 0;
     for (const record of records) {
       if (record.configPath !== file.path && record.configPath !== file.pathProof.targetPath) {
@@ -311,6 +344,7 @@ export function verifyImmutableProtection(
         gid: record[`${prefix}Gid`],
       });
       const previous = identity("previous");
+      const parsedPrevious = immutableProtectedFileIdentitySchema.safeParse(previous);
       const next = immutableProtectedFileIdentitySchema.safeParse(identity("next"));
       assertImmutableIdentityEncoding(record.identityEncoding, [
         `${previous.dev}:${previous.ino}`,
@@ -325,12 +359,24 @@ export function verifyImmutableProtection(
         ts < snapshot.capturedAtMs ||
         ts > Date.now() ||
         record.previousHash !== expectedHash ||
-        !isDeepStrictEqual(previous, expectedIdentity) ||
+        !parsedPrevious.success ||
+        !sameFileIdentity(
+          parsedPrevious.data,
+          expectedIdentity,
+          record.identityEncoding,
+          expectedEncoding,
+        ) ||
         !next.success ||
         next.data.uid !== file.identity.uid ||
         next.data.gid !== file.identity.gid ||
         next.data.mode !== file.identity.mode ||
-        next.data.dev !== file.identity.dev ||
+        !immutableIdentityMatches(
+          `${next.data.dev}:0`,
+          `${file.identity.dev}:0`,
+          record.identityEncoding === "exact" && snapshot.identityEncoding === "exact"
+            ? "exact"
+            : "legacy",
+        ) ||
         !record.nextHash
       ) {
         throw new Error(
@@ -339,12 +385,13 @@ export function verifyImmutableProtection(
       }
       expectedHash = record.nextHash;
       expectedIdentity = next.data;
+      expectedEncoding = record.identityEncoding;
       writes++;
     }
     if (
       !writes ||
       expectedHash !== current.hash ||
-      !isDeepStrictEqual(expectedIdentity, current.identity)
+      !sameFileIdentity(current.identity, expectedIdentity, "exact", expectedEncoding)
     ) {
       throw new Error("Config migration is missing its complete config-audit publication receipt.");
     }

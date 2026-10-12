@@ -5,7 +5,11 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import { resolveUsageCostTranscriptFile } from "./session-cost-usage-collection.js";
 import { createNativeStorageUsageAccess } from "./session-cost-usage-collection.test-support.js";
-import type { UsageCostRollupEntry } from "./session-cost-usage-rollup-codec.js";
+import {
+  decodeUsageCostRollup,
+  encodeUsageCostRollup,
+  type UsageCostRollupEntry,
+} from "./session-cost-usage-rollup-codec.js";
 import { scanUsageCostRollupInWorker } from "./session-cost-usage-worker-refresh.js";
 
 const timestamp = Date.parse("2026-09-23T12:00:00.000Z");
@@ -161,35 +165,102 @@ describe("paged SQLite usage rollups", () => {
 
 const jsonlDirectories = useAutoCleanupTempDirTracker(afterEach);
 
-it("retains exact large file IDs through JSONL usage checkpoints and rejects replacement", async () => {
+it("resumes legacy numeric JSONL checkpoints, writes exact IDs, and rejects replacement", async () => {
   const filePath = path.join(jsonlDirectories.make("usage-exact-identity-"), "session.jsonl");
-  fs.writeFileSync(filePath, `${JSON.stringify(message("root", null, 7))}\n`);
+  const unpriced = (id: string, tokens: number) => ({
+    ...message(id, null, tokens),
+    message: {
+      role: "assistant",
+      provider: "synthetic",
+      model: id,
+      usage: { input: tokens, output: 0, totalTokens: tokens },
+    },
+  });
+  fs.writeFileSync(filePath, `${JSON.stringify(unpriced("root", 7))}\n`);
   const nativeStat = fs.promises.stat;
-  let inode = 9007199254740992n;
+  const device = 9_007_199_254_740_993n;
+  let inode = 9_007_199_254_740_993n;
   const stat = vi.spyOn(fs.promises, "stat").mockImplementation(async (...args) => {
     const result = await nativeStat(...args);
     if (result && args[0] === filePath) {
+      result.dev = typeof result.dev === "bigint" ? device : Number(device);
       result.ino = typeof result.ino === "bigint" ? inode : Number(inode);
     }
     return result;
   });
   try {
     const access = createNativeStorageUsageAccess();
-    const file = await resolveUsageCostTranscriptFile(filePath, access);
-    expect(file).toBeDefined();
-    const scanFile = () =>
-      scanUsageCostRollupInWorker({
+    const pricedModels: Array<string | undefined> = [];
+    const scanFile = async (previous?: UsageCostRollupEntry) => {
+      const file = await resolveUsageCostTranscriptFile(filePath, access);
+      expect(file).toBeDefined();
+      return scanUsageCostRollupInWorker({
         file: file!,
+        previous,
+        pricingFingerprint: "synthetic-pricing",
+        resolveCosts: async (pairs) => {
+          pricedModels.push(...pairs.map(({ model }) => model));
+          return pairs.map(() => ({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }));
+        },
+        readRows: async () => [],
+        access,
+      });
+    };
+    const previous = await scanFile();
+    expect(previous.checkpoint).toMatchObject({
+      device: "9007199254740993",
+      inode: "9007199254740993",
+    });
+    if (previous.checkpoint.kind !== "jsonl") {
+      throw new Error("Expected JSONL checkpoint");
+    }
+    // Released checkpoints persisted numeric stats after JS rounded their IDs.
+    const encoded = encodeUsageCostRollup({
+      ...previous,
+      checkpoint: { ...previous.checkpoint, device: Number(device), inode: Number(inode) },
+    });
+    const legacy = decodeUsageCostRollup(
+      encoded.valueJson,
+      previous.pricingFingerprint,
+      encoded.blob,
+    );
+    expect(legacy).toBeDefined();
+    pricedModels.length = 0;
+    fs.appendFileSync(filePath, `${JSON.stringify(unpriced("appended", 3))}\n`);
+    const upgraded = await scanFile(legacy);
+    // Already-priced history survives; only the new record needs price resolution.
+    expect(pricedModels).toEqual(["appended"]);
+    expect(upgraded.checkpoint).toMatchObject({
+      device: "9007199254740993",
+      inode: "9007199254740993",
+    });
+    expect(upgraded.countedRecords).toBe(2);
+    expect(Object.values(upgraded.rollup.buckets)[0]?.totals.totalTokens).toBe(10);
+
+    const oldFile = await resolveUsageCostTranscriptFile(filePath, access);
+    inode -= 1n;
+    expect(Number(inode)).toBe(9_007_199_254_740_992);
+    await expect(
+      scanUsageCostRollupInWorker({
+        file: oldFile!,
         pricingFingerprint: "synthetic-pricing",
         resolveCosts: async (pairs) => pairs.map(() => undefined),
         readRows: async () => [],
         access,
-      });
-    const result = await scanFile();
-    expect(result.checkpoint).toMatchObject({ inode: "9007199254740992" });
-    expect(result.countedRecords).toBe(1);
-    inode += 1n;
-    await expect(scanFile()).rejects.toThrow("transcript changed identity while scanning");
+      }),
+    ).rejects.toThrow("transcript changed identity while scanning");
+
+    fs.renameSync(filePath, `${filePath}.previous`);
+    fs.writeFileSync(
+      filePath,
+      `${JSON.stringify({ ...unpriced("replacement", 13), padding: "x".repeat(512) })}\n`,
+    );
+    pricedModels.length = 0;
+    const replacement = await scanFile(upgraded);
+    expect(pricedModels).toEqual(["replacement"]);
+    expect(replacement.countedRecords).toBe(1);
+    expect(Object.values(replacement.rollup.buckets)[0]?.totals.totalTokens).toBe(13);
+    expect(replacement.checkpoint).toMatchObject({ inode: "9007199254740992" });
   } finally {
     stat.mockRestore();
   }

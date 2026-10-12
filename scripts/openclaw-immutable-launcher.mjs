@@ -12,6 +12,22 @@ const identity = (file) => {
   const stat = fs.lstatSync(file, { bigint: true });
   return `${stat.dev}:${stat.ino}`;
 };
+const matchesIdentity = (observed, recorded, encoding) => {
+  if (
+    ![observed, recorded].every((value) => typeof value === "string" && /^\d+:\d+$/u.test(value))
+  ) {
+    return false;
+  }
+  return encoding === "exact"
+    ? observed === recorded
+    : observed
+        .split(":")
+        .every(
+          (part, index) =>
+            Number.isFinite(Number(recorded.split(":")[index])) &&
+            Number(part) === Number(recorded.split(":")[index]),
+        );
+};
 
 function admitActivation(root, generation) {
   const key = createHash("sha256").update(root).digest("hex").slice(0, 24);
@@ -61,14 +77,17 @@ function admitActivation(root, generation) {
       !recordObject(descriptor) ||
       descriptor.kind !== "immutable" ||
       descriptor.root !== root ||
-      descriptor.rootIdentity !== identity(root)
+      !matchesIdentity(identity(root), descriptor.rootIdentity, descriptor.identityEncoding)
     ) {
       throw new Error("immutable activation control belongs to another installation");
     }
-    if (descriptor.identityEncoding !== undefined && descriptor.identityEncoding !== "exact") {
+    if (
+      descriptor.identityEncoding !== undefined &&
+      !["exact", "legacy"].includes(descriptor.identityEncoding)
+    ) {
       throw new Error("immutable activation descriptor has an unsupported identity encoding");
     }
-    if (descriptor.identityEncoding === undefined) {
+    {
       const identities = [descriptor.rootIdentity, descriptor.releasesIdentity];
       if (recordObject(descriptor.current)) {
         identities.push(descriptor.current.identity, descriptor.current.pointerIdentity);
@@ -78,12 +97,10 @@ function admitActivation(root, generation) {
           (value) =>
             typeof value !== "string" ||
             !/^\d+:\d+$/u.test(value) ||
-            value.split(":").some((part) => BigInt(part) > 9007199254740991n),
+            !matchesIdentity(value, value, descriptor.identityEncoding),
         )
       ) {
-        throw new Error(
-          "legacy immutable activation descriptor contains an imprecise file identity",
-        );
+        throw new Error("immutable activation descriptor contains an invalid file identity");
       }
     }
     if (descriptor.version === 1 && descriptor.activationEnabled === undefined) {
@@ -96,8 +113,21 @@ function admitActivation(root, generation) {
       !/^[a-f0-9]{40}$/.test(descriptor.current.sha ?? "") ||
       descriptor.current.path !== path.join(root, "releases", descriptor.current.sha) ||
       descriptor.current.path !== generation ||
-      descriptor.current.identity !== identity(generation) ||
-      descriptor.current.pointerIdentity !== identity(path.join(root, "current")) ||
+      !matchesIdentity(
+        identity(path.join(root, "releases")),
+        descriptor.releasesIdentity,
+        descriptor.identityEncoding,
+      ) ||
+      !matchesIdentity(
+        identity(generation),
+        descriptor.current.identity,
+        descriptor.current.identityEncoding ?? descriptor.identityEncoding,
+      ) ||
+      !matchesIdentity(
+        identity(path.join(root, "current")),
+        descriptor.current.pointerIdentity,
+        descriptor.current.identityEncoding ?? descriptor.identityEncoding,
+      ) ||
       !recordObject(descriptor.runtime) ||
       descriptor.runtime.path !== fs.realpathSync(process.execPath)
     ) {
@@ -180,7 +210,13 @@ function admitActivation(root, generation) {
     if (
       selected.sha !== descriptor.current.sha ||
       selected.path !== generation ||
-      selected.identity !== descriptor.current.identity
+      !matchesIdentity(
+        identity(generation),
+        selected.identity,
+        selected === operation.candidate
+          ? "exact"
+          : (selected.identityEncoding ?? descriptor.identityEncoding),
+      )
     ) {
       throw new Error("immutable activation phase does not authorize the selected generation");
     }

@@ -156,11 +156,22 @@ it("recognizes only an explicitly adopted release layout", async () => {
   expect(await pointer()).toBe(`releases/${currentSha}`);
 });
 
-it("retains but refuses a legacy descriptor with a rounded large identity", async () => {
-  record.descriptor.current.pointerIdentity = "1:9007199254740992";
-  await expect(inspectImmutableInstall(root)).rejects.toThrow(
-    "Legacy immutable receipt contains an imprecise file identity",
-  );
+it("accepts a rounded legacy pointer while exact adjacent identities remain distinct", async () => {
+  const pointerPath = path.join(root, "current");
+  const lstat = vi.mocked(fsSync.lstatSync).getMockImplementation()!;
+  vi.spyOn(fsSync, "lstatSync").mockImplementation((...args) => {
+    const stat = lstat(...args);
+    if (stat && String(args[0]) === pointerPath) {
+      Object.defineProperty(stat, "ino", {
+        value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
+      });
+    }
+    return stat;
+  });
+  record.descriptor.current.pointerIdentity = `${record.descriptor.current.pointerIdentity.split(":")[0]}:9007199254740992`;
+  await expect(inspectImmutableInstall(root)).resolves.toMatchObject({ currentSha });
+  record.descriptor.identityEncoding = "exact";
+  await expect(inspectImmutableInstall(root)).rejects.toThrow("changed since adoption");
   expect(await pointer()).toBe(`releases/${currentSha}`);
 });
 

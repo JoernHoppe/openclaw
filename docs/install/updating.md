@@ -132,8 +132,11 @@ no environment-variable override.
 Windows candidates accept lease identities from the `2026.9.6` updater even
 when NTFS file IDs exceed JavaScript's exact numeric range. After validating
 the handoff, the candidate retains exact file and parent-directory identities;
-later replacement still stops the update. Lease read failures report their
-underlying cause instead of a parent-binding mismatch.
+later replacement still stops the update. Older receipts compare in their
+original rounded-number format until a fresh observation upgrades them. For
+these legacy receipts only, a replacement whose file ID rounds to the same
+number cannot be distinguished. Lease read failures report their underlying
+cause instead of a parent-binding mismatch.
 
 Post-install Doctor also accepts older updaters, including `2026.8.2`, that do not
 provide an update run ID. Its commands retain invocation-specific custody without

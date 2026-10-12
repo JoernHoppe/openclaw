@@ -473,15 +473,15 @@ describe("service definition backup receipts", () => {
       );
       await f.install();
       // v2026.10.2 stored numeric dev/ino in every retained service file state.
-      const serialized = JSON.stringify(await f.capture.finish(), (key, value: unknown) => {
+      const exactReceipt = await f.capture.finish();
+      const serialized = JSON.stringify(exactReceipt, (key, value: unknown) => {
         if ((key === "dev" || key === "ino") && typeof value === "string") {
-          const numeric = Number(value);
-          expect(Number.isSafeInteger(numeric)).toBe(true);
-          return numeric;
+          return Number(BigInt(value));
         }
         return value;
       });
       const receipt = GatewayServiceDefinitionBackupReceiptSchema.parse(JSON.parse(serialized));
+      expect(receipt.files[0]!.after!.ino).toBe(Number(BigInt(exactReceipt.files[0]!.after!.ino)));
       const candidate = await fs.readFile(f.sourcePath);
       if (replaced) {
         const replacement = `${f.sourcePath}.operator`;
@@ -499,6 +499,16 @@ describe("service definition backup receipts", () => {
         return;
       }
       await restoreGatewayServiceDefinitionBackup({ ...f, receipt });
+      const upgraded = await readRetainedReceipt(f.capture.backupPaths);
+      for (const file of upgraded.files) {
+        if (file.after) {
+          const current = await fs.stat(file.sourcePath, { bigint: true });
+          expect(file.after).toMatchObject({
+            dev: current.dev.toString(),
+            ino: current.ino.toString(),
+          });
+        }
+      }
       for (const original of originalFiles) {
         expect(await fs.readFile(original.file)).toEqual(original.contents);
         const mode = (await fs.stat(original.file)).mode & 0o777;
@@ -506,9 +516,7 @@ describe("service definition backup receipts", () => {
           // Windows chmod represents writability; service receipts do not retain DACLs.
           expect(mode).toBe(original.mode);
           expect(mode & 0o200).toBe(0o200);
-          await expect(
-            fs.access(original.file, fs.constants.R_OK | fs.constants.W_OK),
-          ).resolves.toBeUndefined();
+          await fs.access(original.file, fs.constants.R_OK | fs.constants.W_OK);
         } else {
           expect(mode).toBe(0o600);
         }

@@ -297,11 +297,11 @@ export function parseCleanupPaths(value: string): AgentDeletionJournalCleanupPat
         typeof entry.parentPath === "string" &&
         (entry.kind === "target" || entry.kind === "symlink") &&
         (entry.dev === null ||
-          typeof entry.dev === "number" ||
-          (typeof entry.dev === "string" && /^-?\d+$/.test(entry.dev))) &&
+          (typeof entry.dev === "number" && Number.isInteger(entry.dev)) ||
+          (typeof entry.dev === "string" && /^(0|-?[1-9][0-9]*)$/u.test(entry.dev))) &&
         (entry.ino === null ||
-          typeof entry.ino === "number" ||
-          (typeof entry.ino === "string" && /^-?\d+$/.test(entry.ino))) &&
+          (typeof entry.ino === "number" && Number.isInteger(entry.ino)) ||
+          (typeof entry.ino === "string" && /^(0|-?[1-9][0-9]*)$/u.test(entry.ino))) &&
         typeof entry.coversDescendants === "boolean" &&
         typeof entry.done === "boolean" &&
         (entry.note === undefined || typeof entry.note === "string") &&

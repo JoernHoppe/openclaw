@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createHotSqliteRollbackJournal } from "../../test/helpers/sqlite-hot-journal.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { sha256Hex } from "./crypto-digest.js";
 import {
   publishImmutablePointer,
   reconcileImmutablePointer,
@@ -22,6 +23,7 @@ import {
   resolvePackageActivationControl,
   resolvePackageActivationJournalPath,
 } from "./package-update-activation-paths.js";
+import * as sqliteReadOnly from "./sqlite-readonly-worker.js";
 import { readImmutableInstallRecord } from "./update-immutable-install-record.js";
 import type {
   ImmutableActivationOperation,
@@ -29,7 +31,7 @@ import type {
   ImmutableInstallRecord,
   ImmutablePreparedGeneration,
 } from "./update-immutable-install-schema.js";
-import { projectImmutableInstall } from "./update-immutable-install.js";
+import { inspectImmutableInstall, projectImmutableInstall } from "./update-immutable-install.js";
 
 const dirs = useAutoCleanupTempDirTracker(afterEach);
 const sha = "a".repeat(40);
@@ -89,10 +91,12 @@ beforeEach(() => {
   descriptor = {
     version: 1,
     kind: "immutable",
+    identityEncoding: "exact",
     root,
     rootIdentity: identity(root),
     releasesIdentity: identity(path.join(root, "releases")),
     current: {
+      identityEncoding: "exact",
       sha,
       path: current,
       identity: identity(current),
@@ -179,7 +183,7 @@ function beginActivation(): ImmutableInstallRecord {
           path: descriptor.service.configPath,
           identity: fileIdentity(descriptor.service.configPath),
           pathProof: { targetPath: descriptor.service.configPath, entries: [] },
-          hash: "4".repeat(64),
+          hash: sha256Hex("{}"),
           fingerprint: {},
           policyFingerprint: "5".repeat(64),
         },
@@ -239,6 +243,59 @@ it("persists adoption and preparation without changing the selected generation",
   expect(fs.readlinkSync(path.join(root, "current"))).toBe(`releases/${sha}`);
   expect(fs.statSync(controlPath()).mode & 0o777).toBe(0o755);
   expect(fs.statSync(journalPath()).mode & 0o777).toBe(0o644);
+});
+
+it("admits rounded legacy layout IDs and upgrades observed identities on the next owner write", async () => {
+  createImmutableInstallRecord(descriptor, () => {});
+  const observed = 9007199254740993n;
+  const rounded = String(Number(observed));
+  const files = new Set([
+    root,
+    path.join(root, "releases"),
+    descriptor.current.path,
+    path.join(root, "current"),
+  ]);
+  const lstat = vi.mocked(fs.lstatSync).getMockImplementation()!;
+  vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+    const stat = lstat(...args);
+    if (stat && files.has(String(args[0]))) {
+      Object.defineProperty(stat, "ino", {
+        value: typeof stat.ino === "bigint" ? observed : Number(observed),
+      });
+    }
+    return stat;
+  });
+  const legacy = structuredClone(descriptor);
+  delete legacy.identityEncoding;
+  delete legacy.current.identityEncoding;
+  const withInode = (value: string, inode: string) => `${value.split(":")[0]}:${inode}`;
+  legacy.rootIdentity = withInode(legacy.rootIdentity, rounded);
+  legacy.releasesIdentity = withInode(legacy.releasesIdentity, rounded);
+  legacy.current.identity = withInode(legacy.current.identity, rounded);
+  legacy.current.pointerIdentity = withInode(legacy.current.pointerIdentity, rounded);
+  const db = new DatabaseSync(journalPath());
+  try {
+    db.prepare("UPDATE immutable_installation SET descriptor_json = ?").run(JSON.stringify(legacy));
+  } finally {
+    db.close();
+  }
+  const restored = read();
+  expect(restored.descriptor).toEqual(legacy);
+  expect((await readImmutableInstallRecordForRecovery(root)).record.descriptor).toEqual(legacy);
+  const upgraded = recordImmutablePreparedGeneration(restored, prepared, () => {});
+  expect(upgraded.descriptor.identityEncoding).toBe("exact");
+  expect(upgraded.descriptor.rootIdentity).toBe(withInode(legacy.rootIdentity, String(observed)));
+  expect(upgraded.descriptor.current).toMatchObject({
+    identityEncoding: "exact",
+    identity: withInode(legacy.current.identity, String(observed)),
+    pointerIdentity: withInode(legacy.current.pointerIdentity, String(observed)),
+  });
+  const changed = structuredClone(upgraded.descriptor);
+  changed.rootIdentity = withInode(changed.rootIdentity, rounded);
+  expect(() =>
+    updateImmutableInstallRecord(upgraded, { ...upgraded, descriptor: changed }, () => {}),
+  ).toThrow("cannot transfer");
+  expect(read()).toEqual(upgraded);
 });
 
 it.each(["candidate-verification-pending", "private error: token=fixture-secret /private/state"])(
@@ -597,6 +654,81 @@ it("retains a renamed pointer intent until recovery durably syncs it, then recon
   expect(identity(path.join(root, "current"))).toBe(selectedIdentity);
 });
 
+it("refuses replaced releases ownership while reconciling or inspecting a published pointer", async () => {
+  const pending = retainUnpublishedIntent(beginActivation());
+  const operation = pending.activation!.operation!;
+  fs.renameSync(
+    path.join(root, `.openclaw-current-${operation.operationId}`),
+    path.join(root, "current"),
+  );
+  const releases = path.join(root, "releases");
+  const retained = path.join(root, "retained-releases");
+  fs.renameSync(releases, retained);
+  fs.mkdirSync(releases, { mode: 0o755 });
+  fs.renameSync(path.join(retained, candidateSha), prepared.path);
+  expect(identity(prepared.path)).toBe(prepared.identity);
+  expect(identity(releases)).not.toBe(pending.descriptor.releasesIdentity);
+  const before = controlFiles();
+  // Keep the fixture's projected root ownership across the worker transport,
+  // while executing the production SQLite reader for the inspector.
+  vi.spyOn(sqliteReadOnly, "runSqliteReadOnlyOperation").mockImplementation(
+    async (databasePath, command) => {
+      expect(command).toEqual({ type: "immutableInstall.read", input: { root } });
+      return immutableInstallReadOperations["immutableInstall.read"](
+        { root },
+        { path: databasePath, env: process.env },
+      );
+    },
+  );
+  await expect(inspectImmutableInstall(root)).rejects.toThrow("changed since adoption");
+  expect(() => reconcileImmutablePointer(pending, () => {})).toThrow("changed since adoption");
+  expect(controlFiles()).toEqual(before);
+  expect(read()).toEqual(pending);
+});
+
+it.each([false, true])(
+  "upgrades a legacy config identity only while its baseline bytes match (changed=%s)",
+  (changed) => {
+    const initial = beginActivation();
+    const protection = initial.activation!.operation!.protection;
+    delete protection.identityEncoding;
+    const config = protection.config[0]!;
+    const originalInode = "9007199254740992";
+    config.identity.ino = originalInode;
+    config.hash = sha256Hex("{}");
+    const db = new DatabaseSync(journalPath());
+    try {
+      db.prepare("UPDATE immutable_installation SET activation_json = ?").run(
+        JSON.stringify(initial.activation),
+      );
+    } finally {
+      db.close();
+    }
+    const lstat = vi.mocked(fs.lstatSync).getMockImplementation()!;
+    vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+      const stat = lstat(...args);
+      if (stat && String(args[0]) === config.path) {
+        Object.defineProperty(stat, "ino", {
+          value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
+        });
+      }
+      return stat;
+    });
+    if (changed) {
+      const replacement = `${config.path}.candidate`;
+      fs.writeFileSync(replacement, '{"logging":{"level":"info"}}', { mode: 0o600 });
+      fs.renameSync(replacement, config.path);
+    }
+    const record = read();
+    const updated = updateImmutableInstallRecord(record, { ...record }, () => {});
+    const stored = updated.activation!.operation!.protection;
+    expect(stored.identityEncoding).toBe(changed ? "legacy" : "exact");
+    expect(stored.config[0]!.identity.ino).toBe(changed ? originalInode : "9007199254740993");
+    expect(stored.config[0]!.hash).toBe(config.hash);
+    expect(read()).toEqual(updated);
+  },
+);
+
 it("refuses an old durable intent before publishing after its SQLite revision advances", () => {
   const intent = retainUnpublishedIntent(beginActivation());
   const newer = updateImmutableInstallRecord(
@@ -627,6 +759,52 @@ it("refuses a foreign current pointer and leaves its retained intent intact", ()
   expect(identity(path.join(root, "current"))).toBe(foreignIdentity);
   expect(read()).toEqual(intent);
 });
+
+it.each([undefined, "exact"] as const)(
+  "reconciles a rounded publication intent only with legacy encoding (%s)",
+  (encoding) => {
+    const pending = retainUnpublishedIntent(beginActivation());
+    const operation = pending.activation!.operation!;
+    const temporary = path.join(root, `.openclaw-current-${operation.operationId}`);
+    fs.renameSync(temporary, path.join(root, "current"));
+    const lstat = vi.mocked(fs.lstatSync).getMockImplementation()!;
+    vi.spyOn(fs, "lstatSync").mockImplementation((...args) => {
+      const stat = lstat(...args);
+      if (stat && String(args[0]) === path.join(root, "current")) {
+        Object.defineProperty(stat, "ino", {
+          value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
+        });
+      }
+      return stat;
+    });
+    const intent = operation.pointerIntent!;
+    intent.temporaryIdentity = `${intent.temporaryIdentity.split(":")[0]}:9007199254740992`;
+    intent.identityEncoding = encoding;
+    const db = new DatabaseSync(journalPath());
+    try {
+      db.prepare("UPDATE immutable_installation SET activation_json = ?").run(
+        JSON.stringify(pending.activation),
+      );
+    } finally {
+      db.close();
+    }
+    const record = read();
+    if (encoding === "exact") {
+      expect(() => reconcileImmutablePointer(record, () => {})).toThrow(
+        "differs from its durable publication intent",
+      );
+      expect(read()).toEqual(record);
+    } else {
+      const recovered = reconcileImmutablePointer(record, () => {});
+      expect(recovered.activation?.operation?.pointerIntent).toBeUndefined();
+      expect(recovered.descriptor.current.pointerIdentity).toBe(
+        `${intent.temporaryIdentity.split(":")[0]}:9007199254740993`,
+      );
+      expect(recovered.descriptor.identityEncoding).toBe("exact");
+      expect(read()).toEqual(recovered);
+    }
+  },
+);
 
 it("refuses a replaced prepared generation before selecting its directory", () => {
   const intent = retainUnpublishedIntent(beginActivation());

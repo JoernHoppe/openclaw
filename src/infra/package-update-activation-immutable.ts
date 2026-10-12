@@ -28,10 +28,16 @@ import {
   type ImmutableInstallRecord,
   type ImmutablePreparedGeneration,
 } from "./update-immutable-install-schema.js";
-import { assertImmutableDescriptorIdentityEncoding } from "./update-immutable-layout.js";
+import {
+  assertImmutableDescriptorIdentityEncoding,
+  directoryIdentity,
+  immutableIdentityMatches,
+  refreshImmutableProtectionIdentities,
+} from "./update-immutable-layout.js";
 
 const MAX_RECORD_BYTES = 1024 * 1024;
 const MAX_RELEASE_ROWS = 4096;
+
 type ImmutableRow = {
   slot: number;
   revision: number;
@@ -283,7 +289,14 @@ function readRecord(db: DatabaseSync, root: string, rootIdentity: string): Immut
       ? { activation: JSON.parse(row.activation_json) }
       : {}),
   });
-  if (record.descriptor.root !== root || record.descriptor.rootIdentity !== rootIdentity) {
+  if (
+    record.descriptor.root !== root ||
+    !immutableIdentityMatches(
+      rootIdentity,
+      record.descriptor.rootIdentity,
+      record.descriptor.identityEncoding,
+    )
+  ) {
     throw new Error("Immutable installation control does not match the installation.");
   }
   readReleaseInventory(db, record);
@@ -511,15 +524,102 @@ export function updateImmutableInstallRecord(
 ): ImmutableInstallRecord {
   assertImmutableDescriptorIdentityEncoding(expected.descriptor);
   assertImmutableDescriptorIdentityEncoding(changes.descriptor);
+  const descriptor = changes.descriptor;
+  const rootIdentity = directoryIdentity(descriptor.root);
+  const releasesIdentity = directoryIdentity(path.join(descriptor.root, "releases"));
+  if (
+    !immutableIdentityMatches(rootIdentity, descriptor.rootIdentity, descriptor.identityEncoding) ||
+    !immutableIdentityMatches(
+      releasesIdentity,
+      descriptor.releasesIdentity,
+      descriptor.identityEncoding,
+    )
+  ) {
+    throw new Error("Immutable update cannot transfer installation ownership.");
+  }
+  const pointerPath = path.join(descriptor.root, "current");
+  const pointer = fs.lstatSync(pointerPath, { bigint: true, throwIfNoEntry: false });
+  const generation = fs.lstatSync(descriptor.current.path, { bigint: true, throwIfNoEntry: false });
+  const currentEncoding =
+    descriptor.current.identityEncoding ?? descriptor.identityEncoding ?? "legacy";
+  const selected = {
+    ...descriptor.current,
+    identity: generation ? `${generation.dev}:${generation.ino}` : "",
+    pointerIdentity: pointer ? `${pointer.dev}:${pointer.ino}` : "",
+  };
+  const sameCurrent =
+    pointer?.isSymbolicLink() &&
+    pointer.uid === 0n &&
+    generation?.isDirectory() &&
+    generation.uid === 0n &&
+    (generation.mode & 0o022n) === 0n &&
+    path.resolve(descriptor.root, fs.readlinkSync(pointerPath)) === descriptor.current.path &&
+    immutableIdentityMatches(selected.identity, descriptor.current.identity, currentEncoding) &&
+    immutableIdentityMatches(
+      selected.pointerIdentity,
+      descriptor.current.pointerIdentity,
+      currentEncoding,
+    );
+  const encoding =
+    expected.descriptor.current.identityEncoding ??
+    expected.descriptor.identityEncoding ??
+    "legacy";
+  const previous = changes.activation?.previous;
+  const operation = changes.activation?.operation;
+  const refreshGeneration = <
+    T extends { path: string; identity: string; identityEncoding?: "exact" | "legacy" },
+  >(
+    retainedGeneration: T,
+    fallback: "exact" | "legacy",
+  ): T => {
+    const identityEncoding = retainedGeneration.identityEncoding ?? fallback;
+    return retainedGeneration.path === selected.path &&
+      immutableIdentityMatches(selected.identity, retainedGeneration.identity, identityEncoding)
+      ? { ...retainedGeneration, identity: selected.identity, identityEncoding: "exact" }
+      : { ...retainedGeneration, identityEncoding };
+  };
   const next = validateRecord({
-    descriptor: changes.descriptor,
+    descriptor: {
+      ...descriptor,
+      identityEncoding: "exact",
+      rootIdentity,
+      releasesIdentity,
+      current: {
+        ...descriptor.current,
+        ...(sameCurrent ? selected : {}),
+        identityEncoding: sameCurrent ? "exact" : currentEncoding,
+      },
+    },
     prepared: changes.prepared,
-    activation: changes.activation,
+    activation: changes.activation && {
+      ...changes.activation,
+      ...(previous
+        ? {
+            previous: refreshGeneration(
+              previous,
+              expected.activation?.operation?.candidate.sha === previous.sha ? "exact" : encoding,
+            ),
+          }
+        : {}),
+      ...(operation
+        ? {
+            operation: {
+              ...operation,
+              protection: refreshImmutableProtectionIdentities(operation.protection),
+              previous: refreshGeneration(operation.previous, encoding),
+            },
+          }
+        : {}),
+    },
     revision: expected.revision + 1,
   });
   if (
     next.descriptor.root !== expected.descriptor.root ||
-    next.descriptor.rootIdentity !== expected.descriptor.rootIdentity
+    !immutableIdentityMatches(
+      next.descriptor.rootIdentity,
+      expected.descriptor.rootIdentity,
+      expected.descriptor.identityEncoding,
+    )
   ) {
     throw new Error("Immutable update cannot transfer installation ownership.");
   }

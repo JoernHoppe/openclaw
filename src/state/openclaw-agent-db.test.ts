@@ -730,8 +730,8 @@ describe("openclaw agent database", () => {
         parentPath: path.dirname(entry.agentDir),
         kind: "target" as const,
         sourcePaths: [entry.agentDir],
-        dev: null,
-        ino: null,
+        dev: 42,
+        ino: 9_007_199_254_740_992,
         coversDescendants: true,
         done: false,
       },
@@ -749,7 +749,21 @@ describe("openclaw agent database", () => {
     );
     expect(recovery.databasePaths).toEqual(databasePaths);
     expect(recovery.cleanupPaths).toEqual(cleanupPaths);
-    removeAgentDeletionJournal(recovery.agentId, recovery.operationId, { env });
+    const exactCleanupPaths = cleanupPaths.map((cleanupPath) =>
+      Object.assign({}, cleanupPath, { dev: "42", ino: "9007199254740993" }),
+    );
+    updateAgentDeletionJournalCleanupPaths(
+      recovery.agentId,
+      recovery.operationId,
+      exactCleanupPaths,
+      { env },
+    );
+    const exactRecovery = beginAgentDeletionJournal(
+      { ...entry, operationId: "exact-recovery", deleteFiles: true },
+      { env },
+    );
+    expect(exactRecovery.cleanupPaths).toEqual(exactCleanupPaths);
+    removeAgentDeletionJournal(exactRecovery.agentId, exactRecovery.operationId, { env });
   });
 
   it("fences registration and lease claims beneath another agent's pending deletion", () => {

@@ -173,16 +173,22 @@ async function runPreload() {
       assert.equal(admission.start, processStart(process.pid));
       assert.equal(admission.invocationId, process.env.INVOCATION_ID);
       assert(aliveOwner());
-      const recordedMetadata = value => {
-        const exact = id => {
-          assert((typeof id === "number" && Number.isSafeInteger(id) && id >= 0) ||
-            (typeof id === "string" && /^(0|[1-9][0-9]*)$/.test(id)), "invalid or rounded profiling file identity");
-          return typeof id === "number" ? BigInt(id).toString() : id;
+      const assertMetadata = (actual, expected) => {
+        const { dev, ino, identityEncoding, ...rest } = expected;
+        assert(identityEncoding === undefined || ["exact", "legacy-number"].includes(identityEncoding));
+        const matches = (current, saved) => {
+          assert((typeof saved === "number" && Number.isInteger(saved) && saved >= 0) ||
+            (typeof saved === "string" && /^(0|[1-9][0-9]*)$/.test(saved)), "invalid profiling file identity");
+          const encoding = identityEncoding ?? (typeof saved === "number" ? "legacy-number" : "exact");
+          assert(encoding !== "exact" || typeof saved === "string");
+          return encoding === "legacy-number" ? Number(current) === Number(saved) : current === saved;
         };
-        return { ...value, dev: exact(value.dev), ino: exact(value.ino) };
+        assert(matches(actual.dev, dev) && matches(actual.ino, ino), "profiling file identity changed");
+        const { dev: _dev, ino: _ino, ...metadata } = actual;
+        assert.deepEqual(metadata, rest);
       };
-      assert.deepEqual(metadata(process.execPath), recordedMetadata(intent.node));
-      assert.deepEqual(metadata(intent.entry), recordedMetadata(intent.entryMetadata));
+      assertMetadata(metadata(process.execPath), intent.node);
+      assertMetadata(metadata(intent.entry), intent.entryMetadata);
       assert.equal(fs.realpathSync(process.argv[1]), intent.entry);
       assert.equal(fs.realpathSync(process.cwd()), intent.release);
       if (intent.mode === "steady") {

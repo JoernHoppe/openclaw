@@ -11,6 +11,7 @@ import {
   assertImmutableDescriptorIdentityEncoding,
   assertImmutableIdentityEncoding,
   directoryIdentity,
+  immutableIdentityMatches,
   readImmutableLayout,
 } from "./update-immutable-layout.js";
 
@@ -32,16 +33,32 @@ export function reconcileImmutablePointer(
     intent.temporaryIdentity,
   ]);
   const layout = readImmutableLayout(record.descriptor.root);
-  if (layout.current.pointerIdentity === intent.fromIdentity) {
+  if (
+    immutableIdentityMatches(
+      layout.current.pointerIdentity,
+      intent.fromIdentity,
+      intent.identityEncoding,
+    )
+  ) {
     assertImmutableDescriptorCurrent(record.descriptor);
     return record;
   }
   const target =
     intent.targetSha === operation.candidate.sha ? operation.candidate : operation.previous;
   if (
-    layout.current.pointerIdentity !== intent.temporaryIdentity ||
+    !immutableIdentityMatches(
+      layout.current.pointerIdentity,
+      intent.temporaryIdentity,
+      intent.identityEncoding,
+    ) ||
     layout.current.sha !== target.sha ||
-    layout.current.identity !== target.identity
+    !immutableIdentityMatches(
+      layout.current.identity,
+      target.identity,
+      target === operation.candidate
+        ? "exact"
+        : (operation.previous.identityEncoding ?? record.descriptor.identityEncoding),
+    )
   ) {
     throw new Error(
       "Immutable pointer differs from its durable publication intent; recovery retained.",
@@ -49,7 +66,11 @@ export function reconcileImmutablePointer(
   }
   const descriptor = {
     ...record.descriptor,
-    current: { ...layout.current, buildDigest: target.buildDigest },
+    current: {
+      ...layout.current,
+      identityEncoding: "exact" as const,
+      buildDigest: target.buildDigest,
+    },
   };
   assertImmutableDescriptorCurrent(descriptor);
   assertCurrent();
@@ -86,7 +107,13 @@ export function publishImmutablePointer(
   const temporary = path.join(root, `.openclaw-current-${operation.operationId}`);
   const assertTarget = () => {
     if (
-      directoryIdentity(generation.path) !== generation.identity ||
+      !immutableIdentityMatches(
+        directoryIdentity(generation.path),
+        generation.identity,
+        target === "candidate"
+          ? "exact"
+          : (operation.previous.identityEncoding ?? current.descriptor.identityEncoding),
+      ) ||
       fs.realpathSync(generation.path) !== generation.path
     ) {
       throw new Error("Immutable target generation changed; current was not modified.");
@@ -114,7 +141,7 @@ export function publishImmutablePointer(
     const stat = fs.lstatSync(temporary, { bigint: true });
     intent = {
       identityEncoding: "exact",
-      fromIdentity: current.descriptor.current.pointerIdentity,
+      fromIdentity: readImmutableLayout(root).current.pointerIdentity,
       targetSha: generation.sha,
       temporaryIdentity: `${stat.dev}:${stat.ino}`,
     };
@@ -131,7 +158,11 @@ export function publishImmutablePointer(
   if (
     !stat.isSymbolicLink() ||
     stat.uid !== 0n ||
-    `${stat.dev}:${stat.ino}` !== intent.temporaryIdentity ||
+    !immutableIdentityMatches(
+      `${stat.dev}:${stat.ino}`,
+      intent.temporaryIdentity,
+      intent.identityEncoding,
+    ) ||
     intent.targetSha !== generation.sha ||
     fs.readlinkSync(temporary) !== `releases/${generation.sha}`
   ) {

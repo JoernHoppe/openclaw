@@ -48,6 +48,7 @@ export type AgentDeletionJournalCleanupPath = {
   parentPath: string;
   kind: "target" | "symlink";
   sourcePaths: string[];
+  // Numbers are legacy, possibly rounded IDs; current writes use exact decimal strings.
   dev: string | number | null;
   ino: string | number | null;
   coversDescendants: boolean;

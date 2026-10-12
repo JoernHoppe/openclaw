@@ -1440,6 +1440,8 @@ describe("agents.delete", () => {
   it.each([
     { encoding: "released numeric", savedIno: 123, replaced: false },
     { encoding: "released numeric", savedIno: 123, replaced: true },
+    { encoding: "released rounded numeric", savedIno: 9_007_199_254_740_992, replaced: false },
+    { encoding: "released rounded numeric", savedIno: 9_007_199_254_740_992, replaced: true },
     { encoding: "exact full-width", savedIno: "9007199254740992", replaced: false },
     { encoding: "exact full-width", savedIno: "9007199254740992", replaced: true },
   ])(
@@ -1453,7 +1455,10 @@ describe("agents.delete", () => {
       });
       mocks.loadConfigReturn = { agents: { entries: { main: {} } } };
       mocks.readAgentDeletionJournal.mockReturnValue(journal);
-      const observedIno = BigInt(savedIno) + (replaced ? 1n : 0n);
+      const observedIno =
+        typeof savedIno === "number" && !Number.isSafeInteger(savedIno)
+          ? BigInt(savedIno) + (replaced ? 3n : 1n)
+          : BigInt(savedIno) + (replaced ? 1n : 0n);
       mocks.fsLstat.mockResolvedValue(makeCleanupStat({ dev: 42n, ino: observedIno }));
       if (typeof savedIno === "string") {
         // Adjacent large native IDs are indistinguishable as JS numbers.
@@ -1476,6 +1481,7 @@ describe("agents.delete", () => {
       } else {
         expectTrashedWithinParent(workspaceDir);
         expect(retainedPath).not.toHaveProperty("note");
+        expect(retainedPath).toMatchObject({ dev: "42", ino: String(observedIno) });
       }
       expect(mocks.beginAgentDeletionFinish).toHaveBeenCalledOnce();
     },

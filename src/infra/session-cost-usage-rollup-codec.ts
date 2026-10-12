@@ -16,7 +16,7 @@ export type UsageCostJsonlCheckpoint = {
   parsedOffset: number;
   observedSize: number;
   observedMtimeMs: number;
-  // Numeric values remain readable for checkpoints written by older releases.
+  // Numbers identify legacy stat observations; strings retain exact file IDs.
   device: string | number;
   inode: string | number;
   anchorHash: string;
@@ -162,12 +162,18 @@ export function decodeUsageCostRollup(
   }
 }
 
-export function checkpointIdentity(value: string | number): string | undefined {
-  return typeof value === "string"
-    ? value
-    : Number.isSafeInteger(value)
-      ? String(value)
-      : undefined;
+export function usageCostCheckpointIdentityMatches(
+  stored: string | number,
+  observed: string | undefined,
+): boolean {
+  if (observed === undefined) {
+    return false;
+  }
+  // Released numeric checkpoints already lost precision. Accept their rounded-ID
+  // blind spot until refresh writes the current exact observation as a string.
+  return typeof stored === "number"
+    ? Number.isInteger(stored) && Number(observed) === stored
+    : stored === observed;
 }
 
 export function isUsageCostRollupFresh(params: {
@@ -182,8 +188,8 @@ export function isUsageCostRollupFresh(params: {
     return (
       checkpoint.observedSize === params.file.size &&
       checkpoint.observedMtimeMs === params.file.mtimeMs &&
-      checkpointIdentity(checkpoint.device) === params.file.device &&
-      checkpointIdentity(checkpoint.inode) === params.file.inode
+      usageCostCheckpointIdentityMatches(checkpoint.device, params.file.device) &&
+      usageCostCheckpointIdentityMatches(checkpoint.inode, params.file.inode)
     );
   }
   return (
@@ -205,8 +211,8 @@ export function canUseUsageCostRollupForPartial(params: {
   if (checkpoint.kind === "jsonl") {
     return (
       checkpoint.parsedOffset <= params.file.size &&
-      checkpointIdentity(checkpoint.device) === params.file.device &&
-      checkpointIdentity(checkpoint.inode) === params.file.inode
+      usageCostCheckpointIdentityMatches(checkpoint.device, params.file.device) &&
+      usageCostCheckpointIdentityMatches(checkpoint.inode, params.file.inode)
     );
   }
   return checkpoint.maxSeq <= (params.file.maxSeq ?? 0);

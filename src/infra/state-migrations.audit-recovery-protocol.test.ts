@@ -31,22 +31,36 @@ describe("legacy audit recovery identity persistence", () => {
         journal: string;
         scrubbed: Buffer;
         replaced: boolean;
+        observedIno?: string;
+        upgrade?: boolean;
       }[] = [];
-      for (const replaced of [false, true]) {
+      for (const scenario of [
+        { replaced: false },
+        { replaced: true },
+        { replaced: false, observedIno: "9007199254740993", upgrade: true },
+        { replaced: true, observedIno: "9007199254740993", exact: true },
+      ]) {
+        const { replaced } = scenario;
         const directory = fixture.createTempDir("legacy-audit-restore-");
         const file = path.join(directory, "config-audit.jsonl.migrated.raw");
         const restorePath = `${file}.doctor-scrub-restore`;
         const progressPath = `${file}.doctor-scrub-progress`;
         await fs.writeFile(file, sourceRaw, { mode: 0o600 });
         const identity = await fs.stat(file);
-        expect(Number.isSafeInteger(identity.dev)).toBe(true);
-        expect(Number.isSafeInteger(identity.ino)).toBe(true);
         // This is the v2026.10.2 writer's schema, independent of today's serializer.
         const journal = `${JSON.stringify({
-          schemaVersion: 6,
+          schemaVersion: scenario.exact ? 7 : 6,
           rawBase64: sourceRaw.toString("base64"),
           scrubPatternBase64: scrubPattern.toString("base64"),
-          target: { dev: identity.dev, ino: identity.ino, size: sourceRaw.length },
+          target: {
+            dev: scenario.exact ? String(identity.dev) : identity.dev,
+            ino: scenario.exact
+              ? "9007199254740992"
+              : scenario.observedIno
+                ? Number(scenario.observedIno)
+                : identity.ino,
+            size: sourceRaw.length,
+          },
         })}\n`;
         await fs.writeFile(restorePath, journal, { mode: 0o600 });
         await fs.writeFile(
@@ -67,14 +81,20 @@ describe("legacy audit recovery identity persistence", () => {
           await fs.rename(file, `${file}.original`);
           await fs.writeFile(file, scrubbed, { mode: 0o600 });
         }
-        cases.push({ directory, file, restorePath, progressPath, journal, scrubbed, replaced });
+        cases.push({ directory, file, restorePath, progressPath, journal, scrubbed, ...scenario });
       }
       // Bun on Windows releases retained SQLite resources when the owning process exits.
       const result = await fixture.track(
         runNodeScript(
           (workerArgv) => [
             ...workerArgv(resolveRuntimeWorkerUrl(storageProcessTestEntrypoints.auditRecovery)),
-            JSON.stringify(cases.map(({ directory }) => directory)),
+            JSON.stringify(
+              cases.map(({ directory, observedIno, upgrade }) => ({
+                directory,
+                observedIno,
+                upgrade,
+              })),
+            ),
           ],
           process.env,
           undefined,
@@ -89,12 +109,37 @@ describe("legacy audit recovery identity persistence", () => {
           restored: false,
           warnings: [expect.stringContaining("no longer matches its restore journal target")],
         },
+        {
+          restored: true,
+          warnings: [],
+          restoredRaw: sourceRaw.toString("utf8"),
+          nextJournal: expect.objectContaining({
+            schemaVersion: 7,
+            target: {
+              dev: expect.any(String),
+              ino: "9007199254740993",
+              size: sourceRaw.length,
+            },
+          }),
+        },
+        {
+          restored: false,
+          warnings: [expect.stringContaining("no longer matches its restore journal target")],
+        },
       ]);
-      for (const { file, restorePath, progressPath, journal, scrubbed, replaced } of cases) {
+      for (const {
+        file,
+        restorePath,
+        progressPath,
+        journal,
+        scrubbed,
+        replaced,
+        upgrade,
+      } of cases) {
         if (replaced) {
           expect(await fs.readFile(file)).toEqual(scrubbed);
           expect(await fs.readFile(restorePath, "utf8")).toBe(journal);
-        } else {
+        } else if (!upgrade) {
           expect(await fs.readFile(file)).toEqual(sourceRaw);
           await expect(fs.access(restorePath)).rejects.toMatchObject({ code: "ENOENT" });
           await expect(fs.access(progressPath)).rejects.toMatchObject({ code: "ENOENT" });
@@ -113,19 +158,28 @@ describe("legacy audit recovery identity persistence", () => {
     ).toBe(false);
     expect(
       legacyAuditFileIdentitiesMatch(journal.target, { ...target, ino: 9_007_199_254_740_992 }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("refuses an already-rounded numeric restore identity", () => {
+  it("keeps rounded numeric identities legacy and refuses them in exact journals", () => {
+    const journal = {
+      schemaVersion: 6,
+      rawBase64: sourceRaw.toString("base64"),
+      scrubPatternBase64: scrubPattern.toString("base64"),
+      target: { dev: 4, ino: 9_007_199_254_740_992, size: sourceRaw.length },
+    };
+    expect(parseAuditRecoveryRestoreJournal(JSON.stringify(journal)).target).toEqual(
+      journal.target,
+    );
     expect(() =>
-      parseAuditRecoveryRestoreJournal(
-        JSON.stringify({
-          schemaVersion: 6,
-          rawBase64: sourceRaw.toString("base64"),
-          scrubPatternBase64: scrubPattern.toString("base64"),
-          target: { dev: 4, ino: 9_007_199_254_740_992, size: sourceRaw.length },
-        }),
-      ),
+      parseAuditRecoveryRestoreJournal(JSON.stringify({ ...journal, schemaVersion: 7 })),
     ).toThrow("invalid legacy audit recovery restore journal");
+    expect(() =>
+      serializeAuditRecoveryRestoreJournal({
+        rawBytes: sourceRaw,
+        scrubPattern,
+        target: journal.target,
+      }),
+    ).toThrow("invalid legacy audit recovery restore identity");
   });
 });

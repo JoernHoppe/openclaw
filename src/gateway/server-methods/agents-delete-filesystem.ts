@@ -30,12 +30,11 @@ function cleanupPathIdentity(stat: { dev: bigint; ino: bigint } | undefined) {
   return stat ? { dev: stat.dev.toString(), ino: stat.ino.toString() } : null;
 }
 
-function persistedCleanupPathIdentity(value: string | number): string {
-  // Released journals contain numbers; only exactly representable values can bind cleanup.
-  if (typeof value === "number" && !Number.isSafeInteger(value)) {
-    throw new Error("cleanup path identity exceeds the safe integer range");
-  }
-  return BigInt(value).toString();
+function cleanupPathIdentityMatches(observed: string, persisted: string | number): boolean {
+  // Legacy numeric journals retain their same-double replacement limit until rewritten.
+  return typeof persisted === "number"
+    ? Number.isInteger(persisted) && Number(observed) === persisted
+    : observed === persisted;
 }
 
 export async function statAgentCleanupPath(cleanupPath: AgentDeleteCleanupPath) {
@@ -69,11 +68,13 @@ export async function statAgentCleanupPath(cleanupPath: AgentDeleteCleanupPath) 
     cleanupPath.preparedIdentity = identity;
   } else if (
     identity === null ||
-    identity.dev !== cleanupPath.preparedIdentity.dev ||
-    identity.ino !== cleanupPath.preparedIdentity.ino
+    !cleanupPathIdentityMatches(identity.dev, cleanupPath.preparedIdentity.dev) ||
+    !cleanupPathIdentityMatches(identity.ino, cleanupPath.preparedIdentity.ino)
   ) {
     throw new AgentCleanupIdentityMismatchError("cleanup path identity changed before deletion");
   }
+  // The next journal update carries the observed exact identity, never rounded numeric text.
+  cleanupPath.preparedIdentity = identity;
 }
 
 export async function removeAgentPath(
@@ -133,7 +134,7 @@ export type AgentDeleteCleanupPath = {
   trashPath: string;
   trashCoversDescendants: boolean;
   kind: "target" | "symlink";
-  preparedIdentity: { dev: string; ino: string } | null;
+  preparedIdentity: { dev: string | number; ino: string | number } | null;
   done: boolean;
   note?: string;
   preparationError?: unknown;
@@ -189,8 +190,8 @@ export async function prepareAgentDeleteCleanupPaths(
         persistedPath.dev === null || persistedPath.ino === null
           ? null
           : {
-              dev: persistedCleanupPathIdentity(persistedPath.dev),
-              ino: persistedCleanupPathIdentity(persistedPath.ino),
+              dev: persistedPath.dev,
+              ino: persistedPath.ino,
             },
       done: persistedPath.done,
       note: persistedPath.note,

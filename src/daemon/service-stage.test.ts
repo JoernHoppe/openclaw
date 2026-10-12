@@ -82,8 +82,8 @@ describe("service backup receipt identity compatibility", () => {
         guards: [],
       };
       const legacy = GatewayServiceDefinitionBackupReceiptSchema.parse(input).files[0]!.after!;
-      expect(legacy).toMatchObject({ dev: "7", ino: "42" });
-      expect(matchesServiceFilePublication({ ...legacy }, legacy)).toBe(true);
+      expect(legacy).toMatchObject({ dev: 7, ino: 42 });
+      expect(matchesServiceFilePublication({ ...legacy, dev: "7", ino: "42" }, legacy)).toBe(true);
 
       const fullWidth = { ...state, ino };
       const exact = GatewayServiceDefinitionBackupReceiptSchema.parse({
@@ -94,12 +94,40 @@ describe("service backup receipt identity compatibility", () => {
       expect(
         matchesServiceFilePublication({ ...exact, ino: (BigInt(ino) + 1n).toString() }, exact),
       ).toBe(false);
-      expect(
-        GatewayServiceDefinitionBackupReceiptSchema.safeParse({
-          ...input,
-          files: [{ ...input.files[0], after: { ...state, ino: Number(fullWidth.ino) } }],
-        }).success,
-      ).toBe(false);
     },
   );
+
+  it("keeps rounded legacy IDs explicit while exact receipts detect a same-double replacement", () => {
+    const ino = 9007199254740992n;
+    const state = {
+      sha256: "a".repeat(64),
+      mode: 0o600,
+      dev: "7",
+      ino: ino.toString(),
+      size: 10,
+      mtimeMs: 1,
+      ctimeMs: 1,
+    };
+    const legacy = GatewayServiceDefinitionBackupReceiptSchema.parse({
+      id: "00000000-0000-4000-8000-000000000000",
+      files: [
+        {
+          sourcePath: path.resolve("legacy.service"),
+          before: null,
+          after: {
+            ...state,
+            dev: Number(BigInt(state.dev)),
+            ino: Number(ino),
+          },
+        },
+      ],
+      guards: [],
+    }).files[0]!.after!;
+    expect(legacy.ino).toBe(Number(ino));
+    expect(matchesServiceFilePublication(state, legacy)).toBe(true);
+    const replaced = { ...state, ino: (ino + 1n).toString() };
+    expect(Number(ino + 1n)).toBe(Number(ino));
+    expect(matchesServiceFilePublication(replaced, legacy)).toBe(true);
+    expect(matchesServiceFilePublication(replaced, state)).toBe(false);
+  });
 });

@@ -21,6 +21,7 @@ import {
   assertImmutableIdentityEncoding,
   readImmutableLayout,
   directoryIdentity,
+  immutableIdentityMatches,
 } from "./update-immutable-layout.js";
 import { withImmutableUpdateOwner } from "./update-immutable-owner.js";
 import { UPDATE_RUNNER_TIMEOUT_MS } from "./update-run-timeouts.js";
@@ -163,13 +164,27 @@ export async function inspectImmutableInstall(
     const selected =
       intent.targetSha === operation.candidate.sha ? operation.candidate : operation.previous;
     if (
-      layout.current.pointerIdentity === intent.temporaryIdentity &&
+      immutableIdentityMatches(
+        layout.current.pointerIdentity,
+        intent.temporaryIdentity,
+        intent.identityEncoding,
+      ) &&
       layout.current.sha === selected.sha &&
-      layout.current.identity === selected.identity
+      immutableIdentityMatches(
+        layout.current.identity,
+        selected.identity,
+        selected === operation.candidate
+          ? "exact"
+          : (operation.previous.identityEncoding ?? record.descriptor.identityEncoding),
+      )
     ) {
       const descriptor = {
         ...record.descriptor,
-        current: { ...layout.current, buildDigest: selected.buildDigest },
+        current: {
+          ...layout.current,
+          identityEncoding: "exact" as const,
+          buildDigest: selected.buildDigest,
+        },
       };
       assertImmutableDescriptorCurrent(descriptor);
       return projectImmutableInstall({ ...record, descriptor });
@@ -295,6 +310,8 @@ export async function adoptImmutableInstall(params: {
         activationEnabled: _enabled,
         current: previous,
         releaseRetention: _retention,
+        rootIdentity: oldRootIdentity,
+        releasesIdentity: oldReleasesIdentity,
         ...original
       } = existing.descriptor;
       const {
@@ -303,15 +320,37 @@ export async function adoptImmutableInstall(params: {
         activationEnabled: _nextEnabled,
         current: selected,
         releaseRetention: _nextRetention,
+        rootIdentity: nextRootIdentity,
+        releasesIdentity: nextReleasesIdentity,
         ...requested
       } = descriptor;
       const retentionUpgrade =
         params.inspectReleaseRetention && !existing.descriptor.releaseRetention;
       const upgrade =
         (params.enableActivation && existing.descriptor.version === 1) || retentionUpgrade;
+      const previousEncoding = previous.identityEncoding ?? existing.descriptor.identityEncoding;
       if (
         !isDeepStrictEqual(original, requested) ||
-        ((!upgrade || retentionUpgrade) && !isDeepStrictEqual(previous, selected))
+        !immutableIdentityMatches(
+          nextRootIdentity,
+          oldRootIdentity,
+          existing.descriptor.identityEncoding,
+        ) ||
+        !immutableIdentityMatches(
+          nextReleasesIdentity,
+          oldReleasesIdentity,
+          existing.descriptor.identityEncoding,
+        ) ||
+        ((!upgrade || retentionUpgrade) &&
+          (previous.sha !== selected.sha ||
+            previous.path !== selected.path ||
+            previous.buildDigest !== selected.buildDigest ||
+            !immutableIdentityMatches(selected.identity, previous.identity, previousEncoding) ||
+            !immutableIdentityMatches(
+              selected.pointerIdentity,
+              previous.pointerIdentity,
+              previousEncoding,
+            )))
       ) {
         throw new Error("Existing immutable adoption differs; preserve its original owner.");
       }
@@ -327,7 +366,13 @@ export async function adoptImmutableInstall(params: {
               assertCurrent();
               assertNative();
               assertImmutableInstallRecordCurrent(existing, assertCurrent);
-              if (directoryIdentity(previous.path) !== previous.identity) {
+              if (
+                !immutableIdentityMatches(
+                  directoryIdentity(previous.path),
+                  previous.identity,
+                  previousEncoding,
+                )
+              ) {
                 throw new Error(
                   "Previous sealed immutable generation changed; adoption is unchanged.",
                 );
@@ -340,7 +385,7 @@ export async function adoptImmutableInstall(params: {
                 : await verifyImmutableGeneration(previous.path, previous.sha);
             assertUpgrade();
             if (
-              retained.identity !== previous.identity ||
+              !immutableIdentityMatches(retained.identity, previous.identity, previousEncoding) ||
               retained.buildDigest !== previous.buildDigest
             ) {
               throw new Error(
@@ -372,7 +417,12 @@ export async function adoptImmutableInstall(params: {
               prepared.path === selected.path &&
               prepared.identity === selected.identity &&
               prepared.buildDigest === selected.buildDigest;
-            const { pointerIdentity: _pointerIdentity, ...predecessor } = previous;
+            const { pointerIdentity: _pointerIdentity, ...previousGeneration } = previous;
+            const predecessor = {
+              ...previousGeneration,
+              identity: retained.identity,
+              identityEncoding: "exact" as const,
+            };
             return projectImmutableInstall(
               updateImmutableInstallRecord(
                 existing,
@@ -396,7 +446,9 @@ export async function adoptImmutableInstall(params: {
     await installImmutableLauncher({ root, runtimePath: runtime });
     assertCurrent();
     return projectImmutableInstall(
-      existing ?? createImmutableInstallRecord(descriptor, assertCurrent),
+      existing
+        ? updateImmutableInstallRecord(existing, { ...existing, descriptor }, assertCurrent)
+        : createImmutableInstallRecord(descriptor, assertCurrent),
     );
   });
 }

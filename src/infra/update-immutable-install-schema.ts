@@ -15,6 +15,9 @@ const generation = z.strictObject({
   identity: packageActivationIdentitySchema,
   buildDigest: z.string().regex(/^[a-f0-9]{64}$/u),
 });
+const copiedGeneration = generation.extend({
+  identityEncoding: z.enum(["exact", "legacy"]).optional(),
+});
 
 const buildIdentity = z.strictObject({
   account: z
@@ -50,11 +53,11 @@ export const ImmutableInstallDescriptorSchema = z
     activationEnabled: z.literal(true).optional(),
     releaseRetention: releaseRetention.optional(),
     kind: z.literal("immutable"),
-    identityEncoding: z.literal("exact").optional(),
+    identityEncoding: z.enum(["exact", "legacy"]).optional(),
     root: absolutePath,
     rootIdentity: packageActivationIdentitySchema,
     releasesIdentity: packageActivationIdentitySchema,
-    current: generation.extend({ pointerIdentity: packageActivationIdentitySchema }),
+    current: copiedGeneration.extend({ pointerIdentity: packageActivationIdentitySchema }),
     service: z.strictObject({
       unit: z.string().min(1).max(256),
       scope: z.literal("system"),
@@ -108,7 +111,7 @@ const ImmutableActivationOperationSchema = z.strictObject({
   operationId: z.uuid(),
   authority,
   phase: ImmutableActivationPhaseSchema,
-  previous: generation.extend({ pointerIdentity: packageActivationIdentitySchema }),
+  previous: copiedGeneration.extend({ pointerIdentity: packageActivationIdentitySchema }),
   candidate: ImmutablePreparedGenerationSchema,
   serviceDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   protection: ImmutableProtectionSnapshotSchema,
@@ -125,7 +128,7 @@ const ImmutableActivationOperationSchema = z.strictObject({
     .optional(),
   pointerIntent: z
     .strictObject({
-      identityEncoding: z.literal("exact").optional(),
+      identityEncoding: z.enum(["exact", "legacy"]).optional(),
       fromIdentity: packageActivationIdentitySchema,
       targetSha: z.string().regex(/^[a-f0-9]{40}$/u),
       temporaryIdentity: packageActivationIdentitySchema,
@@ -135,7 +138,7 @@ const ImmutableActivationOperationSchema = z.strictObject({
 });
 const activationState = z.strictObject({
   operation: ImmutableActivationOperationSchema.optional(),
-  previous: generation.optional(),
+  previous: copiedGeneration.optional(),
   lastResult: z
     .strictObject({
       operationId: z.uuid(),

@@ -142,16 +142,14 @@ async function readMemoryHostEventExportOwnership(
     typeof parsed.fileDev === "string" && typeof parsed.fileIno === "string"
       ? { dev: BigInt(parsed.fileDev), ino: BigInt(parsed.fileIno) }
       : undefined;
-  // Version 3 wrote numeric stats as strings. Large values may already have lost
-  // identity bits, even when the rounded value happens to match the current file.
-  const safeIntegerLimit = BigInt(Number.MAX_SAFE_INTEGER);
+  // Only v3 came from String(number stats); reject spellings that writer could
+  // never produce. Its rounded-ID blind spot lasts until the next exact marker.
+  const legacyIdentity = parsed.schemaVersion === 3;
   if (
-    parsed.schemaVersion === 3 &&
+    legacyIdentity &&
     storedIdentity &&
-    (storedIdentity.dev < -safeIntegerLimit ||
-      storedIdentity.dev > safeIntegerLimit ||
-      storedIdentity.ino < -safeIntegerLimit ||
-      storedIdentity.ino > safeIntegerLimit)
+    (String(Number(storedIdentity.dev)) !== parsed.fileDev ||
+      String(Number(storedIdentity.ino)) !== parsed.fileIno)
   ) {
     return { kind: "foreign" };
   }
@@ -173,7 +171,11 @@ async function readMemoryHostEventExportOwnership(
   let exportContent: string | undefined;
   const exportIdentity = openedExport.exactIdentity;
   const identityOwned =
-    storedIdentity !== undefined && sameFileIdentity(storedIdentity, exportIdentity);
+    storedIdentity !== undefined &&
+    (legacyIdentity
+      ? Number(exportIdentity.dev) === Number(storedIdentity.dev) &&
+        Number(exportIdentity.ino) === Number(storedIdentity.ino)
+      : sameFileIdentity(storedIdentity, exportIdentity));
   {
     await using exportOwner = openedExport;
     if (openedExport.stat.size > MAX_MEMORY_HOST_PUBLIC_EXPORT_BYTES) {
@@ -194,6 +196,7 @@ async function readMemoryHostEventExportOwnership(
         identity: exportIdentity,
         ownerContent: content,
         needsFinalize:
+          legacyIdentity ||
           exportContent === undefined ||
           exportSha256 !== currentSha256 ||
           pendingSha256 !== undefined,

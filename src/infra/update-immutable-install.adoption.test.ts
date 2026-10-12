@@ -295,7 +295,7 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
         },
       });
       const { pointerIdentity: _oldPointer, ...previous } = original.descriptor.current;
-      expect(stored.activation).toEqual({ previous });
+      expect(stored.activation).toEqual({ previous: { ...previous, identityEncoding: "exact" } });
       expect(stored.prepared).toEqual(preparedKind === "selected" ? null : original.prepared);
       expect(identity(path.join(root, "current"))).toBe(pointerIdentity);
       expect(fsSync.readFileSync(path.join(previous.path, "retained"), "utf8")).toBe(
@@ -317,7 +317,6 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
     "enabled",
     "disabled",
     "pending",
-    "imprecise-legacy-identity",
   ] as const)(
     "refuses %s drift without rewriting the launcher or adoption record",
     async (change) => {
@@ -363,15 +362,6 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
       if (change === "pending") {
         retainPendingActivation();
       }
-      if (change === "imprecise-legacy-identity") {
-        mocks.read.mockResolvedValueOnce({
-          ...original,
-          descriptor: {
-            ...original.descriptor,
-            current: { ...original.descriptor.current, pointerIdentity: "1:9007199254740992" },
-          },
-        });
-      }
       await expect(adoptImmutableInstall(params)).rejects.toThrow(
         ["previous-tree", "previous-digest"].includes(change)
           ? "Previous sealed immutable generation changed"
@@ -379,9 +369,7 @@ describe.skipIf(process.platform !== "linux")("explicit immutable adoption after
             ? "not the serving physical generation"
             : change === "pending"
               ? "Immutable activation recovery is pending"
-              : change === "imprecise-legacy-identity"
-                ? "Legacy immutable receipt contains an imprecise file identity"
-                : "Existing immutable adoption differs",
+              : "Existing immutable adoption differs",
       );
       expect(read()).toEqual(original);
       expect(fsSync.readlinkSync(path.join(root, "current"))).toBe(`releases/${bridgeSha}`);

@@ -1,7 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
+import { runInNewContext } from "node:vm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHotSqliteRollbackJournal } from "../../test/helpers/sqlite-hot-journal.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
@@ -13,6 +16,118 @@ import { installImmutableLauncher } from "./update-immutable-generation.js";
 import type { ImmutableInstallDescriptor } from "./update-immutable-install-schema.js";
 
 const temporary = useAutoCleanupTempDirTracker(afterEach);
+
+it.each(["legacy", "exact", "candidate"] as const)(
+  "admits only legacy rounded startup IDs (%s)",
+  (variant) => {
+    const root = path.join(
+      fs.realpathSync(temporary.make("immutable-large-launch-")),
+      "installation",
+    );
+    const sha = "a".repeat(40);
+    const generation = path.join(root, "releases", sha);
+    const launcher = path.join(root, "bin", "openclaw-gateway");
+    fs.mkdirSync(path.join(generation, "dist"), { recursive: true, mode: 0o755 });
+    fs.mkdirSync(path.dirname(launcher), { mode: 0o755 });
+    fs.writeFileSync(path.join(generation, "dist", "index.js"), "", { mode: 0o444 });
+    fs.symlinkSync(`releases/${sha}`, path.join(root, "current"));
+    const control = resolvePackageActivationControl(resolvePackageActivationAnchor(root));
+    fs.mkdirSync(control, { mode: 0o755 });
+    const journal = path.join(control, "operation.sqlite");
+    const selected = {
+      sha,
+      path: generation,
+      identity: "1:9007199254740992",
+      pointerIdentity: "1:9007199254740992",
+    };
+    const descriptor = {
+      version: 2,
+      kind: "immutable",
+      activationEnabled: true,
+      root,
+      rootIdentity: "1:9007199254740992",
+      releasesIdentity: "1:9007199254740992",
+      current: selected,
+      runtime: { path: fs.realpathSync(process.execPath) },
+    };
+    const source = fs
+      .readFileSync(
+        new URL("../../scripts/openclaw-immutable-launcher.mjs", import.meta.url),
+        "utf8",
+      )
+      .replace(/^#![^\n]*\n/u, "")
+      .replace(/^import .*;\n/gmu, "")
+      .replaceAll("import.meta.url", JSON.stringify(pathToFileURL(launcher).href));
+    const io = {
+      ...fs,
+      lstatSync(file: fs.PathLike, options?: fs.StatOptions) {
+        const stat = fs.lstatSync(file, options);
+        if (stat) {
+          Object.defineProperty(stat, "uid", { value: typeof stat.uid === "bigint" ? 0n : 0 });
+          if (
+            [root, path.join(root, "releases"), generation, path.join(root, "current")].includes(
+              String(file),
+            )
+          ) {
+            Object.defineProperty(stat, "dev", { value: typeof stat.dev === "bigint" ? 1n : 1 });
+            Object.defineProperty(stat, "ino", {
+              value: typeof stat.ino === "bigint" ? 9007199254740993n : 9007199254740992,
+            });
+          }
+        }
+        return stat;
+      },
+    };
+    const db = new DatabaseSync(journal);
+    db.exec(
+      "CREATE TABLE immutable_installation (slot INTEGER, descriptor_json TEXT, activation_json TEXT)",
+    );
+    try {
+      const activation =
+        variant === "candidate"
+          ? {
+              operation: {
+                version: 1,
+                operationId: "synthetic",
+                phase: "starting",
+                authority: { installKey: root },
+                previous: selected,
+                candidate: selected,
+              },
+            }
+          : null;
+      db.prepare("INSERT INTO immutable_installation VALUES (1, ?, ?)").run(
+        JSON.stringify({
+          ...descriptor,
+          ...(variant === "exact" ? { identityEncoding: "exact" } : {}),
+        }),
+        JSON.stringify(activation),
+      );
+    } finally {
+      db.close();
+    }
+    const execve = vi.fn();
+    const runtime = {
+      execPath: process.execPath,
+      execve,
+      argv: [process.execPath, launcher],
+      env: {},
+      chdir: vi.fn(),
+      exitCode: 0,
+    };
+    runInNewContext(source, {
+      fs: io,
+      path,
+      createHash,
+      DatabaseSync,
+      fileURLToPath: (url: string) => new URL(url).pathname,
+      process: runtime,
+      console: { error: vi.fn() },
+    });
+    expect(execve.mock.calls.length).toBe(variant === "legacy" ? 1 : 0);
+    expect(runtime.exitCode).toBe(variant === "legacy" ? 0 : 78);
+  },
+);
 
 it.runIf(process.platform === "linux" && process.getuid?.() === 0)(
   "execs one physical generation and keeps lazy imports pinned after current changes, refusing an escaping pointer",

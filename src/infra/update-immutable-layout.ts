@@ -1,7 +1,9 @@
 import fsSync from "node:fs";
 import path from "node:path";
+import { sha256Hex } from "@openclaw/normalization-core/node-crypto";
 import { packageActivationRuntimeIdentity } from "./package-update-activation-paths.js";
 import type { ImmutableInstallDescriptor } from "./update-immutable-install-schema.js";
+import type { ImmutableProtectionSnapshot } from "./update-immutable-protection-schema.js";
 const SHA = /^[a-f0-9]{40}$/u;
 
 export function directoryIdentity(file: string): string {
@@ -50,22 +52,34 @@ export function readImmutableLayout(root: string) {
   };
 }
 
-/** Old numeric receipts remain readable but cannot authorize an ambiguous large file ID. */
+export type ImmutableIdentityEncoding = "exact" | "legacy";
+
+/** Released numeric-stat receipts compare in their original, rounded Number domain. */
+export function immutableIdentityMatches(
+  observed: string,
+  recorded: string,
+  encoding: ImmutableIdentityEncoding | undefined,
+): boolean {
+  if (!/^\d+:\d+$/u.test(observed) || !/^\d+:\d+$/u.test(recorded)) {
+    return false;
+  }
+  return encoding === "exact"
+    ? observed === recorded
+    : observed.split(":").every((part, index) => {
+        const stored = Number(recorded.split(":")[index]);
+        return Number.isFinite(stored) && Number(part) === stored;
+      });
+}
+
 export function assertImmutableIdentityEncoding(
-  encoding: "exact" | undefined,
+  encoding: ImmutableIdentityEncoding | undefined,
   identities: readonly string[],
 ): void {
   if (
-    encoding !== "exact" &&
-    identities.some((identity) =>
-      identity
-        .split(":")
-        .some((value) => !/^\d+$/u.test(value) || BigInt(value) > 9007199254740991n),
-    )
+    (encoding !== undefined && encoding !== "exact" && encoding !== "legacy") ||
+    identities.some((identity) => !immutableIdentityMatches(identity, identity, encoding))
   ) {
-    throw new Error(
-      "Legacy immutable receipt contains an imprecise file identity; it was preserved and cannot authorize recovery. Re-adopt the installation after completing recovery with its original updater.",
-    );
+    throw new Error("Immutable receipt contains an invalid file identity or encoding.");
   }
 }
 
@@ -84,13 +98,70 @@ export function assertImmutableDescriptorCurrent(descriptor: ImmutableInstallDes
   assertImmutableDescriptorIdentityEncoding(descriptor);
   const layout = readImmutableLayout(descriptor.root);
   if (
-    layout.rootIdentity !== descriptor.rootIdentity ||
-    layout.releasesIdentity !== descriptor.releasesIdentity ||
-    (["sha", "path", "identity", "pointerIdentity"] as const).some(
-      (key) => layout.current[key] !== descriptor.current[key],
+    !immutableIdentityMatches(
+      layout.rootIdentity,
+      descriptor.rootIdentity,
+      descriptor.identityEncoding,
+    ) ||
+    !immutableIdentityMatches(
+      layout.releasesIdentity,
+      descriptor.releasesIdentity,
+      descriptor.identityEncoding,
+    ) ||
+    layout.current.sha !== descriptor.current.sha ||
+    layout.current.path !== descriptor.current.path ||
+    !immutableIdentityMatches(
+      layout.current.identity,
+      descriptor.current.identity,
+      descriptor.current.identityEncoding ?? descriptor.identityEncoding,
+    ) ||
+    !immutableIdentityMatches(
+      layout.current.pointerIdentity,
+      descriptor.current.pointerIdentity,
+      descriptor.current.identityEncoding ?? descriptor.identityEncoding,
     ) ||
     packageActivationRuntimeIdentity(descriptor.runtime.path) !== descriptor.runtime.identity
   ) {
     throw new Error("Immutable installation changed since adoption; current was not modified.");
   }
+}
+
+export function refreshImmutableProtectionIdentities(
+  snapshot: ImmutableProtectionSnapshot,
+): ImmutableProtectionSnapshot {
+  if (snapshot.identityEncoding === "exact") {
+    return snapshot;
+  }
+  const files = [snapshot.state, ...snapshot.config];
+  const identities = files.map((file) => {
+    const stat = fsSync.lstatSync(file.pathProof.targetPath, {
+      bigint: true,
+      throwIfNoEntry: false,
+    });
+    const stored = file.identity;
+    return stat?.isFile() &&
+      stat.nlink === 1n &&
+      stat.mode === BigInt(stored.mode) &&
+      stat.uid === BigInt(stored.uid) &&
+      stat.gid === BigInt(stored.gid) &&
+      immutableIdentityMatches(`${stat.dev}:${stat.ino}`, `${stored.dev}:${stored.ino}`, "legacy")
+      ? Object.assign({}, stored, { dev: String(stat.dev), ino: String(stat.ino) })
+      : null;
+  });
+  // An audited startup may already have replaced config. Retain that chain's
+  // original legacy identity until the protection owner captures its new baseline.
+  if (
+    identities.some((identity) => identity === null) ||
+    snapshot.config.some(
+      (file) => sha256Hex(fsSync.readFileSync(file.pathProof.targetPath, "utf8")) !== file.hash,
+    )
+  ) {
+    return { ...snapshot, identityEncoding: "legacy" };
+  }
+  return {
+    ...snapshot,
+    identityEncoding: "exact",
+    state: { ...snapshot.state, identity: identities[0]! },
+    config: snapshot.config.map((file, index) => ({ ...file, identity: identities[index + 1]! })),
+  };
 }

@@ -73,54 +73,51 @@ const statSync = (path, options) => fileMetadata(nativeStatSync(path, { ...optio
 const fstatSync = fd => fileMetadata(nativeFstatSync(fd, { bigint: true }));
 
 function isFileId(value) {
-  return (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) ||
+  return (typeof value === "number" && Number.isInteger(value) && value >= 0) ||
     (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value));
 }
 
+function storedFileId(value, encoding) {
+  if (!isFileId(value) || (encoding !== undefined && !["exact", "legacy-number"].includes(encoding)) ||
+      (encoding === "exact" && typeof value !== "string")) reject("file identity is invalid");
+  const identity = encoding === "legacy-number" || typeof value === "number"
+    ? { encoding: "legacy-number", value: Number(value) }
+    : { encoding: "exact", value };
+  if (identity.encoding === "legacy-number" && !Number.isInteger(identity.value)) reject("legacy file identity is invalid");
+  return identity;
+}
+
 function exactFileId(value) {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value).toString();
-  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) return value;
-  reject("file identity is invalid or was rounded by an older controller");
+  if (typeof value !== "string" || !isFileId(value)) reject("exact file identity is invalid");
+  return value;
 }
 
-// Earlier controller artifacts used safe JSON numbers for these exact fields.
-function storedFileDescriptor(value) {
-  if (value === undefined || value === null) return value;
-  return { ...value, device: exactFileId(value.device), inode: exactFileId(value.inode) };
-}
-const storedFileDescriptors = values => values.map(storedFileDescriptor);
-function storedRuntime(value) {
-  const result = { ...value };
-  if (Object.hasOwn(value, "binary")) result.binary = storedFileDescriptor(value.binary);
-  if (Object.hasOwn(value, "dropIn")) result.dropIn = storedFileDescriptor(value.dropIn);
-  return result;
+function fileIdMatches(actual, expected, encoding) {
+  if (!isFileId(actual) || !isFileId(expected)) return false;
+  const stored = storedFileId(expected, encoding);
+  return stored.encoding === "legacy-number"
+    ? Number(actual) === stored.value
+    : typeof actual === "string" && actual === stored.value;
 }
 
-// Retained stopped-start and config-reconciliation receipts contain this declared
-// physical evidence. Their journal, policy, and authored data remain unchanged.
-function storedRecoveryReceipt(receipt) {
-  const source = receipt.evidence;
-  const evidence = { ...source, identity: storedFileDescriptor(source.identity),
-    releases: storedFileDescriptors(source.releases) };
-  if (source.selectedPointers) {
-    evidence.selectedPointers = { ...source.selectedPointers };
-    for (const name of ["current", "previous"])
-      if (Object.hasOwn(source.selectedPointers, name))
-        evidence.selectedPointers[name] = storedFileDescriptor(source.selectedPointers[name]);
-  }
-  if (source.configReconciliation) {
-    const original = source.configReconciliation;
-    const reconciled = { ...original, config: storedFileDescriptor(original.config) };
-    if (original.stores) reconciled.stores = storedFileDescriptors(original.stores);
-    if (original.replacement) {
-      reconciled.replacement = { ...original.replacement };
-      for (const name of ["config", "backup", "previous"])
-        if (Object.hasOwn(original.replacement, name))
-          reconciled.replacement[name] = storedFileDescriptor(original.replacement[name]);
-    }
-    evidence.configReconciliation = reconciled;
-  }
-  return { ...receipt, evidence };
+// Only filesystem identity pairs use the released Number comparison domain.
+// Legacy IDs that share one rounded double remain indistinguishable, as in the released reader.
+// Preserve receipt bytes and all other fields, including source and authority hashes.
+function fileReceiptMatches(actual, expected) {
+  if (actual === expected) return true;
+  if (!actual || !expected || typeof actual !== "object" || typeof expected !== "object") return false;
+  if (Array.isArray(actual) || Array.isArray(expected))
+    return Array.isArray(actual) && Array.isArray(expected) && actual.length === expected.length &&
+      actual.every((value, index) => fileReceiptMatches(value, expected[index]));
+  const identityKeys = Object.hasOwn(expected, "device") && Object.hasOwn(expected, "inode")
+    ? ["device", "inode"]
+    : Object.hasOwn(expected, "dev") && Object.hasOwn(expected, "ino") ? ["dev", "ino"] : [];
+  const keys = value => Object.keys(value).filter(key => !identityKeys.length || key !== "identityEncoding");
+  const actualKeys = keys(actual), expectedKeys = keys(expected);
+  return actualKeys.length === expectedKeys.length && expectedKeys.every(key =>
+    Object.hasOwn(actual, key) && (identityKeys.includes(key)
+      ? fileIdMatches(actual[key], expected[key], expected.identityEncoding)
+      : fileReceiptMatches(actual[key], expected[key])));
 }
 
 function rootGroup() {
@@ -551,7 +548,7 @@ function validateFrozenRelease(root, target, manifestHash, owner) {
   const after = lstatSync(root);
   if (!after.isDirectory() || after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino ||
       after.uid !== owner || after.gid !== rootGroup() || (after.mode & 0o7777) !== 0o555 ||
-      !isDeepStrictEqual(checked.descriptor, manifest.descriptor))
+      !fileReceiptMatches(checked.descriptor, manifest.descriptor))
     reject("frozen release identity changed during validation");
   return { release, manifest: manifest.descriptor, root: { path: root, device: before.dev, inode: before.ino } };
 }
@@ -752,13 +749,13 @@ function runtimeCheck(root, expected) {
   const current = runtimeCurrent(root, false);
   if (!current.binary && expected.binary)
     current.binary = runtimeBinary(current.executable, expected.binary.sha256, false);
-  if (!isDeepStrictEqual(current, expected)) reject("selected Gateway runtime changed during the operation");
+  if (!fileReceiptMatches(current, expected)) reject("selected Gateway runtime changed during the operation");
   return current;
 }
 
 function runtimeSame(left, right) {
   return left.kind === right.kind && left.executable === right.executable &&
-    isDeepStrictEqual(left.binary, storedFileDescriptor(right.binary));
+    fileReceiptMatches(left.binary, right.binary);
 }
 
 function runtimeJournalCheck(record, root, expected) {
@@ -775,7 +772,7 @@ function runtimeJournalCheck(record, root, expected) {
   const original = runtimeSame(current, record.gatewayRuntime);
   const selected = record.runtimeChange && runtimeSame(current, record.runtimeChange);
   if (!original && !selected) reject("Gateway runtime matches neither journal selection");
-  if (!record.runtimeChange && !isDeepStrictEqual(current, storedRuntime(record.gatewayRuntime)))
+  if (!record.runtimeChange && !fileReceiptMatches(current, record.gatewayRuntime))
     reject("Gateway runtime definition changed since journal admission");
   return original ? "original" : "selected";
 }
@@ -827,7 +824,7 @@ function runtimeOperation(action, root, values) {
     const target = jsonArgument(values[0]), current = runtimeCurrent(root);
     if (!current.binary) current.binary = runtimeBinary(current.executable, undefined, false);
     return current.kind === target.kind && current.binary.path === target.binary.path &&
-      isDeepStrictEqual({ ...current.binary, sha256: target.binary.sha256 }, target.binary) ? "SAME" : "DIFFERENT";
+      fileReceiptMatches({ ...current.binary, sha256: target.binary.sha256 }, target.binary) ? "SAME" : "DIFFERENT";
   }
   if (action === "target") {
     const [kind, executable, sha256] = values;
@@ -838,7 +835,7 @@ function runtimeOperation(action, root, values) {
   }
   if (action === "probe") {
     const target = jsonArgument(values[0]), result = jsonArgument("@stdin");
-    if (!isDeepStrictEqual(runtimeBinary(target.executable, target.binary.sha256, false), target.binary)) reject("runtime probe executable changed");
+    if (!fileReceiptMatches(runtimeBinary(target.executable, target.binary.sha256, false), target.binary)) reject("runtime probe executable changed");
     const version = target.kind === "bun" ? result.bun : result.node;
     const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version ?? "");
     if (!match || !/^3\.\d+\.\d+$/.test(result.sqlite ?? "") ||
@@ -867,7 +864,7 @@ function runtimeOperation(action, root, values) {
     const desired = action === "apply" ? "selected" : "original";
     if (position !== desired) {
       const selection = action === "apply" ? record.runtimeChange : record.gatewayRuntime;
-      if (selection.binary && !isDeepStrictEqual(runtimeBinary(selection.executable, selection.binary.sha256, false), storedFileDescriptor(selection.binary)))
+      if (selection.binary && !fileReceiptMatches(runtimeBinary(selection.executable, selection.binary.sha256, false), selection.binary))
         reject("runtime restore or activation executable changed");
       runtimePublish(root, selection, action === "restore" && !selection.dropIn);
     }
@@ -891,6 +888,11 @@ function validWorkerConfigJournal(record) {
   if (Object.hasOwn(record, "liveCancellation") && (record.liveCancellation !== true || record.phase !== "CONFIG_RESTORED"))
     reject("worker config live cancellation is outside its restored phase");
   validMigrationDescriptor(record.witness, "path", "worker config original witness");
+  if (Object.hasOwn(record, "publicationFrom")) {
+    validMigrationDescriptor(record.publicationFrom, "path", "worker config prewrite identity");
+    if (typeof record.publicationFrom.device !== "string" || typeof record.publicationFrom.inode !== "string")
+      reject("worker config prewrite identity must be exact");
+  }
   return record;
 }
 
@@ -910,16 +912,16 @@ function workerConfigLoad(root, token) {
     reject("worker config request binding is invalid");
   const stage = join(root, "staging", token.stage), entry = lstatSync(stage);
   if (!entry.isDirectory() || entry.isSymbolicLink() || entry.uid !== owner || entry.gid !== rootGroup() || (entry.mode & 0o7777) !== 0o700 ||
-      entry.dev !== exactFileId(token.device) || entry.ino !== exactFileId(token.inode)) reject("worker config staging identity changed");
+      !fileIdMatches(entry.dev, token.device) || !fileIdMatches(entry.ino, token.inode)) reject("worker config staging identity changed");
   exactDirectory(join(stage, "private"), owner, "worker config private evidence", { privateOnly: true });
   const requestFile = migrationFile(join(stage, "private/request.json"), owner, { mode: 0o600 });
   if (requestFile.descriptor.sha256 !== token.requestHash) reject("worker config request changed");
   const request = migrationJson(requestFile.bytes);
   if (request.version !== 1 || request.stage !== token.stage) reject("worker config request owner changed");
   const original = migrationFile(join(stage, "private/original-config"), owner, { mode: 0o600 });
-  if (!isDeepStrictEqual(original.descriptor, storedFileDescriptor(request.backup))) reject("worker config original backup changed");
+  if (!fileReceiptMatches(original.descriptor, request.backup)) reject("worker config original backup changed");
   const replacement = migrationFile(join(stage, "private/replacement.json"), owner, { mode: 0o600 });
-  if (!isDeepStrictEqual(replacement.descriptor, storedFileDescriptor(request.replacement))) reject("worker config reviewed replacement changed");
+  if (!fileReceiptMatches(replacement.descriptor, request.replacement)) reject("worker config reviewed replacement changed");
   const script = migrationJson(replacement.bytes);
   if (typeof script !== "string") reject("worker config replacement is not a script string");
   return { owner, stage, request, before: migrationJson(original.bytes), replacement: script };
@@ -929,13 +931,13 @@ function workerConfigCurrent(context) {
   const expected = context.request.config;
   if (realpathSync(expected.path) !== expected.path) reject("worker config destination is no longer canonical");
   const file = migrationFile(expected.path, expected.uid, { mode: expected.mode, group: expected.gid });
-  if (file.descriptor.device !== exactFileId(expected.device)) reject("worker config changed filesystem");
+  if (!fileIdMatches(file.descriptor.device, expected.device)) reject("worker config changed filesystem");
   return file;
 }
 
 function workerConfigCommon(root, context) {
-  if (!isDeepStrictEqual(workerConfigPointers(root), storedFileDescriptors(context.request.pointers)) ||
-      !isDeepStrictEqual(identity(context.request.database.path), storedFileDescriptor(context.request.database)))
+  if (!fileReceiptMatches(workerConfigPointers(root), context.request.pointers) ||
+      !fileReceiptMatches(identity(context.request.database.path), context.request.database))
     reject("worker config pointer or database identity changed");
 }
 
@@ -1006,7 +1008,7 @@ function workerConfigCommand(action, root, values) {
   if (action === "expected-value") return JSON.stringify(context.before.cloudWorkers.profiles.aws.settings.setup);
   if (action === "check-prepared" || action === "begin") {
     const current = workerConfigCurrent(context);
-    if (current.descriptor.sha256 !== context.request.config.sha256 || current.descriptor.inode !== exactFileId(context.request.config.inode))
+    if (current.descriptor.sha256 !== context.request.config.sha256 || !fileIdMatches(current.descriptor.inode, context.request.config.inode))
       reject("worker config changed since operator admission");
     if (action === "check-prepared") return "BOUND";
     if (lstatSync(pathname, { throwIfNoEntry: false })) reject("worker config refuses an existing activation journal");
@@ -1025,7 +1027,7 @@ function workerConfigCommand(action, root, values) {
   }
   if (record.witness.path !== join(context.stage, "private/witness.json")) reject("worker config witness escaped its owned evidence directory");
   const witness = migrationFile(record.witness.path, owner, { mode: 0o600 });
-  if (!isDeepStrictEqual(witness.descriptor, storedFileDescriptor(record.witness))) reject("worker config original session witness changed");
+  if (!fileReceiptMatches(witness.descriptor, record.witness)) reject("worker config original session witness changed");
   sessionWitnessTuples(migrationJson(witness.bytes));
   if (action === "witness") return witness.bytes.toString("utf8");
   const current = workerConfigCurrent(context);
@@ -1035,9 +1037,9 @@ function workerConfigCommand(action, root, values) {
   const save = next => { atomicJson(pathname, validWorkerConfigJournal(next)); return next.phase; };
   if (action === "check") {
     if (["CONFIG_VERIFIED", "CONFIG_RESTORED"].includes(record.phase)) {
-      if (!isDeepStrictEqual(current.descriptor, storedFileDescriptor(record.currentConfig))) reject("accepted worker config identity or bytes changed");
+      if (!fileReceiptMatches(current.descriptor, record.currentConfig)) reject("accepted worker config identity or bytes changed");
     } else if (record.phase === "CONFIG_PREPARED") {
-      if (!original || current.descriptor.inode !== exactFileId(context.request.config.inode)) reject("worker config changed before stop");
+      if (!original || !fileIdMatches(current.descriptor.inode, context.request.config.inode)) reject("worker config changed before stop");
     } else if (!original && !intended && !(record.phase === "CONFIG_RESTORING" && restored))
       reject("worker config has unknown drift; original backup will not overwrite it");
     return "BOUND";
@@ -1045,13 +1047,13 @@ function workerConfigCommand(action, root, values) {
   if (action === "live-cancellation") return record.liveCancellation === true ? "yes" : "no";
   if (action === "cancel") {
     if (!(record.phase === "CONFIG_PREPARED" || (record.phase === "CONFIG_RESTORED" && record.liveCancellation === true)) ||
-        !original || current.descriptor.inode !== exactFileId(context.request.config.inode))
+        !original || !fileIdMatches(current.descriptor.inode, context.request.config.inode))
       reject("worker config cancellation requires the untouched original config");
     return save({ ...record, phase: "CONFIG_RESTORED", currentConfig: current.descriptor, liveCancellation: true });
   }
   if (action === "cancellation-result") {
     if (record.phase !== "CONFIG_RESTORED" || record.liveCancellation !== true || !original ||
-        current.descriptor.inode !== exactFileId(context.request.config.inode) || !isDeepStrictEqual(current.descriptor, storedFileDescriptor(record.currentConfig)))
+        !fileIdMatches(current.descriptor.inode, context.request.config.inode) || !fileReceiptMatches(current.descriptor, record.currentConfig))
       reject("worker config cancellation result lost its original config binding");
     const response = migrationJson(migrationReadBytes(0, 4096));
     suspensionObject(response, ["ok", "status", "resumed"], "worker cancellation resume result");
@@ -1060,19 +1062,23 @@ function workerConfigCommand(action, root, values) {
     return response.resumed ? "RESUMED" : "ALREADY_RUNNING";
   }
   if (action === "revoke") {
-    if (record.phase !== "CONFIG_PREPARED" || !original || current.descriptor.inode !== exactFileId(context.request.config.inode))
+    if (record.phase !== "CONFIG_PREPARED" || !original || !fileIdMatches(current.descriptor.inode, context.request.config.inode))
       reject("worker config start fence requires the original prepared config");
     const permit = migrationPermit(root);
     if (permit) { unlinkSync(permit.path); syncPath(dirname(permit.path)); }
     return "FENCED";
   }
   if (action === "writing") {
-    if (record.phase !== "CONFIG_PREPARED" || !original || current.descriptor.inode !== exactFileId(context.request.config.inode) || migrationPermit(root))
+    if (record.phase !== "CONFIG_PREPARED" || !original || !fileIdMatches(current.descriptor.inode, context.request.config.inode) || migrationPermit(root))
       reject("worker config write requires its original config and absent start permit");
-    return save({ ...record, phase: "CONFIG_WRITING" });
+    return save({ ...record, phase: "CONFIG_WRITING", publicationFrom: current.descriptor });
   }
   if (action === "accept") {
-    if (record.phase !== "CONFIG_WRITING" || !intended || current.descriptor.inode === exactFileId(context.request.config.inode) || migrationPermit(root))
+    const previous = record.publicationFrom ?? context.request.config;
+    const exactPrevious = storedFileId(previous.inode, previous.identityEncoding).encoding === "exact";
+    // Older in-flight writes lack an exact prewrite ID; intended bytes and the live fence remain required.
+    if (record.phase !== "CONFIG_WRITING" || !intended ||
+        (exactPrevious && fileIdMatches(current.descriptor.inode, previous.inode)) || migrationPermit(root))
       reject("worker config native result includes unexpected changes or lacks its start fence");
     return save({ ...record, phase: "CONFIG_VERIFIED", currentConfig: current.descriptor,
       protectedPaths: [identity(context.request.config.path), context.request.database] });
@@ -1089,7 +1095,7 @@ function workerConfigCommand(action, root, values) {
     return save({ ...record, phase: "CONFIG_RESTORING" });
   }
   if (action === "permit" || action === "finish") {
-    if (!["CONFIG_VERIFIED", "CONFIG_RESTORED"].includes(record.phase) || !isDeepStrictEqual(current.descriptor, storedFileDescriptor(record.currentConfig)))
+    if (!["CONFIG_VERIFIED", "CONFIG_RESTORED"].includes(record.phase) || !fileReceiptMatches(current.descriptor, record.currentConfig))
       reject("worker config acceptance is not bound to the verified file");
     if (action === "permit") { migrationPublishPermit(root); return "PERMITTED"; }
     if (!migrationPermit(root)) reject("worker config cannot finish with its start fence retained");
@@ -1131,16 +1137,16 @@ function hostHandoffArtifacts(root, record) {
   exactDirectory(stage, owner, "handoff stage", { privateOnly: true });
   if (record.configBackup) {
     const actual = migrationFile(record.configBackup.path, owner, { mode: 0o600 });
-    if (!isDeepStrictEqual(actual.descriptor, storedFileDescriptor(record.configBackup))) reject("handoff original config backup changed");
+    if (!fileReceiptMatches(actual.descriptor, record.configBackup)) reject("handoff original config backup changed");
   }
   if (record.witness) {
     const actual = migrationFile(record.witness.path, owner, { mode: 0o600 });
-    if (!isDeepStrictEqual(actual.descriptor, storedFileDescriptor(record.witness))) reject("handoff session witness changed");
+    if (!fileReceiptMatches(actual.descriptor, record.witness)) reject("handoff session witness changed");
     sessionWitnessTuples(migrationJson(actual.bytes));
   }
-  if (record.sourceManifest && !isDeepStrictEqual(migrationHashFile(record.sourceManifest.path), storedFileDescriptor(record.sourceManifest)))
+  if (record.sourceManifest && !fileReceiptMatches(migrationHashFile(record.sourceManifest.path), record.sourceManifest))
     reject("original source handoff manifest changed after import");
-  if (record.importedWitness && !isDeepStrictEqual(migrationFile(record.importedWitness.path, owner, { mode: 0o600 }).descriptor, storedFileDescriptor(record.importedWitness)))
+  if (record.importedWitness && !fileReceiptMatches(migrationFile(record.importedWitness.path, owner, { mode: 0o600 }).descriptor, record.importedWitness))
     reject("original target import witness changed");
   return stage;
 }
@@ -1166,8 +1172,8 @@ function hostHandoffCompletion(bytes, record) {
 function hostHandoffSourceInputs(root, record) {
   if (!record.phase.startsWith("SOURCE_") || record.machineId !== hostMachineId() ||
       realpathSync(join(root, "current")) !== join(root, "releases", record.predecessor.sha) ||
-      !isDeepStrictEqual(workerConfigPointers(root), storedFileDescriptors(record.pointers)) ||
-      !isDeepStrictEqual(migrationHashFile(record.configPath), storedFileDescriptor(record.config)) ||
+      !fileReceiptMatches(workerConfigPointers(root), record.pointers) ||
+      !fileReceiptMatches(migrationHashFile(record.configPath), record.config) ||
       !isDeepStrictEqual(policy(record.configPath), record.policy)) reject("source handoff inputs or pointers changed");
   const info = validateRelease(join(root, "releases", record.predecessor.sha), record.predecessor.sha, migrationOwner(), true);
   if (!isDeepStrictEqual(info, record.predecessor)) reject("source handoff release changed");
@@ -1207,7 +1213,7 @@ function hostHandoffTargetSelection(root, record, allowPrefix) {
   if (!record.phase.startsWith("TARGET_") || migrationPermit(root))
     reject("target release selection requires its imported journal and absent start permit");
   for (const release of [record.predecessor, record.candidate]) {
-    if (!isDeepStrictEqual(validateRelease(join(root, "releases", release.sha), release.sha, migrationOwner(), true), release))
+    if (!fileReceiptMatches(validateRelease(join(root, "releases", release.sha), release.sha, migrationOwner(), true), release))
       reject("target selection sealed release identity changed");
   }
   const current = Boolean(lstatSync(join(root, "current"), { throwIfNoEntry: false }));
@@ -1396,12 +1402,12 @@ async function hostHandoffCommand(action, root, args) {
     migrationSameInventory({ ...record.inventory, config }, inventory, profile, true);
     migrationVerifyWitness(inventory, join(root, "releases", record.candidate.sha), migrationJson(migrationFile(record.witness.path, owner, { mode: 0o600 }).bytes));
     if (record.phase === "TARGET_DOCTOR_VERIFIED") hostHandoffSave(root, observed, { ...record, phase: "TARGET_READY", acceptedConfig: config });
-    else if (!isDeepStrictEqual(storedFileDescriptor(record.acceptedConfig), config)) reject("accepted target config changed");
+    else if (!fileReceiptMatches(config, record.acceptedConfig)) reject("accepted target config changed");
     return "TARGET_READY";
   }
   if (action === "target-permit") {
     if (!["TARGET_READY", "TARGET_VERIFYING"].includes(record.phase) ||
-        !isDeepStrictEqual(migrationHashFile(record.configPath), storedFileDescriptor(record.acceptedConfig)) ||
+        !fileReceiptMatches(migrationHashFile(record.configPath), record.acceptedConfig) ||
         realpathSync(join(root, "current")) !== join(root, "releases", record.targetSha) ||
         realpathSync(join(root, "previous")) !== join(root, "releases", record.predecessor.sha))
       reject("target start permit requires exact verified config and selected releases");
@@ -1419,7 +1425,7 @@ async function hostHandoffCommand(action, root, args) {
   }
   if (action === "target-finish") {
     if (record.phase !== "TARGET_VERIFYING" || !migrationPermit(root) ||
-        !isDeepStrictEqual(migrationHashFile(record.configPath), storedFileDescriptor(record.acceptedConfig)) ||
+        !fileReceiptMatches(migrationHashFile(record.configPath), record.acceptedConfig) ||
         realpathSync(join(root, "current")) !== join(root, "releases", record.targetSha))
       reject("target handoff has not reached verified activation");
     const retained = join(hostHandoffArtifacts(root, record), "completed.json");
@@ -1487,7 +1493,8 @@ function validJournal(record) {
     if (
       typeof entry.path !== "string" ||
       !isFileId(entry.device) ||
-      exactFileId(entry.inode) === "0"
+      !isFileId(entry.inode) ||
+      fileIdMatches("0", entry.inode)
     ) {
       reject("activation journal protected-path evidence is malformed");
     }
@@ -1563,7 +1570,7 @@ function validMigrationDescriptor(value, key, label) {
   suspensionObject(value, [key, "device", "inode", "sha256"], label);
   if (
     typeof value[key] !== "string" ||
-    !isFileId(value.device) || exactFileId(value.inode) === "0" ||
+    !isFileId(value.device) || !isFileId(value.inode) || fileIdMatches("0", value.inode) ||
     typeof value.sha256 !== "string" || !/^[a-f\d]{64}$/.test(value.sha256)
   ) reject(`${label} identity is invalid`);
 }
@@ -1810,7 +1817,7 @@ function migrationGuardVerify(descriptor, conditions, executable, root) {
   const owner = migrationOwner(); migrationAncestors(directory, owner, boundary);
   migrationFile(directory.slice(0, -2), owner, { privateOnly: false, limit: migrationJournalLimit });
   const file = migrationFile(descriptor.path, owner, { privateOnly: false, mode: 0o644, limit: migrationJournalLimit });
-  if (!isDeepStrictEqual(file.descriptor, descriptor) || !file.bytes.equals(Buffer.from(migrationGuardBody(root))))
+  if (!fileReceiptMatches(file.descriptor, descriptor) || !file.bytes.equals(Buffer.from(migrationGuardBody(root))))
     reject("migration guard descriptor or body changed");
   migrationVerifyConditions(conditions, executable, root);
   migrationPermit(root); // If present, it must be root-private and exact; absence may be the durable fence.
@@ -1960,13 +1967,13 @@ function migrationSameInventory(before, after, profile, final = false) {
   migrationCheckProfileBinding(before, profile); migrationCheckProfileBinding(after, profile);
   const sourceSchemas = profile.from;
   const expectedConfig = before.config;
-  if (!isDeepStrictEqual(storedFileDescriptor(expectedConfig), after.config) || before.stateRoot !== after.stateRoot || before.stores.length !== after.stores.length)
+  if (!fileReceiptMatches(after.config, expectedConfig) || before.stateRoot !== after.stateRoot || before.stores.length !== after.stores.length)
     reject("migration config or complete physical inventory changed");
   for (const old of before.stores) {
     if (old.version !== (old.agentId === null ? sourceSchemas.state : sourceSchemas.agent))
       reject("original inventory does not match the source schema tuple");
     const current = after.stores.find(value => value.path === old.path);
-    if (!current || current.device !== exactFileId(old.device) || current.inode !== exactFileId(old.inode) || current.agentId !== old.agentId ||
+    if (!current || !fileIdMatches(current.device, old.device) || !fileIdMatches(current.inode, old.inode) || current.agentId !== old.agentId ||
         !old.aliases.every(alias => current.aliases.some(value => isDeepStrictEqual(value, alias))))
       reject("migration physical database or registered locator disappeared or changed");
     const schemas = final ? profile.to : sourceSchemas;
@@ -2034,13 +2041,14 @@ function migrationVerifyWitness(inventory, release, witness) {
     if (!Array.isArray(row) || row.length !== 8 || [0, 1, 4, 5].some(index => typeof row[index] !== "string") ||
         [2, 3].some(index => !isFileId(row[index])) || [6, 7].some(index => row[index] !== null && typeof row[index] !== "string"))
       reject("original migration witness entry is malformed");
-    row[2] = exactFileId(row[2]); row[3] = exactFileId(row[3]);
-    const key = JSON.stringify(row.slice(0, 4));
+    const key = JSON.stringify(row.slice(0, 2));
     const rows = pending.get(key) ?? []; rows.push({ tuple: row, ordinal }); pending.set(key, rows);
   }
   for (const store of inventory.stores.filter(value => value.agentId !== null)) {
-    const key = JSON.stringify([store.agentId, store.path, exactFileId(store.device), exactFileId(store.inode)]), rows = pending.get(key);
+    const key = JSON.stringify([store.agentId, store.path]), rows = pending.get(key);
     if (!rows) continue;
+    if (rows.some(({ tuple }) => !fileIdMatches(store.device, tuple[2]) || !fileIdMatches(store.inode, tuple[3])))
+      reject("original migration session database identity is missing");
     migrationDatabaseRead(store.path, release, database => {
       const keys = new Set(database.prepare("SELECT session_key FROM session_nodes").all().map(row => row.session_key));
       for (const { tuple, ordinal } of rows) {
@@ -2177,7 +2185,7 @@ function verifyHandoffSnapshot(manifestPath, sourceRelease, candidateRelease, ex
   migrationVerifyWitness(current, candidateRelease, witness);
   migrationSameInventory(projected, migrationInventory(config.path,
     join(original.stateRoot, "state/openclaw.sqlite"), candidateRelease, profile, !beforeDoctor), profile, !beforeDoctor);
-  if (!isDeepStrictEqual(migrationFile(manifestPath, owner, { mode: 0o600 }).descriptor, saved.descriptor))
+  if (!fileReceiptMatches(migrationFile(manifestPath, owner, { mode: 0o600 }).descriptor, saved.descriptor))
     reject("handoff snapshot manifest changed during verification");
   return { status: "HANDOFF_COPY_VERIFIED", source: source.sha, candidate: candidate.sha,
     stores: stores.length, sourceSessionWitnesses: witness.length, sourceWritersStopped: true };
@@ -2222,7 +2230,8 @@ function migrationNativeConfigAudit(root, record, previous, config, runtimeUid, 
       if (startup && (value.pid !== startup.pid || Date.parse(value.ts) < startup.startedAt ||
           Date.parse(value.ts) > startup.startedAt + 600_000 || Date.parse(value.ts) > Date.now())) continue;
       if ([["previous", previous], ["next", config]].some(([prefix, descriptor]) =>
-        value[`${prefix}Dev`] !== String(descriptor.device) || value[`${prefix}Ino`] !== String(descriptor.inode) ||
+        !fileIdMatches(descriptor.device, value[`${prefix}Dev`], value.identityEncoding ?? "legacy-number") ||
+        !fileIdMatches(descriptor.inode, value[`${prefix}Ino`], value.identityEncoding ?? "legacy-number") ||
         value[`${prefix}Mode`] !== 0o600 || value[`${prefix}Nlink`] !== 1 ||
         value[`${prefix}Uid`] !== runtimeUid || value[`${prefix}Gid`] !== entry.gid)) continue;
       // Retain only the exact audit binding, never the native writer's argv or config values.
@@ -2250,7 +2259,10 @@ function configReplacement(root, record, runtimeUid, startup) {
   const current = migrationFile(path, runtimeUid, { mode: 0o600, group: entry.gid });
   const backup = migrationFile(`${path}.bak`, runtimeUid, { mode: 0o600, group: entry.gid });
   const config = { ...current.descriptor, size: current.bytes.length };
-  if (config.device !== exactFileId(record.protectedPaths[0].device) || config.inode === exactFileId(record.protectedPaths[0].inode) ||
+  const preimage = record.protectedPaths[0];
+  const exactPrevious = storedFileId(preimage.inode, preimage.identityEncoding).encoding === "exact";
+  // A rounded legacy preimage cannot prove distinctness; the native rename audit still binds the changed bytes.
+  if (!fileIdMatches(config.device, preimage.device) || (exactPrevious && fileIdMatches(config.inode, preimage.inode)) ||
       backup.descriptor.device !== config.device || backup.descriptor.inode === config.inode)
     reject("config replacement requires a same-filesystem atomic rename and separate backup");
   const previous = { ...record.protectedPaths[0], sha256: backup.descriptor.sha256, size: backup.bytes.length };
@@ -2294,10 +2306,10 @@ function candidateConfigSnapshot(pathname, root, expectedPaths, binding, runtime
       record.runtimeChange || !record.originalWitness ||
       record.candidate.sha === record.predecessor.sha ||
       (!record.nativeUpdate && !isDeepStrictEqual(record.predecessor.schemaVersions, record.candidate.schemaVersions)) ||
-      !isDeepStrictEqual(storedFileDescriptors(record.protectedPaths), expectedPaths))
+      !fileReceiptMatches(expectedPaths, record.protectedPaths))
     reject("startup config acceptance requires the bound ordinary candidate verification journal");
   originalWitness(pathname, record);
-  if (!isDeepStrictEqual(identity(record.protectedPaths[1].path), storedFileDescriptor(record.protectedPaths[1])))
+  if (!fileReceiptMatches(identity(record.protectedPaths[1].path), record.protectedPaths[1]))
     reject("startup config acceptance refuses a replaced store");
   const candidateProcess = selectedConfigProcess(root, record, binding);
   const proc = process.env.OPENCLAW_TEAM_PROC_ROOT ?? "/proc";
@@ -2315,7 +2327,7 @@ function candidateConfigSnapshot(pathname, root, expectedPaths, binding, runtime
       !isDeepStrictEqual(policy(replacement.config.path), expectedPolicy)) reject("startup config policy changed");
   const journal = migrationFile(pathname, namespace.owner, { mode: 0o600, limit: migrationJournalLimit });
   if (!isDeepStrictEqual(migrationJson(journal.bytes), record)) reject("startup config journal changed");
-  if (!isDeepStrictEqual(identity(record.protectedPaths[1].path), storedFileDescriptor(record.protectedPaths[1])) ||
+  if (!fileReceiptMatches(identity(record.protectedPaths[1].path), record.protectedPaths[1]) ||
       !isDeepStrictEqual(migrationFile(replacement.config.path, runtimeUid, { mode: 0o600, group: replacement.gid }).descriptor, replacement.current.descriptor) ||
       !isDeepStrictEqual(migrationFile(replacement.backup.descriptor.path, runtimeUid, { mode: 0o600, group: replacement.gid }).descriptor, replacement.backup.descriptor)) reject("startup config or store changed during audit verification");
   selectedConfigProcess(root, record, binding);
@@ -2463,7 +2475,7 @@ function verifyStateCompatibility(databasePath, existing, candidate, inspectAgen
     if (!isAbsolute(pathname) || resolve(pathname) !== pathname)
       reject("captured session database path is not canonical");
     const entry = lstatSync(pathname, { throwIfNoEntry: false });
-    if (!entry?.isFile() || entry.isSymbolicLink() || entry.dev !== exactFileId(device) || entry.ino !== exactFileId(inode) ||
+    if (!entry?.isFile() || entry.isSymbolicLink() || !fileIdMatches(entry.dev, device) || !fileIdMatches(entry.ino, inode) ||
         entry.uid !== stateOwner.uid || entry.gid !== stateOwner.gid || (entry.mode & 0o022) !== 0)
       reject("a captured session database identity is missing or changed");
     if (realpathSync(pathname) !== pathname) reject("captured session database path is not canonical");
@@ -2527,7 +2539,6 @@ function sessionWitnessTuples(saved) {
         [2, 3].some(index => !isFileId(tuple[index])) ||
         [6, 7].some(index => tuple[index] !== null && typeof tuple[index] !== "string"))
       reject("session preservation witness is malformed");
-    tuple[2] = exactFileId(tuple[2]); tuple[3] = exactFileId(tuple[3]);
     return tuple;
   });
 }
@@ -2563,18 +2574,22 @@ function nativeUpdateReceipt(record, required = false) {
     if (!value) continue; // Originally absent stores may still be absent after restoration.
     if (!isAbsolute(path) || resolve(path) !== path || !isFileId(value.dev) || !isFileId(value.ino))
       reject("native database receipt identity is invalid");
-    const recorded = { path, device: exactFileId(value.dev), inode: exactFileId(value.ino) };
-    if (required && !isDeepStrictEqual(identity(path), recorded))
+    const recorded = { path, device: value.dev, inode: value.ino,
+      ...(value.identityEncoding ? { identityEncoding: value.identityEncoding } : {}) };
+    const current = required ? identity(path) : undefined;
+    if (required && !fileReceiptMatches(current, recorded))
       reject("native database identity changed after the owner completed");
-    identities.set(path, recorded);
+    identities.set(path, current ?? recorded);
   }
   const config = receipt.configIdentity;
   if (config?.path !== receipt.configPath || !isFileId(config.dev) || !isFileId(config.ino))
     reject("native config receipt identity is invalid");
-  const recorded = { path: config.path, device: exactFileId(config.dev), inode: exactFileId(config.ino) };
-  if (required && !isDeepStrictEqual(identity(config.path), recorded))
+  const recorded = { path: config.path, device: config.dev, inode: config.ino,
+    ...(config.identityEncoding ? { identityEncoding: config.identityEncoding } : {}) };
+  const current = required ? identity(config.path) : undefined;
+  if (required && !fileReceiptMatches(current, recorded))
     reject("native config identity changed after the owner completed");
-  identities.set(config.path, recorded);
+  identities.set(config.path, current ?? recorded);
   return { status: receipt.status, identities };
 }
 
@@ -2597,7 +2612,7 @@ function journalNativePermit(pathname, expected, action) {
   if (!entry.isSymbolicLink() || entry.uid !== namespace.owner || entry.gid !== rootGroup() ||
       realpathSync(current) !== join(root, "releases", selected))
     reject("native permit does not select its completed migration or restored predecessor");
-  if (!receipt && record.protectedPaths.some(previous => !isDeepStrictEqual(identity(previous.path), storedFileDescriptor(previous))))
+  if (!receipt && record.protectedPaths.some(previous => !fileReceiptMatches(identity(previous.path), previous)))
     reject("native update without a receipt changed protected state");
   migrationPublishPermit(root);
   return "PERMITTED";
@@ -2630,7 +2645,7 @@ function originalWitness(pathname, record, expected) {
   if (!isDeepStrictEqual(migrationJson(journal.bytes), record)) reject("original session witness journal changed before reading");
   const { name, ...descriptor } = record.originalWitness;
   const file = migrationFile(join(namespace.directory, name), namespace.owner, { mode: 0o600 });
-  if (!isDeepStrictEqual(file.descriptor, storedFileDescriptor({ path: join(namespace.directory, name), ...descriptor })))
+  if (!fileReceiptMatches(file.descriptor, { path: join(namespace.directory, name), ...descriptor }))
     reject("original session witness artifact changed; activation evidence retained");
   sessionWitnessTuples(migrationJson(file.bytes));
   const after = migrationFile(pathname, namespace.owner, { mode: 0o600, limit: migrationJournalLimit });
@@ -2871,15 +2886,18 @@ function recoveryEvidence(pathname, root, expected, position = "observed", confi
     const runtimeOwner = integer(reconciliation.runtimeUid, "reconciliation runtime owner");
     if (![owner, runtimeOwner].includes(entry.uid)) reject("reconciled config owner is unsafe");
     const config = migrationFile(reconciliation.config.path, entry.uid, { mode: 0o600, group: entry.gid });
-    if (config.descriptor.device !== exactFileId(record.protectedPaths[0].device) ||
-        config.descriptor.inode === exactFileId(record.protectedPaths[0].inode))
+    const previous = record.protectedPaths[0];
+    const exactPrevious = storedFileId(previous.inode, previous.identityEncoding).encoding === "exact";
+    // Historical rounded IDs cannot distinguish a same-double replacement; reviewed bytes remain pinned.
+    if (!fileIdMatches(config.descriptor.device, previous.device) ||
+        (exactPrevious && fileIdMatches(config.descriptor.inode, previous.inode)))
       reject("config reconciliation requires an atomic replacement on the original filesystem");
     if (config.descriptor.sha256 !== reconciliation.config.sha256)
       reject("reviewed reconciliation config bytes changed");
     snapshot.configReconciliation = { journalSha256: journal.descriptor.sha256, databasePath: reconciliation.databasePath, runtimeUid: runtimeOwner,
       config: { ...config.descriptor, uid: entry.uid, gid: entry.gid } };
     if (selected) {
-      if (!isDeepStrictEqual(identity(record.protectedPaths[1].path), storedFileDescriptor(record.protectedPaths[1])))
+      if (!fileReceiptMatches(identity(record.protectedPaths[1].path), record.protectedPaths[1]))
         reject("selected config reconciliation refuses a replaced store");
       snapshot.configReconciliation.process = selectedConfigProcess(root, record, reconciliation.process);
       const replacement = configReplacement(root, record, runtimeOwner);
@@ -2945,13 +2963,13 @@ function recoveryEvidence(pathname, root, expected, position = "observed", confi
   if (!expected) {
     for (const release of [record.predecessor, record.candidate]) {
       const actual = validateRelease(join(root, "releases", release.sha), release.sha, owner, true);
-      if (JSON.stringify(actual) !== JSON.stringify(release))
+      if (!fileReceiptMatches(actual, release))
         reject("journal release identity changed");
     }
   }
   for (const protectedPath of record.protectedPaths) {
     if (snapshot.configReconciliation && protectedPath.path === snapshot.configReconciliation.config.path) continue;
-    if (!isDeepStrictEqual(identity(protectedPath.path), storedFileDescriptor(protectedPath)))
+    if (!fileReceiptMatches(identity(protectedPath.path), protectedPath))
       reject("recovery protected path identity changed");
   }
   const pointers = {};
@@ -2989,14 +3007,14 @@ function recoveryEvidence(pathname, root, expected, position = "observed", confi
   )
     reject("journal phase and pointers disagree during recovery");
   // Selected recovery and explicit reconciliation bind pointer inodes as well as targets.
-  if (expected && JSON.stringify(snapshot) !== JSON.stringify(expected))
+  if (expected && !fileReceiptMatches(snapshot, expected))
     reject("recovery journal or pointer identity changed; evidence retained");
   if (snapshot.configReconciliation) {
     // Native config writers use a separate lock. Refresh both bindings after the
     // database scans, before callers can retire the journal from stale evidence.
     const { uid, gid, ...descriptor } = snapshot.configReconciliation.config;
     const config = migrationFile(descriptor.path, uid, { mode: 0o600, group: gid });
-    if (!isDeepStrictEqual(config.descriptor, storedFileDescriptor(descriptor)))
+    if (!fileReceiptMatches(config.descriptor, descriptor))
       reject("reconciled config changed during recovery validation; evidence retained");
     const journal = migrationFile(pathname, owner, { mode: 0o600 });
     const { sha256, ...journalIdentity } = journal.descriptor;
@@ -3034,10 +3052,10 @@ function recoveryStart(action, pathname, root, expected, procRoot) {
   const record = { version: 1, kind: "stopped-predecessor-start", evidence: snapshot };
   if (lstatSync(intent, { throwIfNoEntry: false })) {
     settleFixedPublications([{ path: intent, mode: 0o600, validate(bytes) {
-      if (!isDeepStrictEqual(storedRecoveryReceipt(migrationJson(bytes)), record)) reject("interrupted stopped start receipt binding changed");
+      if (!fileReceiptMatches(record, migrationJson(bytes))) reject("interrupted stopped start receipt binding changed");
     } }], namespace.owner, process.env.OPENCLAW_TEAM_ANCESTOR_BOUNDARY ?? "/");
     const file = migrationFile(intent, namespace.owner, { mode: 0o600 });
-    if (!isDeepStrictEqual(storedRecoveryReceipt(migrationJson(file.bytes)), record)) reject("stopped start receipt binding changed");
+    if (!fileReceiptMatches(record, migrationJson(file.bytes))) reject("stopped start receipt binding changed");
     if (action === "intent") reject("stopped predecessor start already issued; verify the current owner instead of starting again");
     return "ISSUED";
   }
@@ -3046,7 +3064,7 @@ function recoveryStart(action, pathname, root, expected, procRoot) {
   // Publish once before handing a start to systemd. A crash or uncertain result
   // consumes this attempt; future recovery can verify, but cannot start it again.
   migrationWriteExclusive(intent, Buffer.from(JSON.stringify(record) + "\n"), 0o600);
-  if (!isDeepStrictEqual(storedRecoveryReceipt(migrationJson(migrationFile(intent, namespace.owner, { mode: 0o600 }).bytes)), record))
+  if (!fileReceiptMatches(record, migrationJson(migrationFile(intent, namespace.owner, { mode: 0o600 }).bytes)))
     reject("stopped start intent publication changed");
   return "ISSUED";
 }
@@ -3198,7 +3216,7 @@ async function startupProfileCommand(command, input) {
       // systemd evaluates the fifth field at start; the preceding four define the condition.
       conditions: snapshot.conditions.map((condition) => condition.slice(0, 4)),
     });
-    assert.deepEqual(configuration(after), configuration(before));
+    assert(fileReceiptMatches(configuration(after), configuration(before)), "profiling environment changed");
     return after;
   }
   function processBinding(intent, pid, start) {
@@ -3256,7 +3274,7 @@ async function startupProfileCommand(command, input) {
     for (const file of Object.values(dropPaths(record.operation))) {
       if (!existsSync(file)) continue;
       const current = readFile(file);
-      assert.deepEqual(current.metadata, record.drop.metadata);
+      assert(fileReceiptMatches(current.metadata, record.drop.metadata), "profiling drop-in identity changed");
       assert.equal(current.sha256, record.drop.sha256);
       unlinkSync(file);
       changed = true;
@@ -3708,7 +3726,7 @@ async function startupProfileCommand(command, input) {
         env: { PATH: "/usr/bin:/bin" }, encoding: "utf8", timeout: remaining(30000), killSignal: "SIGKILL", maxBuffer: 65536,
       });
       assert.equal(validation.status, 0);
-      assert.deepEqual(JSON.parse(validation.stdout), record.releaseIdentity);
+      assert(fileReceiptMatches(JSON.parse(validation.stdout), record.releaseIdentity), "profiling release identity changed");
       assert.equal(readFile(fileURLToPath(import.meta.url), 0, 1024 * 1024).sha256, record.librarySha256);
       assert.equal(readFile(join(dirname(fileURLToPath(import.meta.url)), "startup-profile.mjs")).sha256, record.assetSha256);
       assert.equal(readFile(join(directory, "bootstrap.mjs")).sha256, record.assetSha256);
@@ -4424,7 +4442,7 @@ try {
       const pending = new Map();
       if (command === "session-preservation-verify") {
         for (const [ordinal, tuple] of sessionWitnessTuples(jsonArgument("@stdin")).entries()) {
-          const identity = JSON.stringify(tuple.slice(0, 4));
+          const identity = JSON.stringify(tuple.slice(0, 2));
           const sessions = pending.get(identity) ?? [];
           sessions.push({ tuple, ordinal });
           pending.set(identity, sessions);
@@ -4460,9 +4478,11 @@ try {
           }
           return;
         }
-        const key = JSON.stringify(identity);
+        const key = JSON.stringify(identity.slice(0, 2));
         const expected = pending.get(key);
         if (!expected) return;
+        if (expected.some(({ tuple }) => !fileIdMatches(entry.dev, tuple[2]) || !fileIdMatches(entry.ino, tuple[3])))
+          reject("a captured session database identity is missing or changed");
         for (const { tuple, ordinal } of expected) {
           const [sessionKey, sessionId, windowKey, generation] = tuple.slice(4);
           const failure = transcriptPreservationFailure(database, sessionKey, sessionId, windowKey, generation);
@@ -4839,7 +4859,7 @@ try {
           const receipt = { version: 1, kind: "selected-candidate-config-reconciliation", evidence };
           const path = join(dirname(args[0]), `config-reconciliation-${evidence.configReconciliation.journalSha256}.json`);
           if (existsSync(path)) {
-            if (!isDeepStrictEqual(storedRecoveryReceipt(migrationJson(migrationFile(path, migrationOwner(), { mode: 0o600 }).bytes)), receipt))
+            if (!fileReceiptMatches(receipt, migrationJson(migrationFile(path, migrationOwner(), { mode: 0o600 }).bytes)))
               reject("selected config reconciliation receipt changed");
           } else migrationWriteExclusive(path, Buffer.from(`${JSON.stringify(receipt)}\n`), 0o600);
           recoveryEvidence(args[0], args[2], evidence, args[3]);
@@ -4969,9 +4989,6 @@ try {
       let value = ownedJournal(pathname);
       for (const part of field.split(".")) value = value?.[part];
       if (value === undefined) reject(`journal field is absent: ${field}`);
-      if (field === "protectedPaths") value = value.map(entry => ({
-        ...entry, device: exactFileId(entry.device), inode: exactFileId(entry.inode),
-      }));
       result = typeof value === "object" ? JSON.stringify(value) : String(value);
       break;
     }

@@ -66,7 +66,7 @@ test("native restoration rebinds replaced files while retaining the original ses
   }
   writeFileSync(f.journal, JSON.stringify(original));
   assert.deepEqual(JSON.parse(f.ok(f.run("journal-field", [f.journal, "protectedPaths"]))),
-    original.protectedPaths.map(identity => ({ ...identity, device: String(identity.device), inode: String(identity.inode) })));
+    original.protectedPaths);
   const originalWitness = readFileSync(join(dirname(f.journal), original.originalWitness.name));
   mkdirSync(dirname(f.backupRoot), { recursive: true, mode: 0o700 });
   for (const path of [f.config, f.databasePath, f.agentDatabasePath]) {
@@ -129,12 +129,12 @@ test("native start permit stays revoked until the selected release matches the c
   assert.equal(existsSync(f.permit), true);
 });
 
-test("native receipt and journal retain exact high file IDs and refuse an adjacent replacement", t => {
+for (const encoding of ["exact", "legacy-number"]) test(`native ${encoding} receipt rebinds high file IDs and retains its comparison domain`, t => {
   const f = fixture(t); f.ok(f.create());
   const original = f.read();
   mkdirSync(dirname(f.backupRoot), { recursive: true, mode: 0o700 });
-  const high = 2n ** 53n;
-  assert.equal(Number(high), Number(high + 1n), "the regression must cover colliding numeric IDs");
+  const high = 2n ** 53n + (encoding === "legacy-number" ? 1n : 0n);
+  assert.equal(Number(2n ** 53n), Number(2n ** 53n + 1n), "the regression must cover colliding numeric IDs");
   const files = [f.config, f.databasePath, f.agentDatabasePath];
   const kernelIds = files.map((path, index) => {
     const actual = statSync(path, { bigint: true });
@@ -149,6 +149,11 @@ test("native receipt and journal retain exact high file IDs and refuse an adjace
     stateDir: dirname(dirname(f.databasePath)), databases: [f.databasePath, f.agentDatabasePath],
     databaseIdentities: Object.fromEntries(files.slice(1).map((path, index) => [path, { dev: kernelIds[index + 1].dev, ino: kernelIds[index + 1].ino }])),
     configIdentity: { path: f.config, dev: kernelIds[0].dev, ino: kernelIds[0].ino } };
+  if (encoding === "legacy-number") {
+    for (const value of [...Object.values(receipt.databaseIdentities), receipt.configIdentity]) {
+      value.dev = Number(value.dev); value.ino = Number(value.ino);
+    }
+  }
   const receiptPath = `${f.backupRoot}.receipt.json`;
   writeFileSync(receiptPath, JSON.stringify(receipt), { mode: 0o600 });
   const rebound = JSON.parse(f.ok(run("journal-native-state", [f.journal, JSON.stringify(original), f.config, f.databasePath])));
@@ -156,16 +161,16 @@ test("native receipt and journal retain exact high file IDs and refuse an adjace
   assert.equal(rebound.protectedPaths[1].inode, (high + 4n).toString());
   const projected = JSON.parse(f.ok(run("journal-original-witness", [f.journal, JSON.stringify(rebound)])));
   assert(projected.length > 0);
-  assert.equal(JSON.parse(projected[0])[3], (high + 8n).toString());
+  assert.equal(JSON.parse(projected[0])[3], encoding === "exact" ? (high + 8n).toString() : Number(high + 8n));
   f.ok(run("session-preservation-verify", [f.initial, f.initial, f.databasePath], projected));
   const saved = readFileSync(f.journal);
-  kernelIds[0].ino = (high + 1n).toString();
+  kernelIds[0].ino = (high + (encoding === "exact" ? 1n : 3n)).toString();
   assert.notEqual(run("journal-native-state", [f.journal, JSON.stringify(rebound), f.config, f.databasePath]).status, 0);
   assert.deepEqual(readFileSync(f.journal), saved);
   assert.equal(existsSync(receiptPath), true);
 });
 
-test("an already-rounded numeric receipt is refused without changing its journal or receipt", t => {
+test("a legacy numeric receipt for a different file is refused without changing its journal or receipt", t => {
   const f = fixture(t); f.ok(f.create());
   const original = f.read();
   mkdirSync(dirname(f.backupRoot), { recursive: true, mode: 0o700 });

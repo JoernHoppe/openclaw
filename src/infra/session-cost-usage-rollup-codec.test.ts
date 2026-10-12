@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canUseUsageCostRollupForPartial,
   decodeUsageCostRollup,
   decodeUsageCostRollupEnvelope,
   encodeUsageCostRollup,
@@ -109,7 +110,9 @@ it.each([
   { inode: "9007199254740992", current: "9007199254740992", fresh: true },
   { inode: "9007199254740992", current: "9007199254740993", fresh: false },
   { inode: 2, current: "2", fresh: true },
-  { inode: 9007199254740992, current: "9007199254740992", fresh: false },
+  { inode: 9007199254740992, current: "9007199254740992", fresh: true },
+  { inode: 9007199254740992, current: "9007199254740993", fresh: true },
+  { inode: 9007199254740992, current: "9007199254740994", fresh: false },
 ])("reads persisted checkpoint identity $inode against $current", ({ inode, current, fresh }) => {
   const original = entry(0);
   if (original.checkpoint.kind !== "jsonl") {
@@ -123,18 +126,18 @@ it.each([
     encoded.blob,
   );
   expect(restored).toBeDefined();
-  expect(
-    isUsageCostRollupFresh({
-      checkpoint: restored!.checkpoint,
-      file: {
-        filePath: "session.jsonl",
-        sourcePath: "session.jsonl",
-        kind: "jsonl",
-        size: 100,
-        mtimeMs: 1_000,
-        device: "1",
-        inode: current,
-      },
-    }),
-  ).toBe(fresh);
+  const params = {
+    checkpoint: restored!.checkpoint,
+    file: {
+      filePath: "session.jsonl",
+      sourcePath: "session.jsonl",
+      kind: "jsonl" as const,
+      size: 100,
+      mtimeMs: 1_000,
+      device: "1",
+      inode: current,
+    },
+  };
+  expect(isUsageCostRollupFresh(params)).toBe(fresh);
+  expect(canUseUsageCostRollupForPartial(params)).toBe(fresh);
 });

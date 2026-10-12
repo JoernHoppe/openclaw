@@ -11,6 +11,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,15 +62,16 @@ function fixture(t) {
   writeFileSync(config, JSON.stringify(original) + "\n", { mode: 0o600 });
   writeFileSync(database, "synthetic-database-identity", { mode: 0o600 });
   const originalBytes = readFileSync(config);
-  function call(action, args = [], input) {
+  function call(action, args = [], input, options = {}) {
     const result = spawnSync(
       process.execPath,
-      ["--no-warnings", library, "worker-config", action, root, ...args],
+      [...(options.preload ? [process.versions.bun ? "--preload" : "--import", options.preload] : []), "--no-warnings", library, "worker-config", action, root, ...args],
       {
         encoding: "utf8",
         input,
         env: {
           ...process.env,
+          ...options.env,
           OPENCLAW_TEAM_ROOT_UID: String(process.getuid()),
           OPENCLAW_TEAM_ROOT_GID: String(process.getgid()),
           OPENCLAW_TEAM_ANCESTOR_BOUNDARY: directory,
@@ -294,4 +296,44 @@ test("refuses changed original witnesses and accepted-file drift", (t) => {
   assert.notEqual(f.call("restore").status, 0);
   assert.deepEqual(readFileSync(f.config), changedBytes);
   assert.equal(existsSync(f.journal), true);
+});
+
+for (const historical of [false, true]) test(`legacy same-double worker publication settles (historical=${historical})`, t => {
+  const f = fixture(t), token = f.begin(), high = 2n ** 53n;
+  const requestPath = join(f.root, "staging", token.stage, "private/request.json");
+  const request = JSON.parse(readFileSync(requestPath));
+  request.config.inode = Number(high);
+  writeFileSync(requestPath, JSON.stringify(request));
+  token.requestHash = hash(readFileSync(requestPath));
+  const record = JSON.parse(readFileSync(f.journal));
+  record.request = token;
+  writeFileSync(f.journal, JSON.stringify(record));
+  const preload = join(f.directory, "file-id-preload.mjs");
+  writeFileSync(preload, `import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+for (const method of ["statSync", "lstatSync", "fstatSync"]) {
+  const native = fs[method];
+  fs[method] = (...args) => {
+    const result = native(...args);
+    if (result && typeof result.ino === "bigint" && result.dev + ":" + result.ino === process.env.TEST_FILE_REAL_ID)
+      result.ino = BigInt(process.env.TEST_FILE_INODE);
+    return result;
+  };
+}
+if (process.versions.bun) { const { mock } = await import("bun:test"); mock.module("node:fs", () => fs); } else syncBuiltinESMExports();
+`);
+  const options = inode => {
+    const current = statSync(f.config, { bigint: true });
+    return { preload, env: { TEST_FILE_REAL_ID: current.dev + ":" + current.ino, TEST_FILE_INODE: String(inode) } };
+  };
+  pass(f.call("writing", [], undefined, options(high)));
+  const writing = JSON.parse(readFileSync(f.journal));
+  if (historical) {
+    delete writing.publicationFrom;
+    writeFileSync(f.journal, JSON.stringify(writing));
+  }
+  const bytes = f.publish();
+  assert.equal(Number(high), Number(high + 1n));
+  assert.equal(pass(f.call("accept", [], undefined, options(high + 1n))), "CONFIG_VERIFIED");
+  assert.equal(JSON.parse(readFileSync(f.journal)).currentConfig.inode, (high + 1n).toString());
+  assert.deepEqual(readFileSync(f.config), bytes);
 });

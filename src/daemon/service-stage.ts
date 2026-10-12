@@ -8,10 +8,11 @@ import { z } from "zod";
 import { hasErrnoCode } from "../infra/errno.js";
 import { assertGatewayServiceUpdateCurrent } from "./service-update-authority.js";
 
-// Released receipts used numeric identities; normalize them when reading old backups.
-const identityField = z
-  .union([z.string().regex(/^(0|-?[1-9][0-9]*)$/), z.number().int().nonnegative().safe()])
-  .transform(String);
+// Numbers retain legacy provenance; only newly observed IDs become exact strings.
+const identityField = z.union([
+  z.string().regex(/^(0|-?[1-9][0-9]*)$/),
+  z.number().nonnegative().refine(Number.isInteger),
+]);
 
 const fileState = z.strictObject({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -62,10 +63,25 @@ export function matchesServiceFilePublication(
 ): current is GatewayServiceFileState {
   return (
     current !== null &&
-    (["dev", "ino", "sha256", "mode", "size", "mtimeMs"] as const).every(
-      (key) => current[key] === prepared[key],
-    )
+    (["dev", "ino"] as const).every((key) => {
+      const retained = prepared[key];
+      // Legacy writers lost these bits: a same-double replacement is undetectable
+      // until a successful observation/publication upgrades the receipt.
+      return typeof retained === "number"
+        ? Number(current[key]) === retained
+        : current[key] === retained;
+    }) &&
+    (["sha256", "mode", "size", "mtimeMs"] as const).every((key) => current[key] === prepared[key])
   );
+}
+
+export function matchesServiceFileState(
+  current: GatewayServiceFileState | null,
+  retained: GatewayServiceFileState | null,
+): boolean {
+  return retained === null
+    ? current === null
+    : matchesServiceFilePublication(current, retained) && current.ctimeMs === retained.ctimeMs;
 }
 
 /** Keep the live file runnable until a complete replacement is ready. */

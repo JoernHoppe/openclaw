@@ -18,7 +18,7 @@ import {
   type UsageCostCollectionAccess,
 } from "./session-cost-usage-collection.js";
 import {
-  checkpointIdentity,
+  usageCostCheckpointIdentityMatches,
   type UsageCostRollupEntry,
 } from "./session-cost-usage-rollup-codec.js";
 import { createUsageRollupScan } from "./session-cost-usage-rollup-scan.js";
@@ -137,8 +137,8 @@ async function scanJsonlUsageRollup(params: RollupScanInput): Promise<UsageCostR
     params.previous?.checkpoint.kind === "jsonl" ? params.previous.checkpoint : undefined;
   const identityMatches =
     previousCheckpoint &&
-    checkpointIdentity(previousCheckpoint.device) === params.file.device &&
-    checkpointIdentity(previousCheckpoint.inode) === params.file.inode &&
+    usageCostCheckpointIdentityMatches(previousCheckpoint.device, params.file.device) &&
+    usageCostCheckpointIdentityMatches(previousCheckpoint.inode, params.file.inode) &&
     previousCheckpoint.parsedOffset <= params.file.size &&
     params.file.size > previousCheckpoint.observedSize;
   const previousAnchor = identityMatches

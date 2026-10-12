@@ -38,13 +38,31 @@ import {
   readUpdateConfigSnapshot,
 } from "./update-command-config-snapshot.js";
 
-const IdentityComponentSchema = z
-  .union([
-    z.string().regex(/^(0|-?[1-9][0-9]*)$/u),
-    z.number().refine(Number.isSafeInteger, "File identity must be an exact integer"),
-  ])
-  .transform((value) => String(value));
-const FileIdentitySchema = z.object({ dev: IdentityComponentSchema, ino: IdentityComponentSchema });
+const IdentityComponentSchema = z.union([
+  z.string().regex(/^(0|-?[1-9][0-9]*)$/u),
+  z.number().refine(Number.isInteger, "File identity must be an integer"),
+]);
+const FileIdentitySchema = z
+  .object({
+    dev: IdentityComponentSchema,
+    ino: IdentityComponentSchema,
+    identityEncoding: z.enum(["exact", "legacy-number"]).optional(),
+  })
+  .refine(
+    (value) =>
+      value.identityEncoding !== "exact" ||
+      (typeof value.dev === "string" && typeof value.ino === "string"),
+    "Exact file identities require decimal strings",
+  )
+  .transform((value) => ({
+    ...value,
+    // Historical numbers remain numbers: their original low bits cannot be recovered.
+    identityEncoding:
+      value.identityEncoding ??
+      (typeof value.dev === "number" || typeof value.ino === "number"
+        ? ("legacy-number" as const)
+        : ("exact" as const)),
+  }));
 
 const ReceiptSchema = z.object({
   schemaVersion: z.literal(1),
@@ -55,7 +73,7 @@ const ReceiptSchema = z.object({
   backup: UpdateDatabaseBackupSchema,
   databases: z.array(z.string()),
   databaseIdentities: z.record(z.string(), FileIdentitySchema),
-  configIdentity: FileIdentitySchema.extend({ path: z.string() }).nullable(),
+  configIdentity: FileIdentitySchema.and(z.object({ path: z.string() })).nullable(),
   configFiles: z.array(
     z.object({
       path: z.string(),
@@ -82,6 +100,7 @@ const ReceiptSchema = z.object({
   error: z.string().optional(),
 });
 type Receipt = z.infer<typeof ReceiptSchema>;
+type ExactReceiptIdentity = { dev: string; ino: string; identityEncoding: "exact" };
 
 function receiptPath(backupRoot: string): string {
   if (!path.isAbsolute(backupRoot)) {
@@ -113,7 +132,7 @@ async function saveReceipt(file: string, receipt: Receipt) {
 }
 
 async function readIdentities(databases: readonly string[]) {
-  const identities: Receipt["databaseIdentities"] = {};
+  const identities: Record<string, ExactReceiptIdentity> = {};
   for (const database of databases) {
     const info = await fs.stat(database, { bigint: true }).catch((error: unknown) => {
       if (hasNodeErrorCode(error, "ENOENT")) {
@@ -122,7 +141,11 @@ async function readIdentities(databases: readonly string[]) {
       throw error;
     });
     if (info) {
-      identities[database] = { dev: info.dev.toString(), ino: info.ino.toString() };
+      identities[database] = {
+        dev: info.dev.toString(),
+        ino: info.ino.toString(),
+        identityEncoding: "exact",
+      };
     }
   }
   return identities;

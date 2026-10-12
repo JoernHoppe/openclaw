@@ -10,7 +10,7 @@ import type {
 } from "./state-migrations.audit-logs.types.js";
 
 export type LegacyAuditFileCheckpoint = {
-  // Older receipts stored safe integer IDs; new receipts preserve every bit as decimal text.
+  // Numbers mark legacy, possibly rounded IDs; strings preserve every bit as decimal text.
   dev: number | string;
   ino: number | string;
   mtimeMs: number;
@@ -76,25 +76,27 @@ function statLegacyAuditRawCheckpoint(sourcePath: string): LegacyAuditFileCheckp
   }
 }
 
-function exactAuditIdentity(value: number | string): string | undefined {
-  if (typeof value === "number") {
-    return Number.isSafeInteger(value) ? String(value) : undefined;
+function auditIdentityMatches(left: number | string, right: number | string): boolean {
+  if (typeof left === "number" || typeof right === "number") {
+    // Released numeric receipts cannot distinguish IDs rounded to the same double.
+    // Keep that legacy limit until an observed identity is written as exact text.
+    const legacy = typeof left === "number" ? left : right;
+    const other = typeof left === "number" ? right : left;
+    return (
+      Number.isInteger(legacy) &&
+      (typeof other === "number"
+        ? Number.isInteger(other) && legacy === other
+        : /^(0|-?[1-9][0-9]*)$/u.test(other) && legacy === Number(other))
+    );
   }
-  return /^(0|-?[1-9][0-9]*)$/u.test(value) ? value : undefined;
+  return /^(0|-?[1-9][0-9]*)$/u.test(left) && left === right;
 }
 
 export function legacyAuditFileIdentitiesMatch(
   left: Pick<LegacyAuditFileCheckpoint, "dev" | "ino">,
   right: Pick<LegacyAuditFileCheckpoint, "dev" | "ino">,
 ): boolean {
-  const dev = exactAuditIdentity(left.dev);
-  const ino = exactAuditIdentity(left.ino);
-  return (
-    dev !== undefined &&
-    ino !== undefined &&
-    dev === exactAuditIdentity(right.dev) &&
-    ino === exactAuditIdentity(right.ino)
-  );
+  return auditIdentityMatches(left.dev, right.dev) && auditIdentityMatches(left.ino, right.ino);
 }
 
 export function legacyAuditRawCheckpointsMatch(

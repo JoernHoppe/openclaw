@@ -167,6 +167,9 @@ suite.define(() => {
         await expect
           .poll(() => pullRequest.locator(".chat-pr__checks-menu").isVisible())
           .toBe(true);
+        // Focus inside the menu so the pill's title hint cannot consume Escape first.
+        await pullRequest.getByRole("link", { name: "Open checks on GitHub" }).focus();
+        await expect.poll(() => page.locator("openclaw-tooltip[open]").count()).toBe(0);
         await page.keyboard.press("Escape");
         await expect
           .poll(() => pullRequest.locator(".chat-pr__checks-menu").isVisible())
