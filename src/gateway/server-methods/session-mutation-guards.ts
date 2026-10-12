@@ -299,8 +299,17 @@ export function bindGatewayRequestHandlerMutationAuthority<T extends GatewayRequ
     const authorization = handler.sessionMutationAuthorization;
     if (authorization) {
       const admitted = authorization.admittedInputAuthority;
+      const assertAdmittedSourceCurrent = authorization.assertAdmittedSourceCurrent;
       handler.sessionMutationAuthorization = {
         ...authorization,
+        ...(assertAdmittedSourceCurrent
+          ? {
+              assertAdmittedSourceCurrent: () => {
+                assertTransferredHandlerCurrent();
+                assertAdmittedSourceCurrent();
+              },
+            }
+          : {}),
         ...(admitted
           ? {
               admittedInputAuthority: withSessionPendingInputAuthorityGuard(
@@ -420,6 +429,10 @@ export function withSessionMutationCommitGuard(
   };
   return {
     ...authorization,
+    assertAdmittedSourceCurrent: composeSessionSourceAssertion([
+      assertAdmittedSourceCurrent ?? assertCommitAllowed,
+      authorization?.assertAdmittedSourceCurrent,
+    ]),
     ...(authorization?.prepareWorkerGrant
       ? {
           prepareWorkerGrant: async (target) => {

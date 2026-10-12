@@ -66,6 +66,7 @@ export async function dispatchSuggestion(params: {
     params.sessionMutationAuthorization?.assertCurrent();
   };
   const assertAdmittedCurrent =
+    params.sessionMutationAuthorization?.assertAdmittedSourceCurrent ??
     params.sessionMutationAuthorization?.assertAdmittedInputCurrent ??
     params.sessionMutationAuthorization?.assertCurrent;
   let chatAuthorization: SessionMutationAuthorization | undefined;

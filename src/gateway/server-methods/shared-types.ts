@@ -551,6 +551,8 @@ export type SessionMutationAuthorization = {
   }>;
   /** Original host/session authority for committed input custody, without the selection precondition. */
   assertAdmittedInputCurrent?: () => void;
+  /** Original host/operator authority; forwarded input owns its current session policy. */
+  assertAdmittedSourceCurrent?: () => void;
   /** Fresh sharing facts for runtime custody; synchronous methods retain the released SDK contract. */
   admittedInputAuthority?: import("../../config/sessions/session-pending-input-authority.js").SessionPendingInputAuthority;
   /** Creation-owner notification after COMMIT; binds only this request's previously absent row. */

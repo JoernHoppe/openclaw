@@ -225,12 +225,13 @@ async function handleChatSendWithOptions(
       recorder: userTurnRecorder,
       replyContextFieldsPromise,
     } = userTurn;
+    let needsSessionCreationBinding = !entry;
     const withUserTurnInputPublication = <T>(run: () => Promise<T>) =>
       admission.withInputCommitPublication(
         run,
         entry
           ? undefined
-          : (source, committedEntry) =>
+          : (source, committedEntry) => {
               sessionMutationAuthorization?.recordCreatedSession?.({
                 agentId: session.agentId,
                 sessionKey,
@@ -239,7 +240,9 @@ async function handleChatSendWithOptions(
                 lifecycleRevision: committedEntry.lifecycleRevision,
                 readSource: source,
                 entry: committedEntry,
-              }),
+              });
+              needsSessionCreationBinding = false;
+            },
       );
     const persistGatewayUserTurnTranscript = (
       ...args: Parameters<typeof persistUserTurnTranscript>
@@ -635,7 +638,7 @@ async function handleChatSendWithOptions(
       },
       cronCreatorAuthority,
       assertDashboardReadCurrent,
-      ...(!entry && sessionMutationAuthorization?.bindCreation
+      ...(needsSessionCreationBinding && sessionMutationAuthorization?.bindCreation
         ? {
             bindSessionCreation: (operation: SessionEntryCreationOperation) => {
               sessionMutationAuthorization.bindCreation?.(

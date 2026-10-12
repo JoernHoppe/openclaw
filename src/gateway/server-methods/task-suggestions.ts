@@ -165,7 +165,8 @@ async function sendSuggestedTaskPrompt(
         authorization.authorization,
         params.options.sessionMutationCommitGuard,
         sessionMutationAuthorization?.assertCurrent,
-        sessionMutationAuthorization?.assertAdmittedInputCurrent,
+        sessionMutationAuthorization?.assertAdmittedSourceCurrent ??
+          sessionMutationAuthorization?.assertAdmittedInputCurrent,
       );
       if (sessionMutationAuthorization) {
         sessionMutationAuthorization = retainForwardedSessionMutationAuthorization(
