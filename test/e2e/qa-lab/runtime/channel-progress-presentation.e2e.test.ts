@@ -22,6 +22,7 @@ import {
   normalizeResponsesInput,
   resolveMockSubagentTurn,
 } from "../../../../extensions/qa-lab/test-api.js";
+import { resolveSessionStorePathCore } from "../../../../src/config/sessions/paths.js";
 import {
   listSessionEntriesReadOnly,
   loadSessionEntryReadOnly,
@@ -1672,6 +1673,10 @@ describe("channel progress presentation through an isolated Gateway", () => {
         const scope = {
           agentId: "qa",
           env: gateway.runtimeEnv,
+          storePath: resolveSessionStorePathCore(gateway.cfg.session?.store, {
+            agentId: "qa",
+            env: gateway.runtimeEnv,
+          }),
           readConsistency: "latest" as const,
         };
         const sessions = listSessionEntriesReadOnly(scope).filter(
