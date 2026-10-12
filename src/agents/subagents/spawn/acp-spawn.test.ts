@@ -113,6 +113,7 @@ vi.mock("../../../channels/plugins/registry.js", () => ({
 
 vi.mock("../../../config/sessions/paths.js", () => ({
   resolveSessionStorePathCore: hoisted.resolveStorePathMock,
+  resolveSessionStorePathWithContext: hoisted.resolveStorePathMock,
 }));
 
 vi.mock("../../../config/sessions/session-accessor.js", async () => {

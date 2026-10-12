@@ -57,15 +57,16 @@ async function seedExecutionTarget(name: string, task: string, lifecycleRevision
     defaultSessionId: sessionId,
     lifecycleRevision,
   });
+  const sessionEntry = await readSessionEntryReadOnlyInWorker({
+    agentId: "main",
+    storePath,
+    sessionKey,
+  });
   await registerSubagentRun({
     runId,
     childSessionKey: sessionKey,
     childAgentId: "main",
-    sessionEntry: await readSessionEntryReadOnlyInWorker({
-      agentId: "main",
-      storePath,
-      sessionKey,
-    }),
+    sessionEntry,
     requesterSessionKey: "agent:main:main",
     requesterAgentId: "main",
     requesterDisplayKey: "main",
@@ -76,7 +77,7 @@ async function seedExecutionTarget(name: string, task: string, lifecycleRevision
   const context = createDirectChatContext({ getRuntimeConfig });
   const resolveGatewayContext = () => context;
   bindGatewayContextResolver(subagentRuns.get(runId)!, resolveGatewayContext);
-  return { sessionKey, sessionId, runId, storePath, context, resolveGatewayContext };
+  return { sessionKey, sessionId, sessionEntry, runId, storePath, context, resolveGatewayContext };
 }
 
 it.each([
@@ -318,7 +319,7 @@ it.each(["declined", "throws"] as const)(
 );
 
 it("joins an execution registered while its accepted Stop awaits kill-claim persistence", async () => {
-  const { sessionKey, sessionId, runId, storePath, context, resolveGatewayContext } =
+  const { sessionKey, sessionId, sessionEntry, runId, storePath, context, resolveGatewayContext } =
     await seedExecutionTarget(
       "late-execution-stop",
       "join the exact execution that accepts cancellation",
@@ -360,7 +361,7 @@ it("joins an execution registered while its accepted Stop awaits kill-claim pers
       resolveGatewayContext,
       assertAllowed: () => {},
     });
-    let admissionEntry: SessionEntry | undefined = { sessionId, updatedAt: 1 };
+    let admissionEntry: SessionEntry | undefined = sessionEntry;
     const nativeAdmission = createAgentAdmissionController({
       runId,
       lifecycleGeneration,
