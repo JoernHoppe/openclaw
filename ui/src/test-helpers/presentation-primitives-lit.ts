@@ -230,7 +230,8 @@ function feedback() {
         .heading=${"No files"}
         .description=${"Add a file to begin working in this panel."}
       >
-        ${icons.folder}<span slot="action">${button("Add file", "add-file")}</span>
+        ${icons.folder}
+        <span slot="action">${button("Add file", "add-file")}</span>
       </openclaw-panel-empty-state>`,
       "empty",
     ),
