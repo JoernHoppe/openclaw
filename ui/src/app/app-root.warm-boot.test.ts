@@ -2,11 +2,12 @@
 import { ContextEvent } from "@lit/context";
 import { gatewayCredentialScope } from "@openclaw/gateway-client/browser";
 import { expectDefined } from "@openclaw/normalization-core";
-import { render as renderLit } from "lit";
-import { flush } from "solid-js";
+import { html, render as renderLit } from "lit";
+import { createRoot, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../components/login-gate.ts";
 import { i18n } from "../i18n/index.ts";
+import { solidContent } from "../lit/solid-content.tsx";
 import { createStorageMock } from "../test-helpers/storage.ts";
 import { createLegacyFocusEscape } from "./app-root-lit.ts";
 import { mountOpenClawApp } from "./app-root.tsx";
@@ -82,14 +83,17 @@ async function createWarmSurface(warm = true, startup?: Promise<void>) {
   host = document.createElement("openclaw-app");
   document.body.append(host);
   dispose = mountOpenClawApp(host, runtime);
-  const draw = async () => {
+  const publish = () => {
     for (const listener of listeners) {
       listener(snapshot);
     }
+  };
+  const draw = async () => {
+    publish();
     await settleRootContent();
   };
   await settleRootContent();
-  return { snapshot, container: host, draw, start, rosterSubscriptions };
+  return { snapshot, container: host, publish, draw, start, rosterSubscriptions };
 }
 
 type LoginGateElement = HTMLElement & {
@@ -201,7 +205,7 @@ describe("warm boot app root", () => {
   });
 
   it("pins a manual login attempt and releases it only after connection admission", async () => {
-    const { snapshot, container, draw } = await createWarmSurface();
+    const { snapshot, container, publish, draw } = await createWarmSurface();
     snapshot.phase = "offline";
     snapshot.lastError = "Connect to continue";
     await draw();
@@ -219,7 +223,22 @@ describe("warm boot app root", () => {
     await draw();
     expect(container.querySelector(".connect-splash")).not.toBeNull();
     snapshot.phase = "connected";
-    await draw();
+    publish();
+    const nested = document.createElement("div");
+    container.append(nested);
+    let disposeNested: (() => void) | undefined;
+    try {
+      // A legacy descendant can mount Solid while Gateway admission is queued.
+      createRoot((disposeRoot) => {
+        disposeNested = disposeRoot;
+        renderLit(html`${solidContent(() => document.createElement("span"), {})}`, nested);
+      });
+      await settleRootContent();
+    } finally {
+      renderLit(null, nested);
+      disposeNested?.();
+      nested.remove();
+    }
     await vi.dynamicImportSettled();
     await settleRootContent();
     expect(container.querySelector("openclaw-app-shell")).not.toBeNull();

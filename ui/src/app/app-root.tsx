@@ -154,18 +154,20 @@ export function OpenClawApp(props: {
 
   createEffect(
     () => gateway.read(),
-    (current) => {
-      if (current.snapshot.client !== loginConnectionClient) {
-        loginConnectionClient = current.snapshot.client;
-        setLoginShowGatewaySecret(false);
-        setLoginGatewayUrl(current.connection.gatewayUrl);
-        setLoginToken(current.connection.token);
-        setLoginPassword(current.connection.password);
-      }
-      if (current.snapshot.phase === "connected") {
-        setLoginGatePinned(false);
-      }
-    },
+    (current) =>
+      // Nested Lit/Solid mounts can flush this imperative effect under their owner.
+      runWithOwner(null, () => {
+        if (current.snapshot.client !== loginConnectionClient) {
+          loginConnectionClient = current.snapshot.client;
+          setLoginShowGatewaySecret(false);
+          setLoginGatewayUrl(current.connection.gatewayUrl);
+          setLoginToken(current.connection.token);
+          setLoginPassword(current.connection.password);
+        }
+        if (current.snapshot.phase === "connected") {
+          setLoginGatePinned(false);
+        }
+      }),
   );
 
   const initialConnectPending = () =>
