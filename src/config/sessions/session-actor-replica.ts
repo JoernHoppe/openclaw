@@ -35,6 +35,7 @@ import {
   type SessionActorTranscriptReplica,
 } from "./session-actor-transcript-replica.js";
 import { deriveSessionPredicateColumns } from "./session-predicate-columns.js";
+import type { SessionRowDatabaseFacts } from "./session-row-facts.types.js";
 import type { SessionTranscriptAnchorSelection } from "./session-transcript-anchor-read.kernel.js";
 import { readPreparedSessionTranscriptChange } from "./session-transcript-authority.js";
 import type { SessionTranscriptProjectionReceipt } from "./session-transcript-projection-facts.types.js";
@@ -602,7 +603,7 @@ export function createSessionActorReplica(
     }
   };
   const currentToken = (state: SessionActorHotState): string | undefined => {
-    const database = target.database;
+    const { database, sessionKey } = target;
     if (database.kind !== "file") {
       return params.currentWriteToken?.(state);
     }
@@ -614,10 +615,7 @@ export function createSessionActorReplica(
       ) {
         return undefined;
       }
-      return scopedWriteToken(
-        { database, sessionKey: target.sessionKey },
-        state.dependencySessionIds,
-      );
+      return scopedWriteToken({ database, sessionKey }, state.dependencySessionIds);
     } catch {
       return undefined;
     }
