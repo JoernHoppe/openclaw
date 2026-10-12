@@ -131,6 +131,7 @@ it.each([false, true])(
     const kill = vi
       .spyOn(subagentKill, "killSubagentRunAdmin")
       .mockImplementationOnce(async (params, control) => {
+        await control?.prepareRead?.();
         control?.beforeSessionKill?.();
         if (killFails) {
           throw killFailure;

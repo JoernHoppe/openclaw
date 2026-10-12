@@ -75,7 +75,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
 }));
 
 vi.mock("../../agents/sandbox.js", () => ({
-  resolveSandboxRuntimeStatus: vi.fn(() => ({ sandboxed: false })),
+  resolveSandboxRuntimeStatusAsync: vi.fn(async () => ({ sandboxed: false })),
 }));
 
 vi.mock("../../agents/sticky-model-selection.js", async (importOriginal) => ({
@@ -108,7 +108,7 @@ describe("mixed inline directives", () => {
     unsubscribeLifecycle = onSessionLifecycleEvent((event) => lifecycleEvents.push(event));
     vi.clearAllMocks();
     vi.mocked(loadProviderScopedThinkingCatalog).mockReset().mockResolvedValue([]);
-    vi.mocked(persistStickyModelSelectionBestEffort).mockReturnValue("requested");
+    vi.mocked(persistStickyModelSelectionBestEffort).mockReset().mockReturnValue("requested");
     persistenceMocks.persist.mockImplementation(async ({ entry }) => ({
       status: "current",
       entry: { ...entry },

@@ -439,6 +439,7 @@ export async function prepareInitialSessionWriter(params: {
 
 type AgentSessionWriterAdmissionSnapshot = {
   runtimeTarget?: SessionTranscriptRuntimeTarget;
+  assertActive?: SessionSourceAssertion;
   agentId?: string;
   entry: InternalSessionEntry;
   sessionKey: string;
@@ -494,6 +495,7 @@ export async function assertAgentHarnessRunAdmission(
       ? {
           ...scope,
           entry,
+          assertActive,
           ...(runtimeTarget && runtimeScope
             ? {
                 runtimeTarget: { ...runtimeTarget, storePath: runtimeScope.storePath ?? storePath },
@@ -552,7 +554,7 @@ export async function claimAgentSessionWriter(params: RunEmbeddedAgentParams): P
       expected: { sessionId: expectedSessionId, lifecycleRevision: expectedLifecycleRevision },
       patch: { activeWriterRunId: params.runId },
     },
-    { skipMaintenance: true },
+    { skipMaintenance: true, ...sessionEntryCommitGuardOptions(snapshot.assertActive) },
   );
   if (
     claimed &&

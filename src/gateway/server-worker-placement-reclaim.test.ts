@@ -401,7 +401,11 @@ async function scenario(
       }
     }
     if (pendingDispatch) {
-      await setImmediate();
+      await awaitGateBeforeSettlement(
+        cancellationEntered.promise,
+        reclaim,
+        "Stop settled before fencing provisioning ingress",
+      );
       reserveOld();
       releaseProvision.resolve();
       active = await dispatching!;

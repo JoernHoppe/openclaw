@@ -79,6 +79,12 @@ export function setupSessionFixture(request: WorkerSessionPlacementIdentity) {
       { agentId: request.agentId, sessionKey: request.sessionKey, storePath: target.storePath },
       entry,
     );
+    const targetReader = await vi.importActual<typeof import("./session-utils-store-worker.js")>(
+      "./session-utils-store-worker.js",
+    );
+    moveDestinationMocks.prepareGatewaySessionTarget.mockImplementation(
+      targetReader.resolveGatewaySessionStoreTargetInWorker,
+    );
     const worktree = { id: "workspace", ownerId: request.sessionKey, path: support.testState.root };
     const config = { ...support.testState.config, session: { store: target.storePath } };
     moveDestinationMocks.getRuntimeConfig.mockReturnValue(config);

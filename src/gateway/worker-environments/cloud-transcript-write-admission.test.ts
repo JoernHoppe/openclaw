@@ -148,14 +148,21 @@ describe("cloud transcript write admission", () => {
         } else if (change === "environment") {
           environment.ownerEpoch += 1;
         } else if (change === "missing") {
-          vi.spyOn(sessionAccess, "loadSessionEntry").mockReturnValue(undefined);
-        } else if (change === "writer" || change === "lifecycle") {
-          vi.spyOn(sessionAccess, "loadSessionEntry").mockReturnValue({
-            ...entry,
-            ...(change === "writer"
-              ? { activeWriterRunId: "replacement-run" }
-              : { lifecycleRevision: "replacement-lifecycle" }),
+          await sessionAccess.deleteSessionEntryLifecycle({
+            ...sessionTarget,
+            archiveTranscript: false,
+            target: {
+              canonicalKey: sessionTarget.sessionKey,
+              storeKeys: [sessionTarget.sessionKey],
+            },
+            expectedSessionId: entry.sessionId,
           });
+        } else if (change === "writer" || change === "lifecycle") {
+          await sessionAccess.patchSessionEntryCore(sessionTarget, () =>
+            change === "writer"
+              ? { activeWriterRunId: "replacement-run" }
+              : { lifecycleRevision: "replacement-lifecycle" },
+          );
         }
         gate.release.resolve();
         const outcome = await operation;
@@ -272,12 +279,19 @@ describe("cloud transcript write admission", () => {
         } else if (change === "claim") {
           vi.spyOn(placements, "validateWorkspaceResultClaim").mockReturnValue(false);
         } else if (change === "missing") {
-          vi.spyOn(sessionAccess, "loadSessionEntry").mockReturnValue(undefined);
-        } else if (change === "writer") {
-          vi.spyOn(sessionAccess, "loadSessionEntry").mockReturnValue({
-            ...entry,
-            activeWriterRunId: "replacement-run",
+          await sessionAccess.deleteSessionEntryLifecycle({
+            ...sessionTarget,
+            archiveTranscript: false,
+            target: {
+              canonicalKey: sessionTarget.sessionKey,
+              storeKeys: [sessionTarget.sessionKey],
+            },
+            expectedSessionId: entry.sessionId,
           });
+        } else if (change === "writer") {
+          await sessionAccess.patchSessionEntryCore(sessionTarget, () => ({
+            activeWriterRunId: "replacement-run",
+          }));
         }
         gate.release.resolve();
         const outcome = await operation;
