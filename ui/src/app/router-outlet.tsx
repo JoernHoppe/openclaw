@@ -384,21 +384,15 @@ export function RouterOutlet(props: RouterOutletProps): SolidJSX.Element {
       if (disposed || !host.isConnected) {
         return false;
       }
-      const current = generation;
       // The island commits with Solid; descendants own their independent work.
       await Promise.resolve();
       if (disposed || !host.isConnected) {
         return false;
       }
-      if (current !== generation || committedGeneration !== generation) {
-        await new Promise<void>((resolve) => {
-          queueMicrotask(resolve);
-        });
-        continue;
-      }
-      if (!retainedGate.retiring && !transientGate.retiring) {
+      if (committedGeneration === generation && !retainedGate.retiring && !transientGate.retiring) {
         return isSettled();
       }
+      // Async render transactions may need a browser task before they can commit.
       await new Promise<void>((resolve) => {
         waiters.add(resolve);
       });
