@@ -40,22 +40,22 @@ it("retains SQL-free placement facts through bookkeeping, claims, dispatch, reti
       });
       expect(current()).toMatchObject({ state: "local", turnClaim: { claimId: claim.claimId } });
       const identity = requireOpenClawStateDatabaseIdentity({ db: database.db });
-      const beforeAck = current()!;
-      const afterAck = { ...beforeAck, lastLiveEventAckCursor: 1 };
+      const beforeResult = current()!;
+      const afterResult = { ...beforeResult, updatedAtMs: beforeResult.updatedAtMs + 1 };
       const resultPublication = stagePlacementWorkspaceResultWorkerPublication(
         identity,
         session.sessionId,
-        { placement: afterAck, pendingResult: undefined },
+        { placement: afterResult, pendingResult: undefined },
       );
-      expect(current()).toEqual(beforeAck);
+      expect(current()).toEqual(beforeResult);
       resultPublication.commit();
-      expect(current()).toEqual(afterAck);
+      expect(current()).toEqual(afterResult);
       const journalPublication = stagePlacementWorkspaceJournalWorkerPublication(
         identity,
         session.sessionId,
         true,
       );
-      expect(current()).toEqual(afterAck);
+      expect(current()).toEqual(afterResult);
       journalPublication.rollback();
       const local = await store.releaseTurn(claim);
       expect(current()).toEqual(local);
