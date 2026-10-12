@@ -438,12 +438,8 @@ function prepareChatSessionAbort(
     if (!canRunLifecycleCleanup) {
       return;
     }
-    params.assertCurrent?.();
-    result.aborted = params.onAuthorizedBeforeEmbeddedAbort?.() || result.aborted;
     const wasActive = Boolean(persistedSessionId && isEmbeddedAgentRunActive(persistedSessionId));
     params.assertCurrent?.();
-    // The legacy no-handle fallback also aborts reply operations. A captured
-    // Gateway controller must publish cancellation before that reply settles.
     const embeddedAborted = Boolean(
       params.stopEmbeddedRun &&
       !params.runId &&
@@ -452,9 +448,7 @@ function prepareChatSessionAbort(
       !embeddedController &&
       (sessionEmbeddedRun
         ? sessionEmbeddedRun.abort()
-        : params.requiredSessionId === undefined &&
-          !authorizedRuns.some((run) => run.sessionId === persistedSessionId) &&
-          abortEmbeddedAgentRun(persistedSessionId)),
+        : params.requiredSessionId === undefined && abortEmbeddedAgentRun(persistedSessionId)),
     );
     if (embeddedAborted) {
       result.aborted = true;
@@ -493,25 +487,10 @@ function prepareChatSessionAbort(
   const abortAuthorizedRuns = () => {
     params.assertCurrent?.();
     params.onControllerTargets?.(authorizedRuns);
-    if (!hasAuthorizedGatewayRuns) {
-      // The injected lifecycle callback must not turn a persisted session id into
-      // a bypass around a matching connection or protected run owner.
-      if (hasUnauthorizedOwner || hasUnauthorizedLifecycleOwner) {
-        result.unauthorized = true;
-        return;
-      }
-      params.assertCurrent?.();
-      if (commands.cancel()) {
-        result.aborted = true;
-      }
-      // With no owned Gateway run, the exact persisted session is the boundary,
-      // matching sessions.steer's operator.write behavior for ownerless work.
-      abortAdditional();
-      if (!hasWorkerRun || !params.requester.isAdmin || !canCancelWorkerSession) {
-        return;
-      }
-      params.assertCurrent?.();
-      cancelWorker();
+    // The injected lifecycle callback must not turn a persisted session id into
+    // a bypass around a matching connection or protected run owner.
+    if (!hasAuthorizedGatewayRuns && (hasUnauthorizedOwner || hasUnauthorizedLifecycleOwner)) {
+      result.unauthorized = true;
       return;
     }
     snapshots = authorizedRuns.flatMap(({ runId, entry }) => {
@@ -553,11 +532,11 @@ function prepareChatSessionAbort(
         recordRun(runId);
       }
     }
-    // Protected owners still fence broad lifecycle cleanup before active cancellation.
-    abortAdditional();
-    params.assertCurrent?.();
-    if (commands.cancel()) {
-      result.aborted = true;
+    // Hidden and preserved side runs must also block broad cleanup: authorization
+    // alone must not let the callback abort work intentionally excluded above.
+    if (canRunLifecycleCleanup) {
+      params.assertCurrent?.();
+      result.aborted = params.onAuthorizedBeforeEmbeddedAbort?.() || result.aborted;
     }
     for (const { runId, sessionKey, sessionId, agentId, entry } of authorizedRuns) {
       params.assertCurrent?.();
@@ -585,7 +564,14 @@ function prepareChatSessionAbort(
         recordRun(runId);
       }
     }
+    // Secondary cancellation must not retire reply abortability before its chat terminal.
+    params.assertCurrent?.();
+    if (commands.cancel()) {
+      result.aborted = true;
+    }
+    abortAdditional();
     const endedAt = Date.now();
+    const stopReason = params.stopReason ?? "rpc";
     for (const [kind, plan] of [
       ["agent", pendingAgent],
       ["chat", pendingChat],
@@ -596,7 +582,7 @@ function prepareChatSessionAbort(
         const abort = {
           context: params.context,
           runId,
-          stopReason: params.stopReason ?? "rpc",
+          stopReason,
           endedAt,
           expectedPayload: payload,
         };
@@ -612,25 +598,30 @@ function prepareChatSessionAbort(
         }
       }
     }
-    if (params.requester.isAdmin && canCancelWorkerSession) {
+    if (
+      (hasAuthorizedGatewayRuns || hasWorkerRun) &&
+      params.requester.isAdmin &&
+      canCancelWorkerSession
+    ) {
       params.assertCurrent?.();
       cancelWorker();
     }
   };
+  const hasOtherWork =
+    [activePlan, queuedPlan, pendingAgent, pendingChat].some((plan) =>
+      plan.matchedRunIds.some((runId) => runId !== selectedRunId),
+    ) ||
+    (hasWorkerRun && (!selectedRunId || !workerCancellation?.runIds.includes(selectedRunId)));
   return {
     canCascade: canRunLifecycleCleanup && !hasUnauthorizedLifecycleOwner,
     commands,
     sessionOrigin,
-    hasOtherWork:
-      [activePlan, queuedPlan, pendingAgent, pendingChat].some((plan) =>
-        plan.matchedRunIds.some((runId) => runId !== selectedRunId),
-      ) ||
-      (hasWorkerRun && (!selectedRunId || !workerCancellation?.runIds.includes(selectedRunId))),
+    hasOtherWork,
     result,
     abort: abortAuthorizedRuns,
     async finish() {
       const abortedRunIds = new Set(result.runIds);
-      const settlements = await Promise.allSettled([
+      const [worker, partial, exec, embedded, ...admitted] = await Promise.allSettled([
         workerCancellationPersistence,
         result.aborted && snapshots.length > 0
           ? persistAbortedPartials({
@@ -643,13 +634,15 @@ function prepareChatSessionAbort(
         ...admittedAbortPersistence,
       ]);
       // A captured session failure can also surface through partial persistence.
-      const failures = new Set(
-        settlements.flatMap((settled) => (settled.status === "rejected" ? [settled.reason] : [])),
-      );
+      const failures = new Set<unknown>();
+      for (const settled of [worker, partial, exec, embedded, ...admitted]) {
+        if (settled.status === "rejected") {
+          failures.add(settled.reason);
+        }
+      }
       if (params.session && !params.session.ok) {
         failures.add(params.session.error);
       }
-      const partial = settlements[1];
       const warning = partial.status === "fulfilled" ? partial.value : undefined;
       if (failures.size > 0) {
         const errors = [...failures];
@@ -725,7 +718,9 @@ export async function abortChatRunsForSessionKeyWithPartials(
     ...result,
     aborted:
       result.aborted ||
-      Boolean(descendants?.killed || descendants?.continuationRetired || descendants?.execAborted),
+      Boolean(descendants?.killed) ||
+      Boolean(descendants?.continuationRetired) ||
+      Boolean(descendants?.execAborted),
     descendants,
     ...(warning ? { warning } : {}),
   };

@@ -251,23 +251,20 @@ export async function prepareSessionLifecycleDrain(
               ...queueTarget,
               assertCurrent: () => params.authorize?.(),
             });
-            let aborted = cleared.followupCleared > 0 || cleared.laneCleared > 0;
-            // Agent deletion captured its exact owner before asynchronous inventory.
-            // Ordinary session Stop owns embedded cancellation and its persistence.
-            if (params.embeddedRun !== undefined || params.sessionKey === "global") {
-              params.authorize?.();
-              embeddedAborted = embeddedRun?.abort() === true;
-              aborted = embeddedAborted || aborted;
-            }
-            return aborted;
+            return cleared.followupCleared > 0 || cleared.laneCleared > 0;
           },
           onAuthorizedAfterQueuedAbort: ({ aborted }) => {
             embeddedAborted ||= aborted;
             return false;
           },
           onCancellationStarted: () => {
-            // Gateway controllers must publish cancellation before their reply
-            // operation becomes non-abortable; controller-less owners still drain.
+            // Agent deletion captured its exact owner before asynchronous inventory.
+            // Ordinary session Stop owns embedded cancellation and its persistence.
+            if (params.embeddedRun !== undefined || params.sessionKey === "global") {
+              params.authorize?.();
+              embeddedAborted = embeddedRun?.abort() === true;
+            }
+            // Let chat controllers publish cancellation before their reply becomes non-abortable.
             for (const operation of replyRuns) {
               params.authorize?.();
               if (isReplyOperationForSession(params, operation)) {
@@ -405,6 +402,8 @@ export async function prepareSessionLifecycleDrain(
       },
     };
   } catch (error) {
+    // Controller cancellation can revoke authority before the embedded fallback runs.
+    const embeddedCancellationAccepted = embeddedAborted || embeddedRun?.isAborted();
     // Accepted worker writes retain cleanup custody even after a caller timeout.
     // Only agent deletion additionally joins unbounded local runtime settlement.
     const settled = await Promise.allSettled([
@@ -414,7 +413,7 @@ export async function prepareSessionLifecycleDrain(
         ? [
             ...terminalDrains.map((drain) => drain.drained),
             admittedWork,
-            embeddedAborted ? embeddedRun?.waitForEnd(null) : undefined,
+            embeddedCancellationAccepted ? embeddedRun?.waitForEnd(null) : undefined,
             ...replyRuns
               .filter((operation) => operation.abortSignal.aborted)
               .map((operation) => waitForReplyOperationOwnerSettlement(operation, null)),
