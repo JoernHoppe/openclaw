@@ -22,6 +22,7 @@ import {
   openOpenClawAgentDatabase,
   runOpenClawAgentWriteTransaction,
 } from "../state/openclaw-agent-db.js";
+import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
 import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -43,6 +44,8 @@ afterEach(() => vi.restoreAllMocks());
 
 it("keeps sidebar display facts while bounding the wire payload", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const benchmark = process.env.OPENCLAW_SIDEBAR_BENCH === "1";
     const count = benchmark ? 5_000 : 8;
     const context = requestContext(rolePolicyConfig());
@@ -174,6 +177,8 @@ it("keeps sidebar display facts while bounding the wire payload", async () => {
 
 it("projects dashboard cards without sending session execution details", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const benchmark = process.env.OPENCLAW_DASHBOARD_BENCH === "1";
     const count = benchmark ? 200 : 2;
     const context = requestContext(rolePolicyConfig());
@@ -300,6 +305,8 @@ it("projects dashboard cards without sending session execution details", async (
 
 it("coalesces cold sidebar selection across row slices only for the same principal and filter", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const cfg = rolePolicyConfig();
     const context = requestContext(cfg);
     const alice = roleClient("view", "cold-alice");
@@ -363,6 +370,8 @@ it("shares encoded socket lists by identity and refreshes compact, published, an
   const start = 1_800_000_000_000;
   const clock = vi.spyOn(Date, "now").mockReturnValue(start);
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const cfg = rolePolicyConfig();
     const context = requestContext(cfg);
     const client = roleClient("view", "first-list");
@@ -598,6 +607,8 @@ it("shares encoded socket lists by identity and refreshes compact, published, an
 
 it("refreshes shared socket selection when the same viewer changes roles", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const cfg = rolePolicyConfig();
     const context = requestContext(cfg);
     const client = roleClient("view", "selection-viewer");
@@ -632,6 +643,8 @@ it("refreshes shared socket selection when the same viewer changes roles", async
 
 it("retains each embedded reader's identity when their shared row presentation is identical", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    using profileCatalog = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    void profileCatalog;
     const cfg = rolePolicyConfig();
     const context = requestContext(cfg);
     const clients = [roleClient("view", "reader-a"), roleClient("view", "reader-b")];
