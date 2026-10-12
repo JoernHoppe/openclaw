@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../../config/runtime-snapshot.js";
 import { createTestGatewayScheduler } from "../../../test-utils/gateway-scheduler-clock.js";
 import {
   withOpenClawTestState,
@@ -13,6 +14,7 @@ import type {
 } from "./internal-params.js";
 
 async function createSettlementFixture(state: OpenClawTestState) {
+  setRuntimeConfigSnapshot({});
   const { loadSessionEntry, replaceSessionEntry } =
     await import("../../../config/sessions/session-accessor.js");
   const {

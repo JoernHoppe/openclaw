@@ -6,6 +6,7 @@ import {
 } from "../../../test/helpers/promise.js";
 import { prepareReplyToolAuthorityCallerRead } from "../../agents/harness/host-private-capabilities.js";
 import { createNativeSessionBindingAuthority } from "../../agents/harness/native-session/binding-authority.js";
+import { captureRuntimeConfigAsyncReader } from "../../config/io.runtime.js";
 import { beginRestartRecoveryTerminalDelivery } from "../../config/sessions/restart-recovery-receipt.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
@@ -33,6 +34,7 @@ afterEach(() => {
 
 it("adopts active steering through prepared policy without caller-thread SQL", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    await captureRuntimeConfigAsyncReader()();
     const key = "agent:main:active-worker-steering";
     const policyKey = "agent:main:active-worker-policy";
     await upsertSessionEntryCore(
