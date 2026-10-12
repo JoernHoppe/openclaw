@@ -207,7 +207,7 @@ it("retains a logical-store worker transcript and refuses writer changes without
           request.stage !== "commit" ||
           !isRecord(request.facts) ||
           !isRecord(request.facts.publication) ||
-          request.facts.publication.kind !== "session-entry-replacements"
+          request.facts.publication.kind !== "session-entry-patch-committed"
         ) {
           admit(request, grant);
           return;
@@ -239,10 +239,10 @@ it("retains a logical-store worker transcript and refuses writer changes without
           async () => {
             await expect(
               patchSessionEntryCore(target, () => ({ activeWriterRunId: "rolled-back-writer" })),
-            ).rejects.toMatchObject({ code: "outcome-unknown" });
+            ).rejects.toThrow(rollback);
           },
         );
-        expect(rollbackSource).toThrow("transcript identity is no longer current");
+        expect(rollbackSource).not.toThrow();
       }
       await using source = await prepareWorkerTurnTranscriptSource(target);
       source();
