@@ -15,6 +15,7 @@ import {
   loadTranscriptEvents,
 } from "../../config/sessions/session-accessor.transcript.js";
 import { appendPreparedTranscriptEvent } from "../../config/sessions/session-transcript-event.js";
+import { waitForSessionTranscriptIndexReconcile } from "../../config/sessions/session-transcript-reconcile.js";
 import { executeSqliteQuerySync } from "../../infra/kysely-sync.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -79,6 +80,7 @@ export async function seedMessageCutSource(
     },
     () => {},
   );
+  await waitForSessionTranscriptIndexReconcile(toDatabaseOptions(resolveSqliteScope(scope)));
   return scope;
 }
 

@@ -387,31 +387,37 @@ describe("accepted input custody", () => {
     const databaseOptions = toDatabaseOptions(resolveSqliteScope(scope()));
     const appendCopy = createRelocation(receipt);
 
-    expect(() =>
-      runOpenClawAgentWriteTransaction(() => {
-        receipt.run(() => appendCopy(receipt.inputId, "rolled-back-outer"));
-        throw new Error("outer rollback");
-      }, databaseOptions),
-    ).toThrow("outer rollback");
-
-    runOpenClawAgentWriteTransaction(() => {
-      receipt.run(() => {
-        expect(appendCopy(receipt.inputId, "first-savepoint-copy")).toMatchObject({
-          ok: true,
-          value: { appended: true, messageId: "first-savepoint-copy" },
-        });
+    await runExclusiveSqliteSessionWrite(
+      resolveSqliteScope(scope()),
+      async () => {
         expect(() =>
           runOpenClawAgentWriteTransaction(() => {
-            appendCopy("first-savepoint-copy", "rolled-back-savepoint");
-            throw new Error("savepoint rollback");
+            receipt.run(() => appendCopy(receipt.inputId, "rolled-back-outer"));
+            throw new Error("outer rollback");
           }, databaseOptions),
-        ).toThrow("savepoint rollback");
-        expect(appendCopy("first-savepoint-copy", "final-savepoint-copy")).toMatchObject({
-          ok: true,
-          value: { appended: true, messageId: "final-savepoint-copy" },
-        });
-      });
-    }, databaseOptions);
+        ).toThrow("outer rollback");
+
+        runOpenClawAgentWriteTransaction(() => {
+          receipt.run(() => {
+            expect(appendCopy(receipt.inputId, "first-savepoint-copy")).toMatchObject({
+              ok: true,
+              value: { appended: true, messageId: "first-savepoint-copy" },
+            });
+            expect(() =>
+              runOpenClawAgentWriteTransaction(() => {
+                appendCopy("first-savepoint-copy", "rolled-back-savepoint");
+                throw new Error("savepoint rollback");
+              }, databaseOptions),
+            ).toThrow("savepoint rollback");
+            expect(appendCopy("first-savepoint-copy", "final-savepoint-copy")).toMatchObject({
+              ok: true,
+              value: { appended: true, messageId: "final-savepoint-copy" },
+            });
+          });
+        }, databaseOptions);
+      },
+      "session.pending-input.stage",
+    );
 
     for (const eventId of ["rolled-back-outer", "rolled-back-savepoint"]) {
       expect(await loadTranscriptEvents(scope())).not.toContainEqual(

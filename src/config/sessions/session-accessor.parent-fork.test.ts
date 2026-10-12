@@ -81,7 +81,7 @@ async function openForkedChildSession(
     { sessionKey: "agent:main:child", storePath },
     { sessionId: fork.sessionId, sessionFile: fork.sessionFile, updatedAt: Date.now() },
   );
-  return SessionManager.open({
+  return SessionManager.openAsync({
     agentId: "main",
     sessionId: fork.sessionId,
     sessionKey: "agent:main:child",
@@ -349,7 +349,11 @@ describe("forkSessionFromParentTranscript", () => {
       appendMode: "side",
     });
     const reopened = await openForkedChildSession(storePath, fork);
-    reopened.appendMessage({ role: "user", content: "continued", timestamp: Date.now() });
+    await reopened.appendMessageAsync({
+      role: "user",
+      content: "continued",
+      timestamp: Date.now(),
+    });
     const records = (await loadTranscriptEvents({
       agentId: "main",
       sessionId: fork.sessionId,
@@ -407,12 +411,12 @@ describe("forkSessionFromParentTranscript", () => {
     const fork = await forkChildTranscript(storePath, "parent-empty-opaque");
     const reopened = await openForkedChildSession(storePath, fork);
     expect(reopened.buildSessionContext().messages).toEqual([]);
-    const continuedId = reopened.appendMessage({
+    const continuedId = await reopened.appendMessageAsync({
       role: "user",
       content: "continued",
       timestamp: Date.now(),
     });
-    reopened.appendMessage({
+    await reopened.appendMessageAsync({
       role: "assistant",
       content: "done",
       api: "responses",
@@ -508,7 +512,7 @@ describe("forkSessionFromParentTranscript", () => {
     const fork = await forkChildTranscript(storePath, "parent-root-append");
     const reopened = await openForkedChildSession(storePath, fork);
     expect(reopened.buildSessionContext().messages).toHaveLength(1);
-    reopened.appendMessage({ role: "user", content: "new root", timestamp: Date.now() });
+    await reopened.appendMessageAsync({ role: "user", content: "new root", timestamp: Date.now() });
     const records = (await loadTranscriptEvents({
       agentId: "main",
       sessionId: fork.sessionId,
@@ -569,7 +573,11 @@ describe("forkSessionFromParentTranscript", () => {
     ]);
     const reopened = await openForkedChildSession(storePath, fork);
     expect(reopened.buildSessionContext().messages).toHaveLength(2);
-    reopened.appendMessage({ role: "user", content: "continued", timestamp: Date.now() });
+    await reopened.appendMessageAsync({
+      role: "user",
+      content: "continued",
+      timestamp: Date.now(),
+    });
     const continuedRecords = (await loadTranscriptEvents({
       agentId: "main",
       sessionId: fork.sessionId,
