@@ -5,7 +5,10 @@ import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-aut
 import type { SessionSharingTarget } from "../session-sharing-policy.js";
 import { SessionMutationAuthorizationChangedError } from "../session-sharing.js";
 import { handleChatSend } from "./chat-send-handler.js";
-import { withSessionMutationCommitGuard } from "./session-mutation-guards.js";
+import {
+  retainForwardedSessionMutationAuthorization,
+  withSessionMutationCommitGuard,
+} from "./session-mutation-guards.js";
 import {
   authorizeSessionSuggestionMutation,
   sessionSuggestionSessionChangedError,
@@ -107,6 +110,13 @@ export async function dispatchSuggestion(params: {
       assertAdmittedCurrent,
       assertRequestCurrent,
     );
+    if (chatAuthorization) {
+      chatAuthorization = retainForwardedSessionMutationAuthorization(
+        chatAuthorization,
+        params.sessionMutationAuthorization,
+      );
+      releaseChatAuthorization = chatAuthorization.release;
+    }
     chatAuthorization?.assertCurrent();
   } catch (error) {
     releaseChatAuthorization?.();

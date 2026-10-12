@@ -14,7 +14,9 @@ import { mintReplyMessageActionTurnCapability } from "../../auto-reply/reply/age
 import { createReplyOperation } from "../../auto-reply/reply/reply-run-registry.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import {
+  commitReplySessionInitialization,
   loadExactSessionEntryReadOnly,
+  loadReplySessionInitializationSnapshot,
   loadTranscriptEvents,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
@@ -41,6 +43,7 @@ import {
 } from "../message-action-turn-capability.js";
 import { createChatRunState } from "../server-chat-state.js";
 import { handleGatewayRequest } from "../server-methods.js";
+import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-authorization-async.js";
 import { resolveSessionMutationAuthorization } from "../session-sharing.js";
 import * as chatDispatch from "./chat-send-agent-dispatch.js";
 import { handleDirectExternalChatSend } from "./chat-send-external-entry.js";
@@ -73,6 +76,7 @@ it.each(admissionScenarios)(
     const directDashboard = dashboard && scenario !== "dashboard-internal";
     const dashboardReadAllowed = directDashboard && scenario !== "dashboard-unattested";
     const membershipRequired = scenario === "dashboard-member-revoked";
+    const createsDashboardSession = dashboardReadAllowed && !membershipRequired;
     const closure =
       scenario === "narrow-first-send"
         ? "rotated"
@@ -189,7 +193,10 @@ it.each(admissionScenarios)(
           message: "Keep this user turn in its session",
           idempotencyKey: runId,
         };
-        const authorization = resolveSessionMutationAuthorization({
+        const authorize = createsDashboardSession
+          ? resolveSessionMutationAuthorizationAsync
+          : resolveSessionMutationAuthorization;
+        const authorization = await authorize({
           client,
           context,
           method: "chat.send",
@@ -250,13 +257,33 @@ it.each(admissionScenarios)(
         const { admission, userTurn } = owned;
         const original = admission.activeRunAbort.entry;
         expect(original?.sessionId).toBe(initialSessionId);
-        // This focused test controls preparation; the native WS test proves its real producer.
-        await upsertSessionEntryCore(scope, {
+        const preparedEntry = {
           sessionId: dashboard ? initialSessionId : "committed-session",
           updatedAt: Date.now(),
           createdActor,
           ...(membershipRequired ? { visibility: "suggest" as const } : {}),
-        });
+        };
+        if (createsDashboardSession) {
+          const creationScope = { ...scope, storePath: owned.session.storePath };
+          const snapshot = await loadReplySessionInitializationSnapshot(creationScope);
+          const bindCreation = options.replyOptions?.bindSessionCreation;
+          const onCreated = options.replyOptions?.onSessionCreated;
+          if (!bindCreation || !onCreated) {
+            throw new Error("chat.send did not hand off its session creation owner");
+          }
+          const result = await commitReplySessionInitialization({
+            ...creationScope,
+            activeSessionKey: sessionKey,
+            expectedRevision: snapshot.revision,
+            sessionEntry: preparedEntry,
+            bindCreation,
+            onCreated,
+          });
+          expect(result.ok).toBe(true);
+        } else {
+          // Replacement scenarios control preparation independently of creation.
+          await upsertSessionEntryCore(scope, preparedEntry);
+        }
         const committed = loadExactSessionEntryReadOnly(scope);
         if (!committed) {
           throw new Error("session writer did not commit");
