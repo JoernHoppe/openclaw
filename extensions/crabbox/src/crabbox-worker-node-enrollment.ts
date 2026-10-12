@@ -147,8 +147,9 @@ setPhase("preparation");
   // Forks of a warm image load disk blocks lazily on first read, so a cold node start
   // spends ~30 s on serial reads. A boot-time parallel read of the current runtime
   // overlaps that with SSH readiness. Best effort: images without cron keep the cold start.
+  // Only a Crabbox run on this lease edits the crontab; local executions (tests) never do.
   const installRuntimePrefetch = () => {
-    if (process.platform !== "linux") return;
+    if (process.platform !== "linux" || process.env.CRABBOX_LEASE_ID !== leaseId) return;
     try {
       const script = path.join(runtimeRoot, ".prefetch.sh");
       const nodeDir = path.dirname(path.dirname(fs.realpathSync(process.execPath)));
