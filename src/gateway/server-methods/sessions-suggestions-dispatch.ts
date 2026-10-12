@@ -1,13 +1,6 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
-import { captureIncognitoSessionBinding } from "../../config/sessions/session-incognito-binding.js";
 import type { StoredSessionSuggestion } from "../../config/sessions/session-sharing-store.types.js";
-import {
-  isSessionWorkStartInvalidatedError,
-  SessionWorkStartInvalidatedError,
-} from "../../config/sessions/work-start-error.js";
-import { isIncognitoSessionKey } from "../../routing/session-key.js";
-import { withReadySessionRows } from "../session-row-prepared-read.js";
-import { requireSessionRowProjection } from "../session-row-projection-access.js";
+import { isSessionWorkStartInvalidatedError } from "../../config/sessions/work-start-error.js";
 import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-authorization-async.js";
 import type { SessionSharingTarget } from "../session-sharing-policy.js";
 import { SessionMutationAuthorizationChangedError } from "../session-sharing.js";
@@ -90,45 +83,12 @@ export async function dispatchSuggestion(params: {
     ) {
       return { ok: false, error: response?.[2] };
     }
-    const binding = captureIncognitoSessionBinding({
-      agentId: params.target.agentId,
-      sessionKey: params.target.canonicalKey,
-      storePath: current.physicalStorePath,
-    });
-    const expectedTarget = binding
-      ? {
-          agentId: params.target.agentId,
-          sessionKey: params.target.canonicalKey,
-          storePath: binding.actor.path,
-          sessionId: params.expectedSessionId,
-        }
-      : await withReadySessionRows(
-          requireSessionRowProjection(params.context),
-          () => [{ key: params.target.canonicalKey, agentId: params.target.agentId }],
-          (sessionRowRead) => {
-            const row = sessionRowRead.describe({
-              key: params.target.canonicalKey,
-              agentId: params.target.agentId,
-            });
-            const rowSourcePath =
-              row &&
-              (isIncognitoSessionKey(row.key)
-                ? row.storeTarget.storePath
-                : sessionRowRead.readSource(row)?.path);
-            if (!row || rowSourcePath !== current.physicalStorePath) {
-              throw new SessionWorkStartInvalidatedError(
-                "session source changed before suggestion dispatch",
-              );
-            }
-            return {
-              agentId: params.target.agentId,
-              sessionKey: params.target.canonicalKey,
-              // Prepared rows retain aliases; the source check above binds the physical store.
-              storePath: row.storeTarget.storePath,
-              sessionId: params.expectedSessionId,
-            };
-          },
-        );
+    const expectedTarget = {
+      agentId: current.target.agentId,
+      sessionKey: current.target.canonicalKey,
+      storePath: current.target.storePath,
+      sessionId: params.expectedSessionId,
+    };
     const authorization = await resolveSessionMutationAuthorizationAsync({
       client: chatClient,
       method: "chat.send",
@@ -139,7 +99,6 @@ export async function dispatchSuggestion(params: {
     });
     releaseChatAuthorization = authorization.authorization?.release;
     assertRequestCurrent();
-    params.readCurrent();
     if (authorization.error) {
       return { ok: false, error: authorization.error };
     }

@@ -252,7 +252,7 @@ it.each(admissionScenarios)(
         expect(original?.sessionId).toBe(initialSessionId);
         // This focused test controls preparation; the native WS test proves its real producer.
         await upsertSessionEntryCore(scope, {
-          sessionId: membershipRequired ? initialSessionId : "committed-session",
+          sessionId: dashboard ? initialSessionId : "committed-session",
           updatedAt: Date.now(),
           createdActor,
           ...(membershipRequired ? { visibility: "suggest" as const } : {}),

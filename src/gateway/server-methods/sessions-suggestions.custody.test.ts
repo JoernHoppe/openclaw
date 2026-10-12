@@ -96,7 +96,7 @@ describe("suggestion dispatch through real chat input custody", () => {
     }
     try {
       const response = await resolveSuggestion();
-      expect(fixture.beforeApprove).toHaveBeenCalledOnce();
+      expect(fixture.beforeApprove, JSON.stringify(response.mock.calls)).toHaveBeenCalledOnce();
       expect(response).toHaveBeenCalledOnce();
       if (beforeCustody) {
         expect(await pendingAtApproval).toEqual([

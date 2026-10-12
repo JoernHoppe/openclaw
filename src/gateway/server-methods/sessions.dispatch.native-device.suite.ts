@@ -236,7 +236,7 @@ export function registerNativeDeviceDispatchTests({
       { deviceId: "device-1" },
     );
 
-    expect(dispatch).toHaveBeenCalledWith(
+    expect(dispatch, JSON.stringify(vi.mocked(respond).mock.calls)).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: "device:device-1",
         deviceId: "device-1",
