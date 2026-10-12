@@ -65,13 +65,14 @@ describe("followup queue durable input consumption", () => {
   });
 
   const createStagedRun = async (runId: string) => {
+    const config = { session: { store: fixture.storePath() } };
     const beforeMessageWrite = vi.fn((params: { message: PersistedUserTurnMessage }) => ({
       ...params.message,
       content: `${runId} approved`,
     }));
     const recorder = createUserTurnTranscriptRecorder({
       input: { text: `${runId} private source`, idempotencyKey: `${runId}:user` },
-      target: { ...scope(), sessionEntry: undefined },
+      target: { ...scope(), config, sessionEntry: undefined },
       beforeMessageWrite,
       updateMode: "none",
     });
@@ -89,7 +90,7 @@ describe("followup queue durable input consumption", () => {
         agentId: "main",
         sessionKey,
         sessionId,
-        config: { session: { store: fixture.storePath() } },
+        config,
       },
     };
     return { run, beforeMessageWrite };
@@ -160,7 +161,7 @@ describe("followup queue durable input consumption", () => {
       messageId: "unstaged",
       userTurnTranscriptRecorder: createUserTurnTranscriptRecorder({
         input: { text: "unstaged transcript body" },
-        target: { ...scope(), sessionEntry: undefined },
+        target: { ...scope(), config: staged.run.run.config, sessionEntry: undefined },
       }),
       turnAdoptionLifecycle: { admission: "cancel-only", onAdopted: async () => {} },
     };
