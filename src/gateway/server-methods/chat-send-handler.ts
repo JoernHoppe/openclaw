@@ -10,6 +10,7 @@ import type {
   SessionGoalOperation,
   SessionGoalOperationResult,
 } from "../../config/sessions/goals-operations.js";
+import type { SessionEntryCreationOperation } from "../../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { withSessionPendingInputAuthorityGuard } from "../../config/sessions/session-pending-input-authority.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import { logVerbose } from "../../globals.js";
@@ -634,6 +635,18 @@ async function handleChatSendWithOptions(
       },
       cronCreatorAuthority,
       assertDashboardReadCurrent,
+      ...(!entry && sessionMutationAuthorization?.bindCreation
+        ? {
+            bindSessionCreation: (operation: SessionEntryCreationOperation) => {
+              sessionMutationAuthorization.bindCreation?.(
+                { sessionKey, agentId: session.agentId },
+                operation,
+              );
+              return sessionMutationAuthorization.assertCurrent;
+            },
+            onSessionCreated: sessionMutationAuthorization.recordCreatedSession,
+          }
+        : {}),
       externalAuthorityAdmission,
       injection: {
         beginCapturedMessageInjection,

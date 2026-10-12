@@ -35,6 +35,7 @@ export type InitSessionStateParams = {
   resumeRequestedSession?: boolean;
   signal?: AbortSignal;
   bindSessionCreation?: SessionEventExecution["bindSessionCreation"];
+  onSessionCreated?: InternalGetReplyOptions["onSessionCreated"];
 };
 
 export type InitSessionStateAttemptContext = {
@@ -201,7 +202,9 @@ export function resolveReplySessionInitializationOptions(
       : {}),
     pinExpectedExistingSession: opts?.pinExpectedExistingSession === true,
     newlyCreatedSessionId: opts?.newlyCreatedSessionId,
-    bindSessionCreation: opts?.internalEventExecution?.bindSessionCreation,
+    bindSessionCreation:
+      opts?.internalEventExecution?.bindSessionCreation ?? opts?.bindSessionCreation,
+    onSessionCreated: opts?.onSessionCreated,
     requestedSessionId: opts?.requestedSessionId,
     resumeRequestedSession: opts?.resumeRequestedSession,
     signal: opts?.abortSignal,

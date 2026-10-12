@@ -420,6 +420,8 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                     ? { expectedExistingSessionId: entry.sessionId }
                     : {}),
                 resumeRequestedSession: reconnectResumeRequested,
+                bindSessionCreation: params.bindSessionCreation,
+                onSessionCreated: params.onSessionCreated,
                 onSessionPrepared: (binding) => {
                   phase?.mark("preparation");
                   admission.onSessionPrepared(binding);

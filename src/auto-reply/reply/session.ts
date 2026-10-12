@@ -742,6 +742,7 @@ async function initSessionStateAttemptLocked(
   const committed = await measureDiagnosticsTimelineSpan("reply.session.commit", () =>
     commitReplySessionInitialization({
       bindCreation: params.bindSessionCreation,
+      onCreated: params.onSessionCreated,
       ...sessionTarget,
       commitGuard: !entry
         ? () => {
