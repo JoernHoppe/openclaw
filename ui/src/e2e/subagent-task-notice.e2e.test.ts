@@ -100,16 +100,25 @@ suite.define(() => {
         expect(
           await details.evaluate((element) => element.scrollHeight > element.clientHeight),
         ).toBe(true);
-        const footerTop = await notice.evaluate((element) => element.getBoundingClientRect().top);
+        const footerTop = await pane.evaluate(
+          (element) =>
+            element
+              .querySelector(".agent-chat__disabled-banner--replacement")!
+              .getBoundingClientRect().top,
+        );
         await details.hover();
         await page.mouse.wheel(0, 1000);
         await expect
           .poll(() => details.evaluate((element) => element.scrollTop))
           .toBeGreaterThan(0);
-        expect(await notice.evaluate((element) => element.getBoundingClientRect().top)).toBeCloseTo(
-          footerTop,
-          0,
-        );
+        expect(
+          await pane.evaluate(
+            (element) =>
+              element
+                .querySelector(".agent-chat__disabled-banner--replacement")!
+                .getBoundingClientRect().top,
+          ),
+        ).toBeCloseTo(footerTop, 0);
         await notice.getByRole("button", { name: "Open parent session", exact: true }).click({
           trial: true,
         });
