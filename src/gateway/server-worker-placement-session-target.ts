@@ -17,6 +17,7 @@ import { assertExistingDatabaseIdentity } from "../infra/sqlite-worker-identity.
 import { runExclusiveSessionLifecycleMutation } from "../sessions/session-lifecycle-admission.js";
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-workspaces.js";
+import { DEVICE_FOLDER_MANIFEST_REF } from "../worker/device-folder.js";
 import type * as sessionUtils from "./session-utils.js";
 import type { WithPreparedWorkerWorkspaceRecovery } from "./worker-environments/placement-reclaim-contract.js";
 import type {
@@ -314,7 +315,7 @@ export async function resolveWorkerPlacementSessionTarget(params: {
   expectedTarget?: ReturnType<typeof sessionUtils.resolveGatewaySessionStoreTargetWithStore>;
   expectedEntry?: Pick<
     NonNullable<ReturnType<typeof loadSessionEntryReadOnly>>,
-    "lifecycleRevision" | "worktree" | "repositoryWorkspaceId"
+    "lifecycleRevision" | "worktree" | "repositoryWorkspaceId" | "deviceFolder"
   >;
   errorMessage: string;
   readTarget?: (
@@ -365,7 +366,9 @@ export async function resolveWorkerPlacementSessionTarget(params: {
     (params.expectedEntry !== undefined &&
       (initialEntry.lifecycleRevision !== params.expectedEntry.lifecycleRevision ||
         initialEntry.worktree?.id !== params.expectedEntry.worktree?.id ||
-        initialEntry.repositoryWorkspaceId !== params.expectedEntry.repositoryWorkspaceId))
+        initialEntry.repositoryWorkspaceId !== params.expectedEntry.repositoryWorkspaceId ||
+        initialEntry.deviceFolder?.deviceId !== params.expectedEntry.deviceFolder?.deviceId ||
+        initialEntry.deviceFolder?.path !== params.expectedEntry.deviceFolder?.path))
   ) {
     throw targetChangedError();
   }
@@ -374,14 +377,16 @@ export async function resolveWorkerPlacementSessionTarget(params: {
     archivedAt: initialEntry.archivedAt,
     worktreeId: initialEntry.worktree?.id,
     repositoryWorkspaceId: initialEntry.repositoryWorkspaceId,
+    deviceFolder: initialEntry.deviceFolder,
   };
   const acceptWorktree = captureWorktreeRegistryReadGuard(worktreeContext, "source-owner");
-  const worktree = initialIdentity.repositoryWorkspaceId
-    ? undefined
-    : await params.sessionRuntime.managedWorktrees.findLiveByOwner(
-        "session",
-        initialTarget.canonicalKey,
-      );
+  const worktree =
+    initialIdentity.repositoryWorkspaceId || initialIdentity.deviceFolder
+      ? undefined
+      : await params.sessionRuntime.managedWorktrees.findLiveByOwner(
+          "session",
+          initialTarget.canonicalKey,
+        );
   const assertWorktreeCurrent = acceptWorktree(
     worktree ? { ...worktree, ownerKind: "session" } : undefined,
   );
@@ -408,9 +413,26 @@ export async function resolveWorkerPlacementSessionTarget(params: {
       entry.lifecycleRevision !== initialIdentity.lifecycleRevision ||
       entry.archivedAt !== initialIdentity.archivedAt ||
       entry.worktree?.id !== initialIdentity.worktreeId ||
-      entry.repositoryWorkspaceId !== initialIdentity.repositoryWorkspaceId
+      entry.repositoryWorkspaceId !== initialIdentity.repositoryWorkspaceId ||
+      entry.deviceFolder?.deviceId !== initialIdentity.deviceFolder?.deviceId ||
+      entry.deviceFolder?.path !== initialIdentity.deviceFolder?.path
     ) {
       throw targetChangedError();
+    }
+    if (entry.deviceFolder) {
+      if (entry.worktree || entry.repositoryWorkspaceId) {
+        throw targetChangedError();
+      }
+      return {
+        config,
+        target,
+        entry,
+        worktree: undefined,
+        workspace: {
+          kind: "device-folder",
+          ...entry.deviceFolder,
+        } satisfies WorkerSessionWorkspace,
+      };
     }
     if (entry.repositoryWorkspaceId) {
       prepared?.assertSourceCurrent();
@@ -580,15 +602,23 @@ export function createWorkerPlacementNodeWorkspaceBindingResolver(options: {
     ) {
       throw new Error("Attached repository workspace has no pinned baseline");
     }
+    if (
+      (workspace.kind === "device-folder") !==
+      (placement.workspaceBaseManifestRef === DEVICE_FOLDER_MANIFEST_REF)
+    ) {
+      throw new Error("Placement workspace kind does not match the durable session folder binding");
+    }
     return {
       source:
-        workspace.kind === "local"
-          ? { kind: "local" as const, path: workspace.path }
-          : {
-              kind: "repository" as const,
-              baseCommit: workspace.repository.baseCommit!,
-              baseManifestRef: workspace.repository.baseManifestHash!,
-            },
+        workspace.kind === "device-folder"
+          ? { kind: "device-folder" as const, deviceId: workspace.deviceId, path: workspace.path }
+          : workspace.kind === "local"
+            ? { kind: "local" as const, path: workspace.path }
+            : {
+                kind: "repository" as const,
+                baseCommit: workspace.repository.baseCommit!,
+                baseManifestRef: workspace.repository.baseManifestHash!,
+              },
       manifestRef: placement.workspaceBaseManifestRef,
       remoteWorkspaceDir: placement.remoteWorkspaceDir,
       sessionKey: placement.sessionKey,
