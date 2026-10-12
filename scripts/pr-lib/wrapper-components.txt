@@ -635,7 +635,6 @@ src/config/sessions/session-entry-snapshot-values.ts
 src/config/sessions/session-entry-snapshots.ts
 src/config/sessions/session-entry-state-format.ts
 src/config/sessions/transcript-append-parent.ts
-src/config/sessions/transcript-entry-anchor.ts
 src/config/sessions/session-entry-window.types.ts
 src/config/sessions/types.ts
 src/config/sessions/session-history-worker-errors.ts
@@ -1248,8 +1247,6 @@ src/logging/logger-settings-internal.ts
 src/logging/logger.ts
 src/logging/redact-bounded.ts
 src/logging/redact-edit-composition.ts
-src/logging/redact-internal-state.ts
-src/logging/redact-internal.ts
 src/logging/redact-json-tokens.ts
 src/logging/redact-json.ts
 src/logging/redact-linear-matchers.ts
@@ -1984,6 +1981,7 @@ src/config/sessions/session-transcript-projection-rebuild.ts
 src/config/sessions/session-transcript-read-bytes.ts
 src/config/sessions/session-transcript-worker.types.ts
 src/config/sessions/transcript-assistant-delivery-read.ts
+src/config/sessions/transcript-entry-anchor.ts
 src/config/sessions/transcript-header.ts
 src/config/sessions/transcript-message-identity.ts
 src/config/sessions/transcript-navigation-fields.ts
