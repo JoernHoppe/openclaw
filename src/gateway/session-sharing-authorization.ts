@@ -85,6 +85,22 @@ export function prepareSessionMutationAuthorizationRequest(
     }
     params = { ...params, requestParams: normalized.value };
   }
+  const requester =
+    params.method === "question.request"
+      ? params.client?.internal?.agentRuntimeIdentity
+      : undefined;
+  if (requester && isRecord(params.requestParams)) {
+    // The question owner uses the admitted run, not caller-supplied correlation fields.
+    params = {
+      ...params,
+      requestParams: {
+        ...params.requestParams,
+        agentId: requester.agentId,
+        sessionKey: requester.sessionKey,
+        runId: requester.operationalRunInstance.runId,
+      },
+    };
+  }
   const patch =
     params.method === "sessions.patchMany" && isRecord(params.requestParams)
       ? params.requestParams.patch

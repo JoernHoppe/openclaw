@@ -264,6 +264,7 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
               login: identity.account.login,
             };
           } catch (error) {
+            deadline.signal.throwIfAborted();
             sharedUnavailableReason =
               error instanceof GitHubIdentityError ? error.reason : "unverified";
           }

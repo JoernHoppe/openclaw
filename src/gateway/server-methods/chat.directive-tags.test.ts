@@ -3730,8 +3730,9 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     const mutationStarted = createDeferred();
     const releaseMutation = createDeferred();
     const sessionSelected = createDeferred();
-    const { loadGatewaySessionEntryReadOnlyInWorker } =
-      await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
+    const { loadGatewaySessionEntryReadOnlyInWorker } = await vi.importActual<
+      typeof import("../session-utils-store-worker.js")
+    >("../session-utils-store-worker.js");
     const readSession = vi
       .spyOn(gatewaySessionUtils, "loadGatewaySessionEntryReadOnlyInWorker")
       .mockImplementationOnce(async (params) =>

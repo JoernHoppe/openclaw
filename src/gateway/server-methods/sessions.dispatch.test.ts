@@ -546,7 +546,14 @@ describe("sessions.dispatch", () => {
       workerSessionPlacementService: { getMany: () => new Map([[sessionId, provisioning]]) },
     });
     const changes = vi.fn();
-    onTestFinished(sessionChanges.subscribe(changes));
+    onTestFinished(
+      sessionChanges.subscribe((change) => {
+        // Capture placement broadcasts, excluding writes that prepare the fixture store.
+        if ("sessionKey" in change && change.agentId === undefined) {
+          changes(change);
+        }
+      }),
+    );
     const respond = await invoke(context, { profileId: "test", machineClass: "large", os: "os-a" });
     expect(mocks.runCommandWithTimeout).not.toHaveBeenCalled();
 
@@ -786,7 +793,14 @@ describe("sessions.dispatch", () => {
       const reclaim = vi.fn().mockResolvedValue(reclaimed);
       const context = reclaimContext(() => reclaimed, reclaim);
       const changes = vi.fn();
-      onTestFinished(sessionChanges.subscribe(changes));
+      onTestFinished(
+        sessionChanges.subscribe((change) => {
+          // Capture placement broadcasts, excluding writes that prepare the fixture store.
+          if ("sessionKey" in change && change.agentId === undefined) {
+            changes(change);
+          }
+        }),
+      );
       const respond = await invokeSessionReclaim(context);
 
       expect(reclaim).toHaveBeenCalledWith(
@@ -853,7 +867,14 @@ describe("sessions.dispatch", () => {
       );
 
       const changes = vi.fn();
-      onTestFinished(sessionChanges.subscribe(changes));
+      onTestFinished(
+        sessionChanges.subscribe((change) => {
+          // Capture placement broadcasts, excluding writes that prepare the fixture store.
+          if ("sessionKey" in change && change.agentId === undefined) {
+            changes(change);
+          }
+        }),
+      );
       const respond = await invokeSessionReclaim(context);
 
       expectReclaimed(respond);
@@ -888,7 +909,14 @@ describe("sessions.dispatch", () => {
 
           try {
             const changes = vi.fn();
-            onTestFinished(sessionChanges.subscribe(changes));
+            onTestFinished(
+              sessionChanges.subscribe((change) => {
+                // Capture placement broadcasts, excluding writes that prepare the fixture store.
+                if ("sessionKey" in change && change.agentId === undefined) {
+                  changes(change);
+                }
+              }),
+            );
             const respond = await invokeSessionReclaim(context);
 
             expect(respond).toHaveBeenCalledWith(

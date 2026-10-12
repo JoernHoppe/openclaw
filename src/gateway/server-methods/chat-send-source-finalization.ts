@@ -447,6 +447,11 @@ async function finalizeChatSendAgentReplyPayloads(
       }
     }
     return { kind: "delivered", hasSourceReplyTranscriptMirror };
+  } catch (error) {
+    if (!authorizeDelivery("reply finalization")) {
+      return { kind: "dropped", reason: "no-visible-content" };
+    }
+    throw error;
   } finally {
     if (!authorityTransferred) {
       release();
