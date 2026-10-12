@@ -214,6 +214,8 @@ setup automatically and opens custodian onboarding in the Control UI. The
 custodian prepares available AI access and explains the selection and alternatives.
 **Use a different Gateway** opens Manage Gateways, **Review permissions** opens
 this computer's permissions, and **Open AI setup** opens Model Setup.
+The card labels the local Gateway **This computer** and saved remote Gateways
+by name; its native actions retain the selected Gateway's base path.
 
 Automatic setup uses the same bundled runtime, installer, and CLI-managed service
 as manual local setup. It never automatically joins a discovered Gateway. Existing

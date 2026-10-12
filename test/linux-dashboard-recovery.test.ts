@@ -356,6 +356,7 @@ test.each(
   [
     { platform: "freebsd", externalService: true },
     { platform: "linux", externalService: false },
+    { platform: "windows", externalService: false },
   ].flatMap((entry) =>
     [true, false].map((releaseBuild) => Object.assign({}, entry, { releaseBuild })),
   ),

@@ -83,14 +83,16 @@ host bootstrap is supported or verified.
 
 ## Native setup actions
 
-The shared native device settings bridge also accepts
-`{type: "open", panel: "gateways" | "permissions" | "ai-setup"}`. Use it through
-the Control UI's shell-agnostic native capability layer. `gateways` opens the
-existing Manage Gateways window; the other panels navigate the selected main
-dashboard to `settings/device/permissions` or `settings/model-setup`, preserving
-its Gateway base path. These actions resolve to `null` and reject unsupported
-panels or stale documents. They share the existing document token, origin/path,
-and generation checks; reading tabs receive no access.
+Before the Control UI boots, the selected main dashboard receives
+`window.__OPENCLAW_NATIVE_SETUP__`. Its `currentGateway` follows the native
+Gateway selection, labeling the local Gateway **This computer** and remote
+Gateways by their saved name. `openGateways` opens Manage Gateways;
+`reviewPermissions` and `openAiSetup` open `settings/device/permissions` and
+`settings/model-setup`, preserving the Gateway base path.
+
+The capability uses the existing native device-settings transport and its
+document token, origin/path, and generation checks. Reading tabs receive no
+access. Failed actions show the dashboard's native notice.
 
 ## Omarchy
 
@@ -290,10 +292,17 @@ The driver owns its temporary HOME and Secret Service. It verifies that ordinary
 window selection leaves the Primary configuration unchanged. The Linux App
 workflow runs this scenario and retains its screenshots and results.
 
-Use `--gateway-onboarding` in place of `--gateway-switch` to exercise local
-installation with a synthetic installer, leave Model Setup, and verify native
-window controls and Gateway actions under a non-root Gateway path. This scenario
-uses the same isolated fixtures and also runs in the Linux App workflow.
+Use `--gateway-onboarding` in place of `--gateway-switch` to exercise automatic
+local installation with a synthetic installer and the shared Control UI setup
+card with synthetic provider results. Build that card fixture first:
+
+```bash
+node scripts/run-node-package-bin.mts vite build --config apps/linux/tests/fixtures/vite.onboarding.config.ts
+```
+
+The scenario clicks the card's native actions and verifies window controls and
+Gateway authority under a non-root path. It uses the same isolated fixtures and
+also runs in the Linux App workflow.
 Stage the verified runtime with `node apps/linux/scripts/stage-runtime.mjs`
 before `cargo build --locked`. The driver copies the compiled app's runtime
 resources into its private Cargo layout and exercises the real Bun launcher
@@ -313,9 +322,8 @@ The custodian prepares available AI access and explains what was selected. Its
 open Manage Gateways, this computer's permissions, and Model Setup respectively.
 Existing configurations and saved remote connections keep their current startup
 behavior. If automatic setup fails, the app shows the error alongside the existing
-local and remote choices so you can retry or connect elsewhere. Windows local
-installation depends on the Windows installer and service support available in
-the build.
+local and remote choices so you can retry or connect elsewhere. Windows uses
+the bundled Windows runtime, PowerShell installer, and CLI-owned service setup.
 
 The manual setup screen explains what OpenClaw can do and asks where your
 assistant should live:
