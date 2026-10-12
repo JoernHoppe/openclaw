@@ -542,20 +542,31 @@ mod tests {
 
     #[cfg(any(target_os = "linux", windows))]
     #[test]
-    fn rejects_corrupted_missing_or_truncated_resource_envelope() {
+    fn rejects_corrupted_missing_or_truncated_resource_payload() {
         let fixture = Fixture::new();
         let mut corrupt = [RESOURCE_PREFIX, b"synthetic runtime"].concat();
         corrupt[0] = b'!';
-        for bytes in [
-            corrupt,
-            b"synthetic runtime".to_vec(),
-            RESOURCE_PREFIX[..5].to_vec(),
-        ] {
+        let invalid = if cfg!(target_os = "linux") {
+            [
+                corrupt,
+                b"synthetic runtime".to_vec(),
+                RESOURCE_PREFIX[..5].to_vec(),
+            ]
+        } else {
+            [
+                [RESOURCE_PREFIX, b"synthetic runtime"].concat(),
+                b"synthetic runtim".to_vec(),
+                Vec::new(),
+            ]
+        };
+        let expected_error = if cfg!(target_os = "linux") {
+            "resource envelope changed"
+        } else {
+            "checksum changed"
+        };
+        for bytes in invalid {
             fs::write(fixture.source.join(BUN_PATH), bytes).unwrap();
-            assert!(fixture
-                .seed()
-                .unwrap_err()
-                .contains("resource envelope changed"));
+            assert!(fixture.seed().unwrap_err().contains(expected_error));
             assert!(
                 !fixture.prefix.exists(),
                 "reject invalid resources before installation"
@@ -584,12 +595,18 @@ mod tests {
     #[test]
     fn rejects_missing_manifest_identity_and_unexpected_resources() {
         let fixture = Fixture::new();
+        let expected_error = if cfg!(windows) {
+            "does not include a signed Windows Gateway runtime"
+        } else {
+            "no embedded runtime"
+        };
         assert!(
             seed_at(&fixture.source, &fixture.prefix, "{}", &|_, _| Ok(()))
                 .unwrap_err()
                 .to_string()
-                .contains("no embedded runtime")
+                .contains(expected_error)
         );
+        assert!(!fixture.prefix.exists());
         fs::write(fixture.source.join("extra"), "unexpected").unwrap();
         assert!(fixture.seed().is_err());
         fs::remove_file(fixture.source.join("extra")).unwrap();
