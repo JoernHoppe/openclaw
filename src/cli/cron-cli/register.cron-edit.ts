@@ -65,8 +65,11 @@ async function readDroppedCommandEnvKeys(
   readExistingCronJob: () => Promise<CronJobForEdit>,
   patch: Record<string, unknown>,
 ): Promise<string[]> {
-  const payload = patch.payload as { env?: unknown } | undefined;
-  if (payload?.env === undefined) {
+  const payload = patch.payload;
+  if (typeof payload !== "object" || payload === null || !("env" in payload)) {
+    return [];
+  }
+  if (payload.env === undefined) {
     return [];
   }
   try {

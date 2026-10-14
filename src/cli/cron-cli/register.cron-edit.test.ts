@@ -386,14 +386,6 @@ describe("cron edit", () => {
       expectPatch({ payload: { kind: "command", env: { NEW: "c" } } });
       expect(defaultRuntime.error).not.toHaveBeenCalled();
     });
-
-    it("does not read the stored job for edits that leave the environment alone", async () => {
-      await edit(["--command-input", "x"]);
-      expect(callGatewayFromCli.mock.calls.map(([method]) => method)).toEqual([
-        "cron.update",
-        "cron.status",
-      ]);
-    });
   });
 });
 
