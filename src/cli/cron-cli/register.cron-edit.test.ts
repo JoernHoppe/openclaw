@@ -339,6 +339,62 @@ describe("cron edit", () => {
     await edit([flag]);
     expectPatch({ delivery: { [field]: null } });
   });
+
+  describe("--command-env", () => {
+    const storedEnv = { KEEP: "stored-value", DROP: "other-stored-value" };
+
+    it("names stored variables that the replacement drops, never their values", async () => {
+      existing({
+        configRevision: "revision",
+        payload: { kind: "command", argv: ["echo"], env: storedEnv },
+      });
+      await edit(["--command-env", "KEEP=new-value"]);
+      expectPatch(
+        { payload: { kind: "command", env: { KEEP: "new-value" } } },
+        { expectedConfigRevision: "revision" },
+      );
+      expect(defaultRuntime.error).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining("removed DROP."),
+      );
+      const warning = vi.mocked(defaultRuntime.error).mock.calls[0]?.[0] as string;
+      expect(warning).not.toContain("stored-value");
+      expect(warning).not.toContain("new-value");
+    });
+
+    it("stays quiet when the replacement keeps every stored variable", async () => {
+      existing({ payload: { kind: "command", argv: ["echo"], env: storedEnv } });
+      await edit(["--command-env", "DROP=a", "--command-env", "KEEP=b", "--command-env", "NEW=c"]);
+      expectPatch({ payload: { kind: "command", env: { DROP: "a", KEEP: "b", NEW: "c" } } });
+      expect(defaultRuntime.error).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet when the stored command has no environment", async () => {
+      existing({ payload: { kind: "command", argv: ["echo"] } });
+      await edit(["--command-env", "NEW=c"]);
+      expectPatch({ payload: { kind: "command", env: { NEW: "c" } } });
+      expect(defaultRuntime.error).not.toHaveBeenCalled();
+    });
+
+    it("still applies the edit when the stored job cannot be read", async () => {
+      callGatewayFromCli.mockImplementation(async (method: string) => {
+        if (method === "cron.get") {
+          throw new Error("gateway unavailable");
+        }
+        return { ok: true };
+      });
+      await edit(["--command-env", "NEW=c"]);
+      expectPatch({ payload: { kind: "command", env: { NEW: "c" } } });
+      expect(defaultRuntime.error).not.toHaveBeenCalled();
+    });
+
+    it("does not read the stored job for edits that leave the environment alone", async () => {
+      await edit(["--command-input", "x"]);
+      expect(callGatewayFromCli.mock.calls.map(([method]) => method)).toEqual([
+        "cron.update",
+        "cron.status",
+      ]);
+    });
+  });
 });
 
 describe("automation mutation options", () => {
